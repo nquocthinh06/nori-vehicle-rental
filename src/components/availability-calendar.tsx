@@ -10,11 +10,13 @@ export function AvailabilityCalendar({
   startDate,
   endDate,
   onChange,
+  operationStatus,
 }: {
   vehicle: string | null
   startDate: string
   endDate: string
   onChange: (start: string, end: string) => void
+  operationStatus?: string | null
 }) {
   const today = businessToday()
   const [month, setMonth] = useState(() => today.slice(0, 7))
@@ -24,13 +26,25 @@ export function AvailabilityCalendar({
   const [error, setError] = useState('')
   const [selectionError, setSelectionError] = useState('')
   const [retry, setRetry] = useState(0)
+
+  const unavailableStatus =
+    operationStatus === 'MAINTENANCE' ||
+    operationStatus === 'SOLD' ||
+    operationStatus === 'INACTIVE' ||
+    operationStatus === 'RESERVED'
+
   useEffect(() => {
     const start = dateNumber(startDate)
     const now = dateNumber(today)
     if (Number.isFinite(start) && start >= now && start <= now + 90) setMonth(startDate.slice(0, 7))
   }, [startDate, today])
+
   useEffect(() => {
-    if (!vehicle) return
+    if (!vehicle) {
+      setBusyDays([])
+      setLoadedVehicle(null)
+      return
+    }
     let active = true
     setLoading(true)
     setError('')
@@ -61,11 +75,13 @@ export function AvailabilityCalendar({
       ...Array.from({ length: last }, (_, i) => `${month}-${String(i + 1).padStart(2, '0')}`),
     ]
   }, [month])
+
   function move(delta: number) {
     const date = new Date(`${month}-01T00:00:00Z`)
     date.setUTCMonth(date.getUTCMonth() + delta)
     setMonth(date.toISOString().slice(0, 7))
   }
+
   function select(date: string) {
     setSelectionError('')
     if (!startDate || endDate || date <= startDate) {
@@ -84,8 +100,8 @@ export function AvailabilityCalendar({
   }
 
   return (
-    <div className="rounded-card border border-line p-4">
-      <div className="mb-4 flex items-center justify-between">
+    <div className="rounded-card border border-line bg-canvas p-3.5 sm:p-4">
+      <div className="mb-3 flex items-center justify-between gap-2">
         <Text className="text-small font-semibold">
           Tháng {Number(month.slice(5))} / {month.slice(0, 4)}
         </Text>
@@ -108,7 +124,7 @@ export function AvailabilityCalendar({
       </div>
       <div className="grid grid-cols-7 gap-1 text-center">
         {['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'].map((day) => (
-          <Text key={day} className="pb-2 text-micro text-muted">
+          <Text key={day} className="pb-1.5 text-micro font-medium text-muted">
             {day}
           </Text>
         ))}
@@ -116,32 +132,42 @@ export function AvailabilityCalendar({
           if (!date) return <span key={`empty-${i}`} />
           const busy = busyDays.includes(date)
           const selectingEnd = startDate && !endDate && date > startDate
+          const outOfRange = date < today || date > addDays(today, selectingEnd ? 120 : 90)
           const disabled =
             !vehicle ||
+            unavailableStatus ||
             loadedVehicle !== vehicle ||
             loading ||
             !!error ||
-            date < today ||
-            date > addDays(today, selectingEnd ? 120 : 90) ||
+            outOfRange ||
             (busy && !selectingEnd)
           const selected = date === startDate || date === endDate
           const between = startDate && endDate && date > startDate && date < endDate
           return (
             <Button
               key={date}
+              size="cell"
               variant="ghost"
-              aria-label={`${date.split('-').reverse().join('/')}${busy ? ', đã có lịch thuê' : ''}`}
+              aria-label={`${date.split('-').reverse().join('/')}${
+                unavailableStatus
+                  ? ', xe đang bảo dưỡng hoặc tạm ngừng'
+                  : busy
+                    ? ', đã có lịch thuê'
+                    : outOfRange
+                      ? ', ngoài phạm vi đặt'
+                      : ', còn trống'
+              }`}
               aria-pressed={selected}
               disabled={disabled}
               onClick={() => select(date)}
               className={cn(
-                'min-h-touch rounded-control px-0 py-1 text-caption font-normal disabled:opacity-35',
+                'w-full whitespace-nowrap rounded-control text-caption font-medium leading-none tabular-nums [overflow-wrap:normal] disabled:opacity-35',
                 selected
                   ? 'bg-brand text-inverse hover:bg-brand-hover'
                   : between
                     ? 'bg-brand-soft text-brand'
                     : busy
-                      ? 'text-muted line-through'
+                      ? 'bg-subtle text-muted line-through'
                       : 'hover:bg-brand-soft',
               )}
             >
@@ -150,25 +176,47 @@ export function AvailabilityCalendar({
           )
         })}
       </div>
-      <div className="mt-3 flex items-center justify-between border-t border-line pt-3 text-micro text-muted">
-        <Text>
-          {!vehicle
-            ? 'Chưa cập nhật lịch xe thực tế'
-            : loading
-              ? 'Đang tải lịch xe…'
-              : 'Ngày trả không tính thêm tiền thuê'}
-        </Text>
-        <Text as="span" className="flex items-center gap-1">
-          <span className="size-1.5 rounded-pill bg-line" />
-          Đã có lịch
-        </Text>
+      <div className="mt-3 space-y-2 border-t border-line pt-3 text-micro text-muted">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <Text>
+            {!vehicle
+              ? 'Chưa có dữ liệu lịch xe thực tế'
+              : unavailableStatus
+                ? operationStatus === 'MAINTENANCE'
+                  ? 'Xe đang bảo dưỡng định kỳ'
+                  : 'Xe tạm ngừng cho thuê'
+                : loading
+                  ? 'Đang tải lịch xe…'
+                  : 'Ngày trả không tính thêm tiền thuê'}
+          </Text>
+          <span className="text-micro text-muted">Múi giờ VN</span>
+        </div>
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
+          <span className="inline-flex items-center gap-1.5">
+            <span className="size-2 rounded-pill border border-control-line bg-canvas" />
+            Còn trống
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <span className="size-2 rounded-pill bg-brand" />
+            Đang chọn
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <span className="size-2 rounded-pill bg-control-line" />
+            Đã đặt / Giữ chỗ
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <span className="size-2 rounded-pill bg-line" />
+            Không khả dụng
+          </span>
+        </div>
       </div>
       {error && (
         <div className="mt-3">
           <Notice tone="error">{error}</Notice>
           <Button
             variant="ghost"
-            className="text-caption text-brand"
+            size="sm"
+            className="mt-2 text-brand"
             onClick={() => setRetry(retry + 1)}
           >
             Tải lại lịch

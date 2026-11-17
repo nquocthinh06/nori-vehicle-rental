@@ -2,7 +2,15 @@
 
 import { useEffect, useState, type FormEvent } from 'react'
 import { useRouter } from 'next/navigation'
+import type { BookingView, InquiryView } from '@/lib/domain-types'
 import { api } from '@/lib/client-api'
+import {
+  bookingStatusLabels,
+  formatDate,
+  formatMoney,
+  inquiryStatusLabels,
+  inquiryTypeLabels,
+} from '@/lib/rental-rules'
 import { useAuth } from './auth-provider'
 import {
   Badge,
@@ -11,20 +19,18 @@ import {
   EmptyState,
   Heading,
   Input,
+  NoriLink,
   Notice,
   Skeleton,
   StatusBadge,
   Text,
 } from './ui'
 import { Icon } from './ui/icon'
-import { formatDate } from '@/lib/rental-rules'
 
-type Inquiry = {
-  id: string
-  reference: string
-  modelName: string
-  status: string
-  createdAt: string
+const paymentMethodLabels: Record<string, string> = {
+  DIRECT: 'Thanh toán trực tiếp',
+  INSTALLMENT: 'Trả góp tham khảo',
+  CONSULT_FINANCE: 'Cần tư vấn tài chính',
 }
 
 export function AccountPanel() {
@@ -33,7 +39,11 @@ export function AccountPanel() {
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
-  const [inquiries, setInquiries] = useState<Inquiry[]>([])
+  const [pwdBusy, setPwdBusy] = useState(false)
+  const [pwdError, setPwdError] = useState('')
+  const [pwdMessage, setPwdMessage] = useState('')
+  const [inquiries, setInquiries] = useState<InquiryView[]>([])
+  const [bookings, setBookings] = useState<BookingView[]>([])
   const [inquiriesLoading, setInquiriesLoading] = useState(false)
   const [inquiriesError, setInquiriesError] = useState('')
   const [retry, setRetry] = useState(0)
@@ -43,9 +53,15 @@ export function AccountPanel() {
     let active = true
     setInquiriesLoading(true)
     setInquiriesError('')
-    api<Inquiry[]>('/inquiries')
-      .then((result) => {
-        if (active) setInquiries(result)
+    Promise.all([
+      api<InquiryView[]>('/inquiries'),
+      api<{ docs: BookingView[] }>('/bookings?page=1').catch(() => ({ docs: [] })),
+    ])
+      .then(([inquiryResult, bookingResult]) => {
+        if (active) {
+          setInquiries(inquiryResult)
+          setBookings(bookingResult.docs ?? [])
+        }
       })
       .catch((e) => {
         if (active) setInquiriesError(e.message)
@@ -75,6 +91,27 @@ export function AccountPanel() {
       setError((e as Error).message)
     } finally {
       setBusy(false)
+    }
+  }
+
+  async function changePassword(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault()
+    const form = e.currentTarget
+    const data = new FormData(form)
+    setPwdBusy(true)
+    setPwdError('')
+    setPwdMessage('')
+    try {
+      await api('/auth/password', {
+        method: 'POST',
+        body: JSON.stringify(Object.fromEntries(data.entries())),
+      })
+      form.reset()
+      setPwdMessage('Đã đổi mật khẩu thành công.')
+    } catch (e) {
+      setPwdError((e as Error).message)
+    } finally {
+      setPwdBusy(false)
     }
   }
   async function signOut() {
@@ -186,12 +223,115 @@ export function AccountPanel() {
             </Button>
           </form>
         </section>
+
         <section className="rounded-card border border-line p-6 md:p-8">
+          <Heading as="h2" size="title">
+            Đổi mật khẩu
+          </Heading>
+          <Text className="mb-6 mt-2 text-small text-muted">
+            Mật khẩu mới cần từ 8 đến 72 ký tự, bao gồm chữ cái và chữ số.
+          </Text>
+          <form onSubmit={changePassword} className="space-y-4">
+            <Input
+              id="pwd-current"
+              name="currentPassword"
+              label="Mật khẩu hiện tại"
+              type="password"
+              autoComplete="current-password"
+              required
+            />
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Input
+                id="pwd-new"
+                name="newPassword"
+                label="Mật khẩu mới"
+                type="password"
+                autoComplete="new-password"
+                minLength={8}
+                maxLength={72}
+                required
+              />
+              <Input
+                id="pwd-confirm"
+                name="confirmPassword"
+                label="Xác nhận mật khẩu mới"
+                type="password"
+                autoComplete="new-password"
+                minLength={8}
+                maxLength={72}
+                required
+              />
+            </div>
+            {pwdError && <Notice tone="error">{pwdError}</Notice>}
+            {pwdMessage && <Notice tone="success">{pwdMessage}</Notice>}
+            <Button type="submit" variant="secondary" loading={pwdBusy}>
+              Cập nhật mật khẩu
+            </Button>
+          </form>
+        </section>
+
+        <section className="rounded-card border border-line p-6 md:p-8">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <Heading as="h2" size="title">
+              Thông báo trạng thái gần đây
+            </Heading>
+            <Badge tone="brand">In-App</Badge>
+          </div>
+          <Text className="mb-5 mt-2 text-small text-muted">
+            Cập nhật mới nhất về đơn thuê và yêu cầu mua xe của bạn (Email/SMS tự động chưa kích
+            hoạt trong phiên bản ngoại tuyến).
+          </Text>
+          {bookings.length + inquiries.length > 0 ? (
+            <div className="space-y-2.5">
+              {[
+                ...bookings.slice(0, 4).map((b) => ({
+                  id: `b-${b.id}`,
+                  title: `Đơn thuê ${b.modelName} (${b.bookingKey.slice(0, 11).toUpperCase()})`,
+                  status: bookingStatusLabels[b.status] ?? b.status,
+                  date: b.createdAt,
+                  href: '/my-bookings',
+                })),
+                ...inquiries.slice(0, 4).map((inq) => ({
+                  id: `i-${inq.id}`,
+                  title: `Yêu cầu ${inq.modelName} (${inq.reference.slice(0, 11).toUpperCase()})`,
+                  status: inquiryStatusLabels[inq.status] ?? inq.status,
+                  date: inq.createdAt,
+                  href: '#inquiries',
+                })),
+              ]
+                .sort((a, b) => (a.date < b.date ? 1 : -1))
+                .slice(0, 6)
+                .map((item) => (
+                  <div
+                    key={item.id}
+                    className="flex flex-wrap items-center justify-between gap-2 rounded-control bg-subtle px-4 py-3 text-small"
+                  >
+                    <div>
+                      <Text className="font-medium text-ink">{item.title}</Text>
+                      <Text className="text-micro text-muted">
+                        Trạng thái: {item.status} · {formatDate(item.date)}
+                      </Text>
+                    </div>
+                    {item.href.startsWith('/') && (
+                      <NoriLink href={item.href} className="text-caption font-medium text-brand">
+                        Xem chi tiết
+                      </NoriLink>
+                    )}
+                  </div>
+                ))}
+            </div>
+          ) : (
+            <Text className="text-small text-muted">Chưa có thông báo giao dịch nào.</Text>
+          )}
+        </section>
+
+        <section id="inquiries" className="rounded-card border border-line p-6 md:p-8">
           <Heading as="h2" size="title">
             Yêu cầu tư vấn mua xe
           </Heading>
           <Text className="mb-6 mt-2 text-small text-muted">
-            Theo dõi các yêu cầu đã gửi. Không phải đơn mua hoặc giao dịch thanh toán.
+            Theo dõi các yêu cầu tư vấn, báo giá, lái thử và đặt mua đã gửi. Không phải giao dịch
+            thanh toán trực tuyến.
           </Text>
           {inquiriesLoading ? (
             <Skeleton className="h-28" />
@@ -205,18 +345,61 @@ export function AccountPanel() {
           ) : inquiries.length ? (
             <div className="space-y-3">
               {inquiries.map((inquiry) => (
-                <div
-                  key={inquiry.id}
-                  className="flex flex-wrap justify-between gap-4 rounded-control bg-subtle p-4"
-                >
-                  <div>
-                    <Text className="font-semibold">{inquiry.modelName}</Text>
-                    <Text className="mt-1 text-caption text-muted">
-                      {inquiry.reference.slice(0, 11).toUpperCase()} ·{' '}
-                      {formatDate(inquiry.createdAt)}
-                    </Text>
+                <div key={inquiry.id} className="rounded-control bg-subtle p-4">
+                  <div className="flex flex-wrap justify-between gap-4">
+                    <div>
+                      <div className="mb-1 flex flex-wrap items-center gap-2">
+                        <Badge tone="brand">
+                          {inquiryTypeLabels[inquiry.inquiryType] ?? inquiry.inquiryType}
+                        </Badge>
+                        {inquiry.vehicleReference && <Badge>{inquiry.vehicleReference}</Badge>}
+                      </div>
+                      <Text className="font-semibold">{inquiry.modelName}</Text>
+                      <Text className="mt-1 text-caption text-muted">
+                        {inquiry.reference.slice(0, 11).toUpperCase()} ·{' '}
+                        {formatDate(inquiry.createdAt)}
+                        {inquiry.variantName ? ` · ${inquiry.variantName}` : ''}
+                        {inquiry.colorName ? ` · ${inquiry.colorName}` : ''}
+                      </Text>
+                    </div>
+                    <StatusBadge status={inquiry.status} />
                   </div>
-                  <StatusBadge status={inquiry.status} />
+                  {(inquiry.preferredDate ||
+                    inquiry.preferredLocation ||
+                    inquiry.paymentMethod ||
+                    inquiry.quotedPriceSnapshot ||
+                    inquiry.estimatedRollingSnapshot ||
+                    inquiry.note) && (
+                    <div className="mt-3 space-y-2 border-t border-line pt-2 text-micro text-muted">
+                      <div className="flex flex-wrap gap-x-4 gap-y-1">
+                        {inquiry.paymentMethod && (
+                          <span>
+                            Hình thức:{' '}
+                            {paymentMethodLabels[inquiry.paymentMethod] ?? inquiry.paymentMethod}
+                          </span>
+                        )}
+                        {inquiry.preferredDate && (
+                          <span>Lịch hẹn mong muốn: {formatDate(inquiry.preferredDate)}</span>
+                        )}
+                        {inquiry.preferredLocation && (
+                          <span>Địa điểm: {inquiry.preferredLocation}</span>
+                        )}
+                        {inquiry.quotedPriceSnapshot && (
+                          <span>
+                            Giá bán tham khảo lúc gửi: {formatMoney(inquiry.quotedPriceSnapshot)}
+                          </span>
+                        )}
+                        {inquiry.estimatedRollingSnapshot && (
+                          <span>
+                            Lăn bánh ước tính: {formatMoney(inquiry.estimatedRollingSnapshot)}
+                          </span>
+                        )}
+                      </div>
+                      {inquiry.note && (
+                        <Text className="text-caption text-ink">Ghi chú: {inquiry.note}</Text>
+                      )}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -224,7 +407,7 @@ export function AccountPanel() {
             <EmptyState
               icon="bag"
               title="Chưa có yêu cầu tư vấn"
-              description="Khi tìm thấy chiếc xe yêu thích, hãy đăng ký tư vấn ở trang chi tiết."
+              description="Khi tìm thấy chiếc xe yêu thích, hãy đăng ký tư vấn, lái thử hoặc gửi yêu cầu mua ở trang chi tiết."
             >
               <ButtonLink href="/vehicles?intent=buy" variant="secondary" className="text-small">
                 Khám phá xe mua <Icon name="arrow-right" className="size-4" />

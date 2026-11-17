@@ -131,35 +131,6 @@ Use the lightest stack that satisfies the request:
 Payload is this template's durable data, admin, auth, and content layer. Use it
 for structured app data, not only editorial CMS content.
 
-## Figma-Managed Payload Rules
-
-This is not a vanilla self-hosted Payload project. Figma Cloud provides the
-database, auth integration, file storage, deployment runtime, and platform
-secrets through `@payloadcms/figma`.
-
-Package-level `@payloadcms/figma` internals are platform-owned and may not be
-present in this generated app workspace. Do not inspect, duplicate, or
-reinterpret bootstrap/env/OAuth behavior in app code. Keep those internals intact
-and follow the Make-specific rules below.
-
-Use `buildFigmaConfig()` in `src/payload.config.ts`. Do not replace it with
-Payload's raw `buildConfig()`.
-
-Do not add or configure:
-
-- `db`
-- `secret`
-- default `editor`
-- Mongo/Postgres/SQLite/database adapter packages
-- OAuth/auth plugins for Payload Admin Panel auth
-- cloud-storage plugins for normal uploads
-- migration files, DDL, local database setup, or connection-string instructions
-
-If a shell command complains about missing Payload/Figma backend env vars, first
-check whether you are running outside the Make lifecycle/dev-server environment.
-Do not hard-code dummy secrets, run `@payloadcms/figma init`, or ask the user to
-provide platform-owned values.
-
 ## Secrets And Environment Variables
 
 Payload/Figma backend env vars and secrets are platform-owned. In generated Make
@@ -484,3 +455,13 @@ time. Batch by dependency layer — don't write files one at a time.
   `figma-image-loader.ts`. Pass Payload `media.url` to `next/image`. Do not
   add `images.remotePatterns` or a same-origin `/media/[id]` proxy, and do
   not replace the Figma loader.
+
+<!-- BEGIN:nextjs-agent-rules -->
+
+## This is NOT the Next.js you know
+
+This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
+
+This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
+
+<!-- END:nextjs-agent-rules -->

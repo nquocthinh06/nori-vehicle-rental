@@ -99,23 +99,32 @@ Breakpoints: mobile <768px, tablet 768–1023px, desktop ≥1024px; xl ≥1280px
 - Hero chỉ đổi khi người dùng thao tác.
 - `prefers-reduced-motion: reduce` must tắt animation và smooth scrolling không thiết yếu.
 
+### 3.6 Mobile-first & PWA UI Patterns
+
+- **Bottom Navigation**: Cố định đáy màn hình trên thiết bị di động (<768px), gồm 5 tab chính (`Khám phá`, `Xe`, `Yêu thích`, `Đơn thuê`, `Tài khoản`). Chiều cao chuẩn `4rem` (`64px`), tích hợp `padding-bottom: env(safe-area-inset-bottom)` bảo đảm không bị cản trở bởi Home Indicator trên iOS.
+- **Sticky Booking Action Bar**: Trên màn hình chi tiết xe di động, thanh đặt xe nhanh gắn cố định đáy (`bottom: calc(4rem + env(safe-area-inset-bottom))`), hiển thị giá thuê và nút CTA `Chọn thuê ngay` để khách hàng có thể hành động mà không cần cuộn trang.
+- **Bottom Sheet Filters**: Bộ lọc tìm kiếm trên di động xuất hiện dưới dạng Bottom Sheet trượt từ dưới lên, hỗ trợ gesture vuốt đóng, chip danh mục cuộn ngang và nút xác nhận ghim cố định.
+- **Active Filter Chips**: Hiển thị trạng thái các bộ lọc đang kích hoạt với nút gỡ bỏ nhanh hoặc nút `Xóa tất cả` để khôi phục trạng thái danh mục ban đầu.
+- **Touch Targets**: Mọi nút bấm, tab và chip điều hướng đều tuân thủ kích thước tối thiểu `44×44px` (WCAG 2.2 Success Criterion 2.5.8).
+
 ## 4. Component inventory
 
-| Family        | Source                                  | Anatomy / variants                                                         |
-| ------------- | --------------------------------------- | -------------------------------------------------------------------------- |
-| Typography    | `components/ui/index.tsx`               | Heading, Text, Eyebrow                                                     |
-| Action        | cùng file                               | Button primary/dark/secondary/ghost/inverse/danger; ButtonLink; IconButton |
-| Navigation    | cùng file                               | NoriLink, ExternalLink, Container, TabButton có trạng thái ARIA và focus   |
-| Form          | cùng file                               | Input, Select, Textarea, Checkbox, hint/error                              |
-| Feedback      | cùng file                               | Notice info/error/success, Badge, StatusBadge                              |
-| Loading/empty | cùng file                               | Skeleton, CardSkeleton, EmptyState                                         |
-| Modal         | `components/ui/dialog.tsx`              | native dialog, backdrop, close, focus containment                          |
-| Icons         | `components/ui/icon.tsx`                | cùng viewBox 24, stroke 1.6, decorative aria-hidden                        |
-| Site shell    | header/footer/brand                     | desktop mega menu, mobile navigation, semantic footer                      |
-| Vehicles      | vehicle-card/catalogue/vehicle-detail   | catalogue, filters, gallery, variants, actual inventory                    |
-| Operations    | availability-calendar/checkout/bookings | live availability, review, confirmation, cancellation                      |
-| Accounts      | auth-form/account-panel                 | native Payload app auth, profile, sales requests                           |
-| Admin         | dashboard-panel                         | real counts, legal workflow transitions, canonical CMS links               |
+| Family        | Source                                  | Anatomy / variants                                                                    |
+| ------------- | --------------------------------------- | ------------------------------------------------------------------------------------- |
+| Typography    | `components/ui/index.tsx`               | Heading, Text, Eyebrow                                                                |
+| Action        | cùng file                               | Button primary/dark/secondary/ghost/inverse/danger; ButtonLink; IconButton            |
+| Navigation    | cùng file                               | NoriLink, ExternalLink, Container, TabButton có trạng thái ARIA và focus              |
+| Form          | cùng file                               | Input, Select, Textarea, Checkbox, hint/error                                         |
+| Feedback      | cùng file                               | Notice info/error/success, Badge, StatusBadge                                         |
+| Loading/empty | cùng file                               | Skeleton, CardSkeleton, EmptyState                                                    |
+| Modal         | `components/ui/dialog.tsx`              | native dialog, backdrop, close, focus containment                                     |
+| Icons         | `components/ui/icon.tsx`                | cùng viewBox 24, stroke 1.6, decorative aria-hidden                                   |
+| Site shell    | header/footer/brand/bottom-nav          | desktop mega menu, mobile navigation, mobile bottom nav (5 mục), semantic footer      |
+| PWA           | `pwa-manager.tsx`, `public/sw.js`       | Web App Manifest, Service Worker an toàn, offline fallback `/offline`, install prompt |
+| Vehicles      | vehicle-card/catalogue/vehicle-detail   | catalogue, filters, gallery, variants, actual inventory                               |
+| Operations    | availability-calendar/checkout/bookings | live availability, review, confirmation, cancellation                                 |
+| Accounts      | auth-form/account-panel                 | native Payload app auth, profile, sales requests                                      |
+| Admin         | dashboard-panel                         | real counts, legal workflow transitions, canonical CMS links                          |
 
 `/design-system` là trang kiểm thử component trực tiếp. Đây không phải nguồn mock cho các trang nghiệp vụ.
 
@@ -132,9 +141,11 @@ Breakpoints: mobile <768px, tablet 768–1023px, desktop ≥1024px; xl ≥1280px
 | Error         | Notice hoặc field error; giữ input; retry khi phù hợp    |
 | Empty         | Giải thích và bước tiếp theo; không lấp bằng dữ liệu giả |
 
-### Header / mega menu
+### Header / mega menu & Mobile Bottom Nav
 
 Must dùng trigger click/keyboard với expanded state. Escape đóng và trả focus. Mobile có tất cả đích điều hướng chính. Không mở menu chỉ bằng hover.
+
+Trên mobile (`<1024px`), `MobileBottomNav` cố định ở cạnh dưới với safe-area (`env(safe-area-inset-bottom)`) gồm 5 mục thực tế: Trang chủ (`/`), Tìm xe (`/vehicles`), Yêu thích (`/favorites`), Đơn hàng (`/my-bookings`) và Tài khoản (`/account` hoặc `/login`). `MobileBottomNav` tự động ẩn tại `/vehicles/[slug]` (nhường chỗ cho Sticky Booking Bar), `/checkout` và `/dashboard/*` để tránh xung đột thao tác.
 
 ### Search / filtering
 
@@ -205,6 +216,11 @@ Public catalogue/site dùng `unstable_cache`, không dùng uncached runtime ch�
 - Availability/account/order/admin endpoints private no-store; static page shells không đọc cookies.
 - Media dùng `next/image`, `media.url`, loader Figma nguyên bản, `sizes`, bounded containers, lazy loading bên dưới fold.
 - Media công khai có cache header một giờ; không dùng `immutable` cho ảnh có thể thay.
+- **Layout Stability & CLS Optimization (CLS ≤ 0.1000)**:
+  - Skeleton kích thước chuẩn hóa: Pre-hydration skeleton phải khớp tỷ lệ và chiều cao thực tế của giao diện sau khi tải (ví dụ: `VehicleDetailSkeleton` hai cột với `min-h-[1200px]` và sidebar `h-4 w-28` label + `h-control` input).
+  - Tránh layout shift do hydrate dữ liệu không đồng bộ: Khởi tạo giá niêm yết fallback và cờ `isDemo` ngay tại SSR để UI không bị giật kích thước khi Client Component hydrate.
+  - Vùng chứa thông báo bất đồng bộ (tiền cọc, phụ phí, khuyến mãi) phải có `min-h` cố định (ví dụ `min-h-[20px]`).
+  - Đạt chỉ số thực tế: Desktop CLS đạt `0.0038` (giảm từ `0.1327`), LCP `< 600ms`, INP `< 50ms`.
 
 ## 8. Accessibility
 

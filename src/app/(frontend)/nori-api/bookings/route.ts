@@ -1,11 +1,26 @@
 import { appAuth } from '@/lib/app-auth'
 import { getPayloadClient } from '@/lib/payload'
-import { apiError, assertOrigin, body, fail, json, text } from '@/lib/api-utils'
+import { apiError, assertOrigin, assertRateLimit, body, fail, json, text } from '@/lib/api-utils'
 import type { Booking } from '@/payload-types'
 import type { BookingView } from '@/lib/domain-types'
 
+const VALID_BOOKING_STATUSES = [
+  'PENDING',
+  'DEPOSIT_PENDING',
+  'CONFIRMED',
+  'READY_FOR_HANDOVER',
+  'ONGOING',
+  'INSPECTING',
+  'COMPLETED',
+  'CANCELLED',
+  'REJECTED',
+]
+
 function bookingView(booking: Booking): BookingView {
   const vehicle = typeof booking.vehicle === 'object' ? booking.vehicle : null
+  const dailyPriceSnapshot = booking.dailyPriceSnapshot ?? 0
+  const totalDays = booking.totalDays ?? 0
+  const totalPrice = booking.totalPrice ?? 0
   return {
     id: booking.id,
     bookingKey: booking.bookingKey ?? booking.id,
@@ -18,9 +33,23 @@ function bookingView(booking: Booking): BookingView {
     reference: booking.vehicleReferenceSnapshot ?? vehicle?.reference ?? '',
     startDate: booking.startDate,
     endDate: booking.endDate,
-    totalDays: booking.totalDays ?? 0,
-    totalPrice: booking.totalPrice ?? 0,
-    dailyPriceSnapshot: booking.dailyPriceSnapshot ?? 0,
+    pickupTime: booking.pickupTime ?? '08:00',
+    returnTime: booking.returnTime ?? '20:00',
+    pickupLocation: booking.pickupLocation ?? null,
+    deliveryRequested: Boolean(booking.deliveryRequested),
+    addonServices: booking.addonServices ?? null,
+    totalDays,
+    dailyPriceSnapshot,
+    baseRentPrice: booking.baseRentPrice ?? dailyPriceSnapshot * totalDays,
+    weekendSurchargeTotal: booking.weekendSurchargeTotal ?? 0,
+    deliveryFeeSnapshot: booking.deliveryFeeSnapshot ?? 0,
+    addonFeeTotal: booking.addonFeeTotal ?? 0,
+    discountAmount: booking.discountAmount ?? 0,
+    totalPrice,
+    depositSnapshot: booking.depositSnapshot ?? 0,
+    initialPaymentDue: booking.initialPaymentDue ?? booking.depositSnapshot ?? 0,
+    remainingAmount: booking.remainingAmount ?? totalPrice,
+    handoverNote: booking.handoverNote ?? null,
     createdAt: booking.createdAt,
   }
 }
@@ -34,10 +63,7 @@ export async function GET(request: Request) {
     if (!Number.isSafeInteger(page) || page < 1 || page > 100_000)
       return fail('Số trang chưa hợp lệ.')
     const status = params.get('status')
-    if (
-      status &&
-      !['PENDING', 'CONFIRMED', 'ONGOING', 'COMPLETED', 'CANCELLED', 'REJECTED'].includes(status)
-    )
+    if (status && !VALID_BOOKING_STATUSES.includes(status))
       return fail('Bộ lọc trạng thái chưa hợp lệ.')
     const payload = await getPayloadClient()
     const result = await payload.find({
@@ -64,9 +90,23 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     assertOrigin(request)
+    assertRateLimit(request, 'bookings-create', 40, 60_000)
     const user = await appAuth.currentUser()
     if (!user) return fail('Vui lòng đăng nhập để đặt xe.', 401, 'UNAUTHORIZED')
-    const data = await body(request, ['vehicle', 'startDate', 'endDate'])
+    const data = await body(request, [
+      'vehicle',
+      'startDate',
+      'endDate',
+      'pickupTime',
+      'returnTime',
+      'pickupLocation',
+      'deliveryRequested',
+      'addonServices',
+      'customerPhone',
+      'driverLicenseNumber',
+      'note',
+      'promoCode',
+    ])
     const payload = await getPayloadClient()
     const booking = await payload.create({
       collection: 'bookings',
@@ -77,6 +117,17 @@ export async function POST(request: Request) {
         vehicle: text(data.vehicle, 100),
         startDate: text(data.startDate, 10),
         endDate: text(data.endDate, 10),
+        pickupTime: text(data.pickupTime, 5) || undefined,
+        returnTime: text(data.returnTime, 5) || undefined,
+        pickupLocation: text(data.pickupLocation, 200) || undefined,
+        deliveryRequested: Boolean(data.deliveryRequested),
+        addonServices: Array.isArray(data.addonServices)
+          ? data.addonServices.map((s) => text(s, 40)).join(',')
+          : text(data.addonServices, 200) || undefined,
+        customerPhone: text(data.customerPhone, 16) || undefined,
+        driverLicenseNumber: text(data.driverLicenseNumber, 40) || undefined,
+        note: text(data.note, 500) || undefined,
+        promoCode: text(data.promoCode, 40) || undefined,
       },
     })
     return json(bookingView(booking), 201)
@@ -100,8 +151,12 @@ export async function PATCH(request: Request) {
       overrideAccess: false,
       depth: 0,
     })
-    if (booking.status !== 'PENDING')
-      return fail('Chỉ có thể hủy đơn đang chờ xác nhận.', 409, 'INVALID_BOOKING_TRANSITION')
+    if (!['PENDING', 'DEPOSIT_PENDING'].includes(booking.status ?? ''))
+      return fail(
+        'Chỉ có thể hủy đơn đang chờ xác nhận hoặc chờ đặt cọc.',
+        409,
+        'INVALID_BOOKING_TRANSITION',
+      )
     const updated = await payload.update({
       collection: 'bookings',
       id,

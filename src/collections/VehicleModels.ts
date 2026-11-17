@@ -1,6 +1,20 @@
 import type { CollectionConfig } from 'payload'
 import { isAdmin } from '@/access/nori'
+import { auditCollection } from '@/hooks/audit-nori'
 import { revalidateCatalogue, revalidateDeletedCatalogue } from '@/hooks/revalidate-nori'
+
+const modelAudit = auditCollection({
+  entity: 'vehicle-model',
+  entityName: 'dòng xe catalogue',
+  label: (doc) => String(doc.name ?? doc.slug ?? doc.id),
+  fields: {
+    name: 'Tên dòng xe',
+    brand: 'Thương hiệu',
+    category: 'Danh mục',
+    visible: 'Hiển thị',
+    verificationStatus: 'Xác minh',
+  },
+})
 
 export const VehicleModels: CollectionConfig = {
   slug: 'vehicle-models',
@@ -8,7 +22,7 @@ export const VehicleModels: CollectionConfig = {
   admin: {
     useAsTitle: 'name',
     group: 'NORI · Phương tiện',
-    defaultColumns: ['name', 'brand', 'category', 'visible'],
+    defaultColumns: ['name', 'brand', 'category', 'subCategory', 'verificationStatus', 'visible'],
   },
   access: {
     create: isAdmin,
@@ -16,7 +30,10 @@ export const VehicleModels: CollectionConfig = {
     update: isAdmin,
     delete: isAdmin,
   },
-  hooks: { afterChange: [revalidateCatalogue], afterDelete: [revalidateDeletedCatalogue] },
+  hooks: {
+    afterChange: [revalidateCatalogue, modelAudit.afterChange],
+    afterDelete: [revalidateDeletedCatalogue, modelAudit.afterDelete],
+  },
   fields: [
     { name: 'name', label: 'Tên dòng xe', type: 'text', required: true, maxLength: 120 },
     { name: 'slug', type: 'slug', useAsSlug: 'name' },
@@ -33,8 +50,99 @@ export const VehicleModels: CollectionConfig = {
       required: true,
       index: true,
     },
-    { name: 'bodyStyle', label: 'Kiểu dáng', type: 'text' },
-    { name: 'description', label: 'Giới thiệu', type: 'textarea', maxLength: 2000 },
+    {
+      name: 'subCategory',
+      label: 'Phân loại kiểu dáng',
+      type: 'select',
+      options: [
+        { label: 'Xe số', value: 'MANUAL_BIKE' },
+        { label: 'Xe tay ga', value: 'SCOOTER' },
+        { label: 'Xe côn tay', value: 'CLUTCH_BIKE' },
+        { label: 'Mô tô phân khối lớn', value: 'BIG_BIKE' },
+        { label: 'Xe máy điện', value: 'ELECTRIC_BIKE' },
+        { label: 'Hatchback', value: 'HATCHBACK' },
+        { label: 'Sedan', value: 'SEDAN' },
+        { label: 'SUV', value: 'SUV' },
+        { label: 'CUV', value: 'CUV' },
+        { label: 'MPV', value: 'MPV' },
+        { label: 'Coupe', value: 'COUPE' },
+        { label: 'Xe thể thao', value: 'SPORTS' },
+        { label: 'Xe điện', value: 'ELECTRIC_CAR' },
+        { label: 'Bán tải phổ thông', value: 'STANDARD_PICKUP' },
+        { label: 'Bán tải công việc', value: 'WORK_PICKUP' },
+        { label: 'Bán tải cao cấp', value: 'PREMIUM_PICKUP' },
+        { label: 'Bán tải hiệu năng cao', value: 'PERFORMANCE_PICKUP' },
+      ],
+      index: true,
+    },
+    { name: 'bodyStyle', label: 'Kiểu dáng hiển thị', type: 'text' },
+    { name: 'segment', label: 'Phân khúc', type: 'text' },
+    { name: 'origin', label: 'Xuất xứ', type: 'text' },
+    { name: 'modelYear', label: 'Đời xe / Năm sản xuất', type: 'number', min: 1990, max: 2035 },
+    { name: 'seats', label: 'Số chỗ ngồi', type: 'number', min: 1, max: 60 },
+    {
+      name: 'fuelType',
+      label: 'Loại nhiên liệu / năng lượng',
+      type: 'select',
+      options: ['Xăng', 'Dầu (Diesel)', 'Điện (EV)', 'Hybrid'],
+    },
+    { name: 'transmission', label: 'Hộp số tiêu chuẩn', type: 'text' },
+    { name: 'driveType', label: 'Hệ dẫn động tiêu chuẩn', type: 'text' },
+    {
+      name: 'listedPrice',
+      label: 'Giá niêm yết tham khảo từ (VNĐ)',
+      type: 'number',
+      min: 0,
+    },
+    {
+      name: 'referenceRentPrice',
+      label: 'Giá thuê tham khảo từ (VNĐ/ngày)',
+      type: 'number',
+      min: 0,
+    },
+    { name: 'suitableFor', label: 'Đối tượng & nhu cầu sử dụng phù hợp', type: 'text' },
+    { name: 'description', label: 'Giới thiệu tổng quan', type: 'textarea', maxLength: 3000 },
+    { name: 'exteriorOverview', label: 'Mô tả ngoại thất', type: 'textarea', maxLength: 2000 },
+    {
+      name: 'interiorOverview',
+      label: 'Mô tả nội thất & tiện nghi',
+      type: 'textarea',
+      maxLength: 2000,
+    },
+    {
+      name: 'engineOverview',
+      label: 'Mô tả động cơ & vận hành',
+      type: 'textarea',
+      maxLength: 2000,
+    },
+    {
+      name: 'highlights',
+      label: 'Đặc điểm nổi bật',
+      type: 'array',
+      fields: [{ name: 'text', label: 'Điểm nổi bật', type: 'text', required: true }],
+    },
+    {
+      name: 'features',
+      label: 'Trang bị tiện nghi & an toàn',
+      type: 'array',
+      fields: [
+        { name: 'name', label: 'Tên trang bị / công nghệ', type: 'text', required: true },
+        {
+          name: 'category',
+          label: 'Nhóm trang bị',
+          type: 'select',
+          options: [
+            { label: 'Tiện nghi', value: 'COMFORT' },
+            { label: 'An toàn', value: 'SAFETY' },
+            { label: 'Hỗ trợ người lái', value: 'DRIVER_ASSIST' },
+            { label: 'Công nghệ', value: 'TECHNOLOGY' },
+          ],
+          defaultValue: 'COMFORT',
+          required: true,
+        },
+        { name: 'variantNote', label: 'Ghi chú phiên bản áp dụng', type: 'text' },
+      ],
+    },
     { name: 'cover', label: 'Ảnh catalogue', type: 'upload', relationTo: 'media' },
     {
       name: 'gallery',
@@ -46,10 +154,14 @@ export const VehicleModels: CollectionConfig = {
           name: 'kind',
           label: 'Loại ảnh',
           type: 'select',
-          options: ['EXTERIOR', 'INTERIOR'],
+          options: ['OVERVIEW', 'EXTERIOR', 'INTERIOR', 'ENGINE', 'FEATURE'],
           required: true,
         },
         { name: 'caption', label: 'Chú thích / nguồn', type: 'text' },
+        { name: 'variantName', label: 'Phiên bản áp dụng', type: 'text' },
+        { name: 'colorName', label: 'Màu sắc áp dụng', type: 'text' },
+        { name: 'sourceUrl', label: 'URL nguồn', type: 'text' },
+        { name: 'license', label: 'Giấy phép', type: 'text' },
       ],
     },
     {
@@ -57,8 +169,24 @@ export const VehicleModels: CollectionConfig = {
       label: 'Thông số đã xác thực',
       type: 'array',
       fields: [
+        {
+          name: 'group',
+          label: 'Nhóm thông số',
+          type: 'select',
+          options: [
+            { label: 'Tổng quan', value: 'OVERVIEW' },
+            { label: 'Động cơ & Vận hành', value: 'ENGINE' },
+            { label: 'Kích thước & Trọng lượng', value: 'DIMENSIONS' },
+            { label: 'Khung gầm & An toàn', value: 'CHASSIS' },
+            { label: 'Thông số Bán tải', value: 'PICKUP' },
+            { label: 'Thông số Xe máy', value: 'MOTORBIKE' },
+            { label: 'Thông số Xe điện', value: 'EV' },
+          ],
+          defaultValue: 'OVERVIEW',
+        },
         { name: 'label', type: 'text', required: true },
         { name: 'value', type: 'text', required: true },
+        { name: 'variantName', label: 'Phiên bản áp dụng', type: 'text' },
         { name: 'source', type: 'text', label: 'Nguồn / phiên bản áp dụng' },
       ],
     },
@@ -68,11 +196,26 @@ export const VehicleModels: CollectionConfig = {
       type: 'array',
       fields: [
         { name: 'name', type: 'text', required: true },
+        { name: 'year', label: 'Đời xe', type: 'number' },
+        { name: 'listedPrice', label: 'Giá niêm yết phiên bản (VNĐ)', type: 'number', min: 0 },
+        {
+          name: 'referenceRentPrice',
+          label: 'Giá thuê tham khảo phiên bản (VNĐ/ngày)',
+          type: 'number',
+          min: 0,
+        },
+        { name: 'fuelType', label: 'Nhiên liệu', type: 'text' },
+        { name: 'transmission', label: 'Hộp số', type: 'text' },
+        { name: 'driveType', label: 'Hệ dẫn động', type: 'text' },
+        { name: 'seats', label: 'Số chỗ ngồi', type: 'number' },
+        { name: 'summary', label: 'Tóm tắt trang bị phiên bản', type: 'text' },
         {
           name: 'colors',
           type: 'array',
           fields: [
             { name: 'name', type: 'text', required: true },
+            { name: 'hex', label: 'Mã màu tham khảo', type: 'text' },
+            { name: 'sourceUrl', label: 'URL nguồn màu', type: 'text' },
             {
               name: 'image',
               type: 'upload',
@@ -84,6 +227,17 @@ export const VehicleModels: CollectionConfig = {
       ],
     },
     { name: 'source', label: 'Nguồn catalogue', type: 'text' },
+    {
+      name: 'verificationStatus',
+      label: 'Trạng thái xác minh dữ liệu',
+      type: 'select',
+      options: [
+        { label: 'Đã xác minh', value: 'VERIFIED' },
+        { label: 'Chưa xác minh đầy đủ', value: 'UNVERIFIED' },
+        { label: 'Bản nháp', value: 'DRAFT' },
+      ],
+      defaultValue: 'VERIFIED',
+    },
     {
       name: 'visible',
       label: 'Hiển thị công khai',

@@ -56,6 +56,8 @@ export function SiteHeader() {
     }
   }, [])
 
+  if (pathname?.startsWith('/dashboard')) return null
+
   return (
     <header ref={headerRef} className="relative z-40 bg-canvas">
       <div className="hidden h-topbar bg-night text-inverse md:block">
@@ -64,6 +66,10 @@ export function SiteHeader() {
             <Icon name="road" className="size-3.5 text-brand-bright" /> ĐI THEO CÁCH CỦA BẠN.
           </Text>
           <div className="flex items-center gap-6 text-on-night-muted">
+            <NoriLink href="/favorites" className="flex items-center gap-1.5 hover:text-inverse">
+              <Icon name="heart" className="size-3.5" />
+              Xe yêu thích
+            </NoriLink>
             <NoriLink href="/support" className="flex items-center gap-1.5 hover:text-inverse">
               <Icon name="headphones" className="size-3.5" />
               Trung tâm hỗ trợ
@@ -113,6 +119,15 @@ export function SiteHeader() {
               className={cn('size-3.5 transition-transform', open === 'discover' && 'rotate-180')}
             />
           </Button>
+          {user?.isAdmin && (
+            <NoriLink
+              href="/dashboard"
+              className="flex min-h-touch items-center gap-1.5 whitespace-nowrap text-small font-semibold text-ink hover:text-brand"
+            >
+              <Icon name="shield" className="size-4 text-brand" />
+              Quản trị hệ thống
+            </NoriLink>
+          )}
         </nav>
         <div className="flex items-center gap-4">
           <Text
@@ -122,12 +137,12 @@ export function SiteHeader() {
             <Icon name="globe" className="size-4" /> VI
           </Text>
           <NoriLink
-            href={user ? '/account' : '/login'}
+            href={user ? (user.isAdmin ? '/dashboard' : '/account') : '/login'}
             className="hidden min-h-touch items-center gap-2 text-small font-medium sm:flex"
           >
             <Icon name="user" className="size-4" />
             <span className="max-w-32 truncate">
-              {user ? user.fullName.split(' ').at(-1) : 'Đăng nhập'}
+              {user ? (user.isAdmin ? 'Admin' : user.fullName.split(' ').at(-1)) : 'Đăng nhập'}
             </span>
           </NoriLink>
           <div className="hidden md:block">
@@ -234,19 +249,41 @@ export function SiteHeader() {
               <Icon name="bag" />
               Mua xe
             </NoriLink>
+            <NoriLink
+              href="/favorites"
+              onClick={() => setMobile(false)}
+              className="flex min-h-control items-center gap-3 px-3"
+            >
+              <Icon name="heart" />
+              Xe yêu thích
+            </NoriLink>
             <NoriLink href="/about" className="px-3 py-4" onClick={() => setMobile(false)}>
               Về NORI
             </NoriLink>
             <NoriLink href="/support" className="px-3 py-4" onClick={() => setMobile(false)}>
               Trung tâm hỗ trợ
             </NoriLink>
+            {user?.isAdmin && (
+              <NoriLink
+                href="/dashboard"
+                onClick={() => setMobile(false)}
+                className="flex min-h-control items-center gap-3 px-3 font-semibold text-brand"
+              >
+                <Icon name="shield" />
+                Quản trị hệ thống
+              </NoriLink>
+            )}
             <ButtonLink
-              href={user ? '/account' : '/login'}
+              href={user ? (user.isAdmin ? '/dashboard' : '/account') : '/login'}
               onClick={() => setMobile(false)}
               variant="secondary"
             >
               <Icon name="user" />
-              {user ? 'Tài khoản của tôi' : 'Đăng nhập / Đăng ký'}
+              {user
+                ? user.isAdmin
+                  ? 'Quản trị hệ thống'
+                  : 'Tài khoản của tôi'
+                : 'Đăng nhập / Đăng ký'}
             </ButtonLink>
           </div>
         </nav>

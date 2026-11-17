@@ -1,7 +1,8 @@
 import Image from 'next/image'
 import type { Metadata } from 'next'
-import { getSiteContent } from '@/lib/catalogue'
-import { ButtonLink, Container, Eyebrow, Heading, Text } from '@/components/ui'
+import { getPublishedPosts, getSiteContent } from '@/lib/catalogue'
+import { formatDate } from '@/lib/rental-rules'
+import { Badge, ButtonLink, Container, Eyebrow, Heading, Text } from '@/components/ui'
 import { Icon } from '@/components/ui/icon'
 import { Benefits, CallToAction, HowItWorks } from '@/components/home/sections'
 
@@ -11,7 +12,7 @@ export const metadata: Metadata = {
     'Không chỉ là một chiếc xe. NORI hướng tới trải nghiệm lựa chọn và đặt xe minh bạch, dễ dàng.',
 }
 export default async function AboutPage() {
-  const site = await getSiteContent()
+  const [site, posts] = await Promise.all([getSiteContent(), getPublishedPosts()])
   const image = site.heroImages[0]?.image
   return (
     <main id="main-content">
@@ -57,19 +58,25 @@ export default async function AboutPage() {
             </Heading>
           </div>
           <div className="space-y-5 leading-loose text-muted">
-            <Text>
-              Đôi khi, bạn chỉ cần một chiếc xe để về nhà. Đôi khi, một cung đường mới lại mở ra
-              những điều rất khác. NORI được xây dựng để việc lựa chọn phương tiện không trở thành
-              rào cản của hành trình.
-            </Text>
-            <Text>
-              Thuê xe cho một chuyến đi, hay tìm hiểu chiếc xe sẽ gắn bó dài lâu — thông tin rõ ràng
-              và những bước thao tác đơn giản luôn là điểm bắt đầu.
-            </Text>
-            <Text>
-              Catalogue và phương tiện thực tế được phân biệt rõ. Giá, ODO và lịch khả dụng chỉ được
-              công bố khi có dữ liệu, để bạn biết chính xác mình đang lựa chọn điều gì.
-            </Text>
+            {site.aboutSummary ? (
+              <Text className="whitespace-pre-line">{site.aboutSummary}</Text>
+            ) : (
+              <>
+                <Text>
+                  Đôi khi, bạn chỉ cần một chiếc xe để về nhà. Đôi khi, một cung đường mới lại mở ra
+                  những điều rất khác. NORI được xây dựng để việc lựa chọn phương tiện không trở
+                  thành rào cản của hành trình.
+                </Text>
+                <Text>
+                  Thuê xe cho một chuyến đi, hay tìm hiểu chiếc xe sẽ gắn bó dài lâu — thông tin rõ
+                  ràng và những bước thao tác đơn giản luôn là điểm bắt đầu.
+                </Text>
+                <Text>
+                  Catalogue và phương tiện thực tế được phân biệt rõ. Giá, ODO và lịch khả dụng chỉ
+                  được công bố khi có dữ liệu, để bạn biết chính xác mình đang lựa chọn điều gì.
+                </Text>
+              </>
+            )}
           </div>
         </section>
         <div className="grid gap-5 sm:grid-cols-3">
@@ -100,6 +107,37 @@ export default async function AboutPage() {
           ))}
         </div>
         <HowItWorks />
+        {posts.length > 0 && (
+          <section className="py-12">
+            <Eyebrow>TIN TỨC & CẨM NANG</Eyebrow>
+            <Heading className="mb-6">Bài viết mới từ NORI</Heading>
+            <div className="grid gap-5 md:grid-cols-3">
+              {posts.slice(0, 6).map((post) => (
+                <article
+                  key={post.id}
+                  className="flex flex-col justify-between rounded-card border border-line bg-canvas p-5"
+                >
+                  <div>
+                    <Badge tone="brand" className="mb-3">
+                      {post.category === 'GUIDE'
+                        ? 'Cẩm nang'
+                        : post.category === 'PROMOTION'
+                          ? 'Ưu đãi'
+                          : 'Tin tức'}
+                    </Badge>
+                    <Heading as="h3" size="subtitle" className="mb-2">
+                      {post.title}
+                    </Heading>
+                    {post.excerpt && <Text className="text-small text-muted">{post.excerpt}</Text>}
+                  </div>
+                  <Text className="mt-4 text-caption text-muted">
+                    Xuất bản: {formatDate(post.publishedAt)}
+                  </Text>
+                </article>
+              ))}
+            </div>
+          </section>
+        )}
       </Container>
       <CallToAction />
     </main>

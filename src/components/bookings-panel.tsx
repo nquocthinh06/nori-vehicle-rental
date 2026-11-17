@@ -105,8 +105,11 @@ export function BookingsPanel() {
         >
           <option value="">Tất cả trạng thái</option>
           <option value="PENDING">Chờ xác nhận</option>
+          <option value="DEPOSIT_PENDING">Chờ đặt cọc</option>
           <option value="CONFIRMED">Đã xác nhận</option>
+          <option value="READY_FOR_HANDOVER">Chờ giao xe</option>
           <option value="ONGOING">Đang thuê</option>
+          <option value="INSPECTING">Chờ kiểm tra & quyết toán</option>
           <option value="COMPLETED">Hoàn thành</option>
           <option value="CANCELLED">Đã hủy</option>
           <option value="REJECTED">Đã từ chối</option>
@@ -144,33 +147,70 @@ export function BookingsPanel() {
                   <Heading as="h2" size="subtitle">
                     {booking.modelName}
                   </Heading>
-                  <Text className="mt-1 text-caption text-muted">{booking.reference}</Text>
+                  <Text className="mt-1 text-caption text-muted">
+                    Xe {booking.reference}
+                    {booking.pickupLocation ? ` · ${booking.pickupLocation}` : ''}
+                  </Text>
                 </div>
                 <StatusBadge status={booking.status} />
               </div>
-              <div className="mt-6 grid gap-5 rounded-control bg-subtle p-4 sm:grid-cols-3">
+              <div className="mt-6 grid gap-5 rounded-control bg-subtle p-4 sm:grid-cols-4">
                 <div>
                   <Text className="mb-1 text-caption text-muted">Nhận xe</Text>
-                  <Text className="text-small font-medium">{formatDate(booking.startDate)}</Text>
+                  <Text className="text-small font-medium">
+                    {formatDate(booking.startDate)} · {booking.pickupTime}
+                  </Text>
                 </div>
                 <div>
                   <Text className="mb-1 text-caption text-muted">
-                    Trả xe · {booking.totalDays} ngày thuê
+                    Trả xe · {booking.totalDays} ngày
                   </Text>
-                  <Text className="text-small font-medium">{formatDate(booking.endDate)}</Text>
+                  <Text className="text-small font-medium">
+                    {formatDate(booking.endDate)} · {booking.returnTime}
+                  </Text>
                 </div>
                 <div>
-                  <Text className="mb-1 text-caption text-muted">Tổng dự kiến</Text>
+                  <Text className="mb-1 text-caption text-muted">Tổng tiền thuê dự kiến</Text>
                   <Text className="text-small font-semibold text-brand">
                     {formatMoney(booking.totalPrice)}
                   </Text>
                 </div>
+                <div>
+                  <Text className="mb-1 text-caption text-muted">Đặt cọc tách riêng</Text>
+                  <Text className="text-small font-medium">
+                    {booking.depositSnapshot > 0
+                      ? formatMoney(booking.depositSnapshot)
+                      : 'Theo xác nhận'}
+                  </Text>
+                </div>
               </div>
+              {(booking.weekendSurchargeTotal > 0 ||
+                booking.deliveryFeeSnapshot > 0 ||
+                booking.addonFeeTotal > 0 ||
+                booking.discountAmount > 0) && (
+                <div className="mt-3 flex flex-wrap gap-4 text-micro text-muted">
+                  <span>Cơ bản: {formatMoney(booking.baseRentPrice)}</span>
+                  {booking.weekendSurchargeTotal > 0 && (
+                    <span>Phụ phí cuối tuần: +{formatMoney(booking.weekendSurchargeTotal)}</span>
+                  )}
+                  {booking.deliveryFeeSnapshot > 0 && (
+                    <span>Giao xe: +{formatMoney(booking.deliveryFeeSnapshot)}</span>
+                  )}
+                  {booking.addonFeeTotal > 0 && (
+                    <span>Dịch vụ thêm: +{formatMoney(booking.addonFeeTotal)}</span>
+                  )}
+                  {booking.discountAmount > 0 && (
+                    <span className="text-brand">
+                      Giảm dài ngày: -{formatMoney(booking.discountAmount)}
+                    </span>
+                  )}
+                </div>
+              )}
               <div className="mt-4 flex flex-wrap items-center justify-between gap-4">
                 <Text className="text-micro text-muted">
                   Thanh toán ngoài hệ thống. Trạng thái đơn không xác nhận đã thanh toán.
                 </Text>
-                {booking.status === 'PENDING' && (
+                {['PENDING', 'DEPOSIT_PENDING'].includes(booking.status) && (
                   <Button
                     variant="danger"
                     onClick={() => {

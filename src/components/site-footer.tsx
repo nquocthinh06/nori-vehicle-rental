@@ -4,6 +4,7 @@ import { Icon } from './ui/icon'
 import type { SiteContent } from '@/lib/catalogue'
 
 export function SiteFooter({ site }: { site: SiteContent }) {
+  const isDemoContact = Boolean(site.address?.includes('DEMO'))
   return (
     <footer className="bg-night text-inverse">
       <Container>
@@ -75,7 +76,10 @@ export function SiteFooter({ site }: { site: SiteContent }) {
                   className="flex items-center gap-2.5 no-underline"
                 >
                   <Icon name="phone" className="size-4" />
-                  {site.phone}
+                  <span>
+                    {site.phone}
+                    {isDemoContact ? ' (DEMO)' : ''}
+                  </span>
                 </ExternalLink>
               ) : (
                 <Text className="flex items-center gap-2.5">
@@ -89,7 +93,10 @@ export function SiteFooter({ site }: { site: SiteContent }) {
                   className="flex items-center gap-2.5 break-all no-underline"
                 >
                   <Icon name="mail" className="size-4" />
-                  {site.email}
+                  <span>
+                    {site.email}
+                    {isDemoContact ? ' (DEMO)' : ''}
+                  </span>
                 </ExternalLink>
               )}
               <NoriLink
@@ -109,9 +116,6 @@ export function SiteFooter({ site }: { site: SiteContent }) {
             </NoriLink>
             <NoriLink href="/support#conditions" className="hover:text-inverse">
               Điều khoản sử dụng
-            </NoriLink>
-            <NoriLink href="/dashboard" className="hover:text-inverse">
-              Quản trị
             </NoriLink>
           </div>
         </div>

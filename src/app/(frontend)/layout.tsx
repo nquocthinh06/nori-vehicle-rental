@@ -1,10 +1,14 @@
 import React from 'react'
-import type { Metadata } from 'next'
+import type { Metadata, Viewport } from 'next'
 import Script from 'next/script'
 import { BodyCustomCode, renderHeadCustomCode } from '@/lib/make-custom-code'
 import { makeSiteSettings, sanitizeHtmlAttribute } from '@/lib/make-site-settings'
 import './styles.css'
 import { AuthProvider } from '@/components/auth-provider'
+import { FavoritesProvider } from '@/components/favorites-provider'
+import { ConditionalFooter } from '@/components/conditional-footer'
+import { MobileBottomNav } from '@/components/mobile-bottom-nav'
+import { PwaManager } from '@/components/pwa-manager'
 import { SiteHeader } from '@/components/site-header'
 import { SiteFooter } from '@/components/site-footer'
 import { getSiteContent } from '@/lib/catalogue'
@@ -19,12 +23,32 @@ const favicon = makeSiteSettings.icons?.icon ?? '/nori-mark.svg'
 const socialImage = makeSiteSettings.openGraph?.image
 const googleAnalyticsId = sanitizeHtmlAttribute(makeSiteSettings.analytics?.googleAnalyticsId)
 
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  viewportFit: 'cover',
+  themeColor: '#087568',
+}
+
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'),
   title,
   description,
+  manifest: '/manifest.webmanifest',
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'default',
+    title: 'NORI',
+  },
   robots: makeSiteSettings.robots?.index === false ? { follow: false, index: false } : undefined,
-  icons: favicon ? { icon: favicon } : undefined,
+  icons: favicon
+    ? {
+        icon: favicon,
+        apple: '/icons/apple-touch-icon.png',
+      }
+    : {
+        apple: '/icons/apple-touch-icon.png',
+      },
   openGraph: {
     title,
     description,
@@ -56,9 +80,23 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         </ExternalLink>
         <div id="root" tabIndex={-1}>
           <AuthProvider>
-            <SiteHeader />
-            {children}
-            <SiteFooter site={site} />
+            <FavoritesProvider>
+              <PwaManager />
+              {site.maintenanceBannerEnabled && site.maintenanceBannerText && (
+                <div
+                  role="status"
+                  className="bg-warning-soft px-4 py-2 text-center text-caption font-medium text-warning"
+                >
+                  {site.maintenanceBannerText}
+                </div>
+              )}
+              <SiteHeader />
+              {children}
+              <ConditionalFooter>
+                <SiteFooter site={site} />
+              </ConditionalFooter>
+              <MobileBottomNav />
+            </FavoritesProvider>
           </AuthProvider>
         </div>
         {googleAnalyticsId && (

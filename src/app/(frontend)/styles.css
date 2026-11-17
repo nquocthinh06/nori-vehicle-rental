@@ -146,6 +146,13 @@
   input[type='date'] {
     min-width: 0;
   }
+  @media (max-width: 767px) {
+    input,
+    select,
+    textarea {
+      font-size: max(1rem, 16px);
+    }
+  }
   input[type='date']::-webkit-calendar-picker-indicator {
     opacity: 0.55;
     cursor: pointer;

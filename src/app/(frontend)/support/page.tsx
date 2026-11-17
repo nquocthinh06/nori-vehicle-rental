@@ -40,7 +40,7 @@ const questions = [
   {
     title: 'Tôi có thể hủy đơn thuê không?',
     answer:
-      'Bạn có thể tự hủy đơn của mình khi đơn còn “Chờ xác nhận”. Sau khi được xác nhận hoặc đang thuê, bạn cần trao đổi với NORI để được xử lý phù hợp. Đơn đã hoàn thành, từ chối hoặc hủy không được mở lại.',
+      'Bạn có thể tự hủy đơn của mình khi đơn còn “Chờ xác nhận” hoặc “Chờ đặt cọc” (hệ thống tự động giải phóng lịch xe). Sau khi đơn đã được xác nhận hoặc đang thuê, vui lòng liên hệ NORI trước giờ nhận tối thiểu 24 giờ để được hỗ trợ phù hợp. Đơn đã hoàn thành, từ chối hoặc hủy không được mở lại.',
   },
   {
     title: 'NORI có thu tiền hoặc tiền cọc trên website không?',
@@ -61,6 +61,21 @@ const questions = [
 
 export default async function SupportPage() {
   const site = await getSiteContent()
+  const isDemoContact = Boolean(site.address?.includes('DEMO'))
+  const policyHighlights = [
+    { label: 'Chính sách thuê xe', value: site.rentalPolicySummary },
+    { label: 'Chính sách mua xe', value: site.purchasePolicySummary },
+    { label: 'Độ tuổi người lái', value: site.ageRequirement },
+    { label: 'Giấy tờ bắt buộc', value: site.licenseRequirement },
+    { label: 'Chính sách hủy & đổi lịch', value: site.cancellationPolicy },
+    { label: 'Tiền đặt cọc & hoàn trả', value: site.depositPolicy },
+    { label: 'Chính sách bảo mật', value: site.privacyPolicy },
+    { label: 'Điều khoản sử dụng', value: site.termsOfUse },
+  ].filter((item): item is { label: string; value: string } => Boolean(item.value))
+  const faqItems =
+    site.faqs.length > 0
+      ? site.faqs.map((f) => ({ title: f.question, answer: f.answer }))
+      : questions
   return (
     <main id="main-content" className="border-t border-line pb-16">
       <div className="bg-soft">
@@ -85,6 +100,7 @@ export default async function SupportPage() {
                 {site.phone ? (
                   <ExternalLink href={`tel:${site.phone}`} className="font-semibold no-underline">
                     {site.phone}
+                    {isDemoContact ? ' (DEMO)' : ''}
                   </ExternalLink>
                 ) : (
                   <Text className="font-medium">Chưa cập nhật</Text>
@@ -98,6 +114,7 @@ export default async function SupportPage() {
                     className="break-all font-semibold no-underline"
                   >
                     {site.email}
+                    {isDemoContact ? ' (DEMO)' : ''}
                   </ExternalLink>
                 ) : (
                   <Text className="font-medium">Chưa cập nhật</Text>
@@ -111,6 +128,12 @@ export default async function SupportPage() {
                 <Text className="mb-1 text-caption text-muted">Giờ làm việc</Text>
                 <Text className="font-medium">{site.openingHours || 'Chưa cập nhật'}</Text>
               </div>
+              {site.contactNote && (
+                <div className="border-t border-line pt-4">
+                  <Text className="mb-1 text-caption text-muted">Lưu ý liên hệ</Text>
+                  <Text className="text-small text-muted">{site.contactNote}</Text>
+                </div>
+              )}
             </div>
           </section>
           <div className="rounded-card bg-subtle p-6">
@@ -131,7 +154,7 @@ export default async function SupportPage() {
               Câu hỏi thường gặp
             </Heading>
             <div className="divide-y divide-line border-y border-line">
-              {questions.map((q, i) => (
+              {faqItems.map((q, i) => (
                 <details key={q.title} className="group" open={i === 0}>
                   <summary className="flex min-h-control items-center justify-between gap-5 py-5 text-small font-medium">
                     {q.title}
@@ -164,8 +187,9 @@ export default async function SupportPage() {
                 lại lịch và giá khi tạo đơn; nếu có xung đột, đơn không được tạo.
               </Text>
               <Text>
-                4. Đơn “Chờ xác nhận” giữ lịch đến khi được xử lý hoặc hủy. Đơn không tự hết hạn.
-                Khách chỉ tự hủy được đơn đang chờ xác nhận.
+                4. Đơn “Chờ xác nhận” và “Chờ đặt cọc” giữ lịch đến khi được xử lý hoặc hủy. Khách
+                hàng có thể tự hủy miễn phí ở cả hai trạng thái này trong mục “Đơn thuê của tôi” để
+                giải phóng lịch xe ngay lập tức.
               </Text>
               <Text>
                 5. Không có cổng thanh toán trực tuyến trong phiên bản này. Thông tin giấy tờ, nhận
@@ -176,6 +200,16 @@ export default async function SupportPage() {
                 về tồn kho, phiên bản hay giá. Luôn kiểm tra thông tin của chiếc xe thực tế.
               </Text>
             </div>
+            {policyHighlights.length > 0 && (
+              <dl className="mt-6 grid gap-4 rounded-card border border-line bg-subtle p-6 sm:grid-cols-2">
+                {policyHighlights.map((item) => (
+                  <div key={item.label} className="space-y-1">
+                    <dt className="text-caption font-semibold text-ink">{item.label}</dt>
+                    <dd className="text-small leading-relaxed text-muted">{item.value}</dd>
+                  </div>
+                ))}
+              </dl>
+            )}
           </section>
           <section id="privacy" className="pt-12">
             <Eyebrow>QUYỀN RIÊNG TƯ</Eyebrow>

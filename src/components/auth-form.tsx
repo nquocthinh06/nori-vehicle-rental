@@ -3,7 +3,7 @@
 import { useState, type FormEvent } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { api, RequestError } from '@/lib/client-api'
-import { useAuth } from './auth-provider'
+import { useAuth, type AppUser } from './auth-provider'
 import {
   Button,
   ButtonLink,
@@ -26,11 +26,15 @@ export function AuthForm({ mode }: { mode: 'login' | 'register' }) {
   const [visible, setVisible] = useState(false)
   const [error, setError] = useState('')
   const [fields, setFields] = useState<Record<string, string>>({})
-  const target = params.get('returnTo') ?? '/account'
-  const returnTo =
-    target.startsWith('/') && !target.startsWith('//') && !target.includes('\\')
-      ? target
-      : '/account'
+  const rawTarget = params.get('returnTo')
+  const safeTarget =
+    rawTarget &&
+    rawTarget.startsWith('/') &&
+    !rawTarget.startsWith('//') &&
+    !rawTarget.includes('\\')
+      ? rawTarget
+      : null
+  const returnTo = safeTarget ?? '/account'
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -39,14 +43,15 @@ export function AuthForm({ mode }: { mode: 'login' | 'register' }) {
     setError('')
     setFields({})
     try {
-      await api(`/auth/${mode}`, {
+      const signedIn = await api<AppUser>(`/auth/${mode}`, {
         method: 'POST',
         body: JSON.stringify(
           Object.fromEntries([...data.entries()].filter(([key]) => key !== 'terms')),
         ),
       })
       await refresh()
-      router.push(returnTo)
+      const destination = !register && signedIn?.isAdmin ? (safeTarget ?? '/dashboard') : returnTo
+      router.push(destination)
       router.refresh()
     } catch (e) {
       setError((e as Error).message)
@@ -56,18 +61,25 @@ export function AuthForm({ mode }: { mode: 'login' | 'register' }) {
     }
   }
 
-  if (user)
+  if (user) {
+    const alreadyTarget = user.isAdmin ? (safeTarget ?? '/dashboard') : returnTo
     return (
       <div className="py-8">
         <Heading as="h1" size="section">
           Chào {user.fullName}.
         </Heading>
-        <Text className="mb-7 mt-4 text-muted">Bạn đã đăng nhập tài khoản NORI.</Text>
-        <ButtonLink href={returnTo} className="w-full">
-          Tiếp tục hành trình <Icon name="arrow-right" className="size-4" />
+        <Text className="mb-7 mt-4 text-muted">
+          {user.isAdmin
+            ? `Bạn đang đăng nhập với quyền quản trị (${user.email}).`
+            : 'Bạn đã đăng nhập tài khoản NORI.'}
+        </Text>
+        <ButtonLink href={alreadyTarget} className="w-full">
+          {user.isAdmin ? 'Đi tới Quản trị hệ thống' : 'Tiếp tục hành trình'}{' '}
+          <Icon name="arrow-right" className="size-4" />
         </ButtonLink>
       </div>
     )
+  }
 
   return (
     <div>

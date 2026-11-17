@@ -6,10 +6,11 @@ import { addDays, businessToday, validateRentalDates } from '@/lib/rental-rules'
 import { Button, Notice, Select, Input, Text, TabButton } from './ui'
 import { Icon } from './ui/icon'
 
-export function SearchBar() {
+export function SearchBar({ locations = [] }: { locations?: string[] }) {
   const router = useRouter()
   const [intent, setIntent] = useState<'rent' | 'buy'>('rent')
   const [type, setType] = useState('')
+  const [location, setLocation] = useState('')
   const [start, setStart] = useState('')
   const [end, setEnd] = useState('')
   const [error, setError] = useState('')
@@ -27,6 +28,7 @@ export function SearchBar() {
     setError('')
     const params = new URLSearchParams({ intent })
     if (type) params.set('type', type)
+    if (location) params.set('location', location)
     if (intent === 'rent' && start && end) {
       params.set('startDate', start)
       params.set('endDate', end)
@@ -37,7 +39,7 @@ export function SearchBar() {
     <div
       role="search"
       aria-label="Tìm phương tiện"
-      className="relative z-10 -mt-19 rounded-panel border border-line bg-canvas p-5 shadow-float md:p-7"
+      className="relative z-10 -mt-12 rounded-panel border border-line bg-canvas p-4 shadow-float sm:p-5 md:-mt-19 md:p-7"
     >
       <div className="mb-6 flex items-center justify-between gap-4 border-b border-line">
         <div role="tablist" aria-label="Dịch vụ" className="flex flex-1 gap-5 sm:flex-none">
@@ -79,19 +81,35 @@ export function SearchBar() {
         id="search-service-panel"
         role="tabpanel"
         aria-labelledby={`search-tab-${intent}`}
-        className="grid items-end gap-4 md:grid-cols-4"
+        className={
+          intent === 'rent'
+            ? 'grid items-end gap-3.5 md:grid-cols-2 lg:grid-cols-5'
+            : 'grid items-end gap-3.5 md:grid-cols-4'
+        }
       >
         <Select
           id="hero-type"
           label="Loại phương tiện"
           value={type}
           onChange={(e) => setType(e.target.value)}
-          wrapperClassName={intent === 'buy' ? 'md:col-span-2' : ''}
         >
           <option value="">Tất cả phương tiện</option>
           <option value="CAR">Ô tô</option>
           <option value="MOTORBIKE">Xe máy</option>
           <option value="PICKUP">Bán tải</option>
+        </Select>
+        <Select
+          id="hero-location"
+          label="Khu vực"
+          value={location}
+          onChange={(e) => setLocation(e.target.value)}
+        >
+          <option value="">Tất cả khu vực</option>
+          {locations.map((loc) => (
+            <option key={loc} value={loc}>
+              {loc}
+            </option>
+          ))}
         </Select>
         {intent === 'rent' ? (
           <>

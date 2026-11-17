@@ -2,7 +2,16 @@
 
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react'
 
-export type AppUser = { id: string; fullName: string; email: string; phone?: string | null }
+export type AppUser = {
+  id: string
+  fullName: string
+  email: string
+  phone?: string | null
+  role?: 'CUSTOMER' | 'ADMIN'
+  adminRole?: 'SUPER_ADMIN' | 'OPERATOR'
+  permissions?: Record<string, string[]>
+  isAdmin?: boolean
+}
 type AuthState = {
   user: AppUser | null
   loading: boolean
@@ -36,6 +45,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = useCallback(async () => {
     const response = await fetch('/nori-api/auth/logout', { method: 'POST' })
     if (!response.ok) throw new Error('Chưa thể đăng xuất. Vui lòng thử lại.')
+    if (typeof window !== 'undefined') {
+      try {
+        for (let i = window.sessionStorage.length - 1; i >= 0; i--) {
+          const key = window.sessionStorage.key(i)
+          if (key && key.startsWith('nori_checkout_draft')) {
+            window.sessionStorage.removeItem(key)
+          }
+        }
+      } catch {
+        // ignore storage errors
+      }
+    }
     setUser(null)
   }, [])
   return (

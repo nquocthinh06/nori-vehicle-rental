@@ -38,7 +38,7 @@ export function Hero({ images }: { images: SiteContent['heroImages'] }) {
     <section
       aria-roledescription="băng chuyền"
       aria-label="Cảm hứng hành trình NORI"
-      className="relative min-h-hero-mobile overflow-hidden bg-night md:h-hero"
+      className="relative min-h-[23rem] overflow-hidden bg-night md:h-hero md:min-h-0"
     >
       {image && (
         <Image
@@ -53,9 +53,9 @@ export function Hero({ images }: { images: SiteContent['heroImages'] }) {
       )}
       <div className="absolute inset-0 bg-night/70 md:bg-transparent" />
       <div className="hero-shade absolute inset-0" />
-      <Container className="relative flex min-h-hero-mobile flex-col justify-center pb-40 pt-12 text-inverse md:h-full md:min-h-0 md:pb-24 md:pt-8">
+      <Container className="relative flex min-h-[23rem] flex-col justify-center pb-28 pt-8 text-inverse md:h-full md:min-h-0 md:pb-24 md:pt-8">
         <div key={active} className="max-w-hero-copy animate-enter">
-          <Text className="mb-4 flex items-center gap-3 text-micro font-medium tracking-widest text-inverse/90 md:mb-6 md:text-caption">
+          <Text className="mb-2.5 flex items-center gap-3 text-micro font-medium tracking-widest text-inverse/90 md:mb-6 md:text-caption">
             <span className="h-px w-7 bg-brand-bright" />
             {slide.eyebrow}
           </Text>
@@ -64,23 +64,26 @@ export function Hero({ images }: { images: SiteContent['heroImages'] }) {
             <br />
             <span className="text-brand-bright">{slide.second}</span>
           </Heading>
-          <Text className="mt-5 max-w-reading whitespace-pre-line text-small leading-loose text-inverse/85 md:mt-6 md:text-body">
+          <Text className="mt-3 hidden max-w-reading whitespace-pre-line text-small leading-loose text-inverse/85 sm:block md:mt-6 md:text-body">
             {slide.description}
           </Text>
-          <div className="mt-6 flex flex-wrap gap-3 md:mt-8">
-            <ButtonLink href="/vehicles" className="gap-5 px-6 focus-visible:outline-inverse">
+          <div className="mt-5 flex flex-wrap gap-3 md:mt-8">
+            <ButtonLink
+              href="/vehicles"
+              className="gap-4 px-5 focus-visible:outline-inverse md:gap-5 md:px-6"
+            >
               Khám phá xe <Icon name="arrow-up-right" className="size-4" />
             </ButtonLink>
             <ButtonLink
               variant="inverse"
               href="/about#how-it-works"
-              className="px-5 text-small focus-visible:outline-inverse"
+              className="hidden px-5 text-small focus-visible:outline-inverse sm:inline-flex"
             >
               Cách NORI hoạt động <Icon name="arrow-right" className="size-4" />
             </ButtonLink>
           </div>
         </div>
-        <div className="absolute inset-x-5 bottom-24 flex items-center justify-between md:inset-x-8 md:bottom-28 xl:inset-x-page">
+        <div className="absolute inset-x-5 bottom-16 flex items-center justify-between md:inset-x-8 md:bottom-28 xl:inset-x-page">
           <div className="hidden items-center gap-2 text-micro text-inverse/75 md:flex">
             <Icon name="pin" className="size-3.5" />
             Không chỉ là điểm đến. Là cả hành trình.

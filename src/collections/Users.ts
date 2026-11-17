@@ -1,6 +1,16 @@
 import type { CollectionConfig } from 'payload'
 import { APIError } from 'payload'
-import { isAdmin, adminField, ownAccount } from '@/access/nori'
+import { adminField, ownAccount } from '@/access/nori'
+import { auditCollection } from '@/hooks/audit-nori'
+
+const userAudit = auditCollection({
+  entity: 'user',
+  entityName: 'tài khoản khách hàng',
+  label: (doc) => String(doc.email ?? doc.fullName ?? doc.id),
+  statusField: 'status',
+  statusLabels: { ACTIVE: 'Hoạt động', DISABLED: 'Tạm khóa' },
+  logCreate: false,
+})
 
 export const Users: CollectionConfig = {
   slug: 'users',
@@ -55,6 +65,7 @@ export const Users: CollectionConfig = {
           )
       },
     ],
+    afterChange: [userAudit.afterChange],
   },
   fields: [
     {
@@ -89,6 +100,38 @@ export const Users: CollectionConfig = {
       defaultValue: 'ACTIVE',
       required: true,
       saveToJWT: true,
+      access: { create: adminField, update: adminField },
+    },
+    {
+      name: 'driverLicenseNumber',
+      label: 'Số giấy phép lái xe',
+      type: 'text',
+      maxLength: 40,
+    },
+    {
+      name: 'idCardNumber',
+      label: 'Số CCCD / Hộ chiếu',
+      type: 'text',
+      maxLength: 40,
+    },
+    {
+      name: 'verificationStatus',
+      label: 'Trạng thái xác minh giấy tờ',
+      type: 'select',
+      options: [
+        { label: 'Chưa xác minh', value: 'UNVERIFIED' },
+        { label: 'Chờ duyệt', value: 'PENDING' },
+        { label: 'Đã xác minh', value: 'VERIFIED' },
+        { label: 'Từ chối', value: 'REJECTED' },
+      ],
+      defaultValue: 'UNVERIFIED',
+      access: { create: adminField, update: adminField },
+    },
+    {
+      name: 'verificationNote',
+      label: 'Ghi chú xác minh giấy tờ (Admin)',
+      type: 'text',
+      maxLength: 300,
       access: { create: adminField, update: adminField },
     },
   ],

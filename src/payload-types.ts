@@ -158,15 +158,21 @@ export interface Config {
   blocks: {};
   collections: {
     admins: Admin;
+    'audit-logs': AuditLog;
     media: Media;
     folders: Folder;
     tags: Tag;
     users: User;
     'vehicle-models': VehicleModel;
     vehicles: Vehicle;
+    'maintenance-schedules': MaintenanceSchedule;
     'rental-days': RentalDay;
     bookings: Booking;
     'sales-inquiries': SalesInquiry;
+    promotions: Promotion;
+    payments: Payment;
+    reviews: Review;
+    posts: Post;
     'payload-kv': PayloadKv;
     'payload-locked-documents': PayloadLockedDocument;
     'payload-preferences': PayloadPreference;
@@ -176,15 +182,21 @@ export interface Config {
   collectionsJoins: {};
   collectionsSelect: {
     admins: AdminsSelect<false> | AdminsSelect<true>;
+    'audit-logs': AuditLogsSelect<false> | AuditLogsSelect<true>;
     media: MediaSelect<false> | MediaSelect<true>;
     folders: FoldersSelect<false> | FoldersSelect<true>;
     tags: TagsSelect<false> | TagsSelect<true>;
     users: UsersSelect<false> | UsersSelect<true>;
     'vehicle-models': VehicleModelsSelect<false> | VehicleModelsSelect<true>;
     vehicles: VehiclesSelect<false> | VehiclesSelect<true>;
+    'maintenance-schedules': MaintenanceSchedulesSelect<false> | MaintenanceSchedulesSelect<true>;
     'rental-days': RentalDaysSelect<false> | RentalDaysSelect<true>;
     bookings: BookingsSelect<false> | BookingsSelect<true>;
     'sales-inquiries': SalesInquiriesSelect<false> | SalesInquiriesSelect<true>;
+    promotions: PromotionsSelect<false> | PromotionsSelect<true>;
+    payments: PaymentsSelect<false> | PaymentsSelect<true>;
+    reviews: ReviewsSelect<false> | ReviewsSelect<true>;
+    posts: PostsSelect<false> | PostsSelect<true>;
     'payload-kv': PayloadKvSelect<false> | PayloadKvSelect<true>;
     'payload-locked-documents': PayloadLockedDocumentsSelect<false> | PayloadLockedDocumentsSelect<true>;
     'payload-preferences': PayloadPreferencesSelect<false> | PayloadPreferencesSelect<true>;
@@ -257,11 +269,17 @@ export interface UserAuthOperations {
  */
 export interface Admin {
   id: string;
-  figmaHandle?: string | null;
-  figmaImageUrl?: string | null;
-  userGroups?: string[] | null;
-  makePermission?: ('view' | 'edit') | null;
-  email?: string | null;
+  fullName?: string | null;
+  adminRole?: ('SUPER_ADMIN' | 'OPERATOR') | null;
+  permissions?:
+    | {
+        [k: string]: unknown;
+      }
+    | unknown[]
+    | string
+    | number
+    | boolean
+    | null;
   createdBy?:
     | ({
         relationTo: 'admins';
@@ -282,6 +300,24 @@ export interface Admin {
       } | null);
   updatedAt: string;
   createdAt: string;
+  email: string;
+  resetPasswordToken?: string | null;
+  resetPasswordExpiration?: string | null;
+  salt?: string | null;
+  hash?: string | null;
+  resetPasswordRequestedAt?: string | null;
+  loginAttempts?: number | null;
+  lockUntil?: string | null;
+  sessions?:
+    | {
+        id: string;
+        createdAt?: string | null;
+        expiresAt: string;
+        refreshCount?: number | null;
+        refreshedAt?: string | null;
+      }[]
+    | null;
+  password?: string | null;
   collection: 'admins';
 }
 /**
@@ -294,6 +330,10 @@ export interface User {
   phone?: string | null;
   role: 'CUSTOMER';
   status: 'ACTIVE' | 'DISABLED';
+  driverLicenseNumber?: string | null;
+  idCardNumber?: string | null;
+  verificationStatus?: ('UNVERIFIED' | 'PENDING' | 'VERIFIED' | 'REJECTED') | null;
+  verificationNote?: string | null;
   createdBy?:
     | ({
         relationTo: 'admins';
@@ -336,15 +376,58 @@ export interface User {
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "audit-logs".
+ */
+export interface AuditLog {
+  id: string;
+  action: string;
+  entity: string;
+  entityId?: string | null;
+  entityLabel?: string | null;
+  summary: string;
+  fromStatus?: string | null;
+  toStatus?: string | null;
+  actorType?: ('ADMIN' | 'CUSTOMER' | 'SYSTEM') | null;
+  actorId?: string | null;
+  actorEmail?: string | null;
+  createdBy?:
+    | ({
+        relationTo: 'admins';
+        value: string | Admin;
+      } | null)
+    | ({
+        relationTo: 'users';
+        value: string | User;
+      } | null);
+  updatedBy?:
+    | ({
+        relationTo: 'admins';
+        value: string | Admin;
+      } | null)
+    | ({
+        relationTo: 'users';
+        value: string | User;
+      } | null);
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "media".
  */
 export interface Media {
   id: string;
   alt: string;
+  sourceUrl?: string | null;
+  sourceName?: string | null;
+  license?: string | null;
+  modelYear?: string | null;
+  variantName?: string | null;
+  colorName?: string | null;
+  mediaCategory?: ('CATALOGUE_OFFICIAL' | 'CATALOGUE_REFERENCE' | 'ACTUAL_VEHICLE' | 'ILLUSTRATION') | null;
+  verified?: boolean | null;
   _h_folders?: (string | null) | Folder;
   _h_tags?: (string | Tag)[] | null;
-  prefix?: string | null;
-  _objectKey?: string | null;
   createdBy?:
     | ({
         relationTo: 'admins';
@@ -460,21 +543,75 @@ export interface VehicleModel {
   slug: string;
   brand: string;
   category: 'CAR' | 'MOTORBIKE' | 'PICKUP';
+  subCategory?:
+    | (
+        | 'MANUAL_BIKE'
+        | 'SCOOTER'
+        | 'CLUTCH_BIKE'
+        | 'BIG_BIKE'
+        | 'ELECTRIC_BIKE'
+        | 'HATCHBACK'
+        | 'SEDAN'
+        | 'SUV'
+        | 'CUV'
+        | 'MPV'
+        | 'COUPE'
+        | 'SPORTS'
+        | 'ELECTRIC_CAR'
+        | 'STANDARD_PICKUP'
+        | 'WORK_PICKUP'
+        | 'PREMIUM_PICKUP'
+        | 'PERFORMANCE_PICKUP'
+      )
+    | null;
   bodyStyle?: string | null;
+  segment?: string | null;
+  origin?: string | null;
+  modelYear?: number | null;
+  seats?: number | null;
+  fuelType?: ('Xăng' | 'Dầu (Diesel)' | 'Điện (EV)' | 'Hybrid') | null;
+  transmission?: string | null;
+  driveType?: string | null;
+  listedPrice?: number | null;
+  referenceRentPrice?: number | null;
+  suitableFor?: string | null;
   description?: string | null;
+  exteriorOverview?: string | null;
+  interiorOverview?: string | null;
+  engineOverview?: string | null;
+  highlights?:
+    | {
+        text: string;
+        id?: string | null;
+      }[]
+    | null;
+  features?:
+    | {
+        name: string;
+        category: 'COMFORT' | 'SAFETY' | 'DRIVER_ASSIST' | 'TECHNOLOGY';
+        variantNote?: string | null;
+        id?: string | null;
+      }[]
+    | null;
   cover?: (string | null) | Media;
   gallery?:
     | {
         image: string | Media;
-        kind: 'EXTERIOR' | 'INTERIOR';
+        kind: 'OVERVIEW' | 'EXTERIOR' | 'INTERIOR' | 'ENGINE' | 'FEATURE';
         caption?: string | null;
+        variantName?: string | null;
+        colorName?: string | null;
+        sourceUrl?: string | null;
+        license?: string | null;
         id?: string | null;
       }[]
     | null;
   specifications?:
     | {
+        group?: ('OVERVIEW' | 'ENGINE' | 'DIMENSIONS' | 'CHASSIS' | 'PICKUP' | 'MOTORBIKE' | 'EV') | null;
         label: string;
         value: string;
+        variantName?: string | null;
         source?: string | null;
         id?: string | null;
       }[]
@@ -482,9 +619,19 @@ export interface VehicleModel {
   variants?:
     | {
         name: string;
+        year?: number | null;
+        listedPrice?: number | null;
+        referenceRentPrice?: number | null;
+        fuelType?: string | null;
+        transmission?: string | null;
+        driveType?: string | null;
+        seats?: number | null;
+        summary?: string | null;
         colors?:
           | {
               name: string;
+              hex?: string | null;
+              sourceUrl?: string | null;
               image?: (string | null) | Media;
               id?: string | null;
             }[]
@@ -493,6 +640,7 @@ export interface VehicleModel {
       }[]
     | null;
   source?: string | null;
+  verificationStatus?: ('VERIFIED' | 'UNVERIFIED' | 'DRAFT') | null;
   visible?: boolean | null;
   featured?: boolean | null;
   sortOrder?: number | null;
@@ -527,22 +675,86 @@ export interface Vehicle {
   model: string | VehicleModel;
   licensePlate: string;
   intent: 'RENT' | 'SALE' | 'BOTH';
+  isDemo?: boolean | null;
+  vehicleConditionType?: ('NEW' | 'USED') | null;
+  manufactureYear?: number | null;
   pricePerDay?: number | null;
+  pricePerHour?: number | null;
+  pricePerWeek?: number | null;
+  pricePerMonth?: number | null;
+  weekendSurcharge?: number | null;
+  holidaySurcharge?: number | null;
+  depositAmount?: number | null;
+  deliveryFee?: number | null;
+  kmLimitPerDay?: number | null;
+  overKmFee?: number | null;
+  lateReturnFeePerHour?: number | null;
+  bufferHours?: number | null;
   salePrice?: number | null;
+  listedPrice?: number | null;
+  discountPrice?: number | null;
+  reservationDeposit?: number | null;
+  estimatedRollingPrice?: number | null;
+  negotiable?: boolean | null;
+  warrantyPolicy?: string | null;
+  priceSourceNote?: string | null;
   odometer?: number | null;
   condition?: string | null;
+  exteriorCondition?: string | null;
+  interiorCondition?: string | null;
+  engineCondition?: string | null;
+  maintenanceHistory?: string | null;
   inspectedAt?: string | null;
   version?: string | null;
   color?: string | null;
+  location?: string | null;
+  pickupLocation?: string | null;
+  operationStatus?: ('READY' | 'RENTED' | 'RESERVED' | 'MAINTENANCE' | 'SOLD' | 'INACTIVE') | null;
   photos?:
     | {
         image: string | Media;
         caption?: string | null;
-        kind?: ('EXTERIOR' | 'INTERIOR') | null;
+        kind?: ('EXTERIOR' | 'INTERIOR' | 'ENGINE' | 'ACTUAL') | null;
         id?: string | null;
       }[]
     | null;
   status: 'ACTIVE' | 'INACTIVE';
+  createdBy?:
+    | ({
+        relationTo: 'admins';
+        value: string | Admin;
+      } | null)
+    | ({
+        relationTo: 'users';
+        value: string | User;
+      } | null);
+  updatedBy?:
+    | ({
+        relationTo: 'admins';
+        value: string | Admin;
+      } | null)
+    | ({
+        relationTo: 'users';
+        value: string | User;
+      } | null);
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "maintenance-schedules".
+ */
+export interface MaintenanceSchedule {
+  id: string;
+  vehicle: string | Vehicle;
+  title: string;
+  maintenanceType: 'ROUTINE' | 'REPAIR' | 'INSPECTION';
+  startDate: string;
+  endDate: string;
+  odometerAtService?: number | null;
+  cost?: number | null;
+  status: 'SCHEDULED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED';
+  notes?: string | null;
   createdBy?:
     | ({
         relationTo: 'admins';
@@ -606,12 +818,57 @@ export interface Booking {
   vehicle: string | Vehicle;
   startDate: string;
   endDate: string;
+  pickupTime?: string | null;
+  returnTime?: string | null;
+  pickupLocation?: string | null;
+  deliveryRequested?: boolean | null;
+  addonServices?: string | null;
+  customerPhone?: string | null;
+  driverLicenseNumber?: string | null;
+  note?: string | null;
   totalDays?: number | null;
   vehicleNameSnapshot?: string | null;
   vehicleReferenceSnapshot?: string | null;
   dailyPriceSnapshot?: number | null;
+  baseRentPrice?: number | null;
+  weekendSurchargeTotal?: number | null;
+  deliveryFeeSnapshot?: number | null;
+  addonFeeTotal?: number | null;
+  discountAmount?: number | null;
+  promoCode?: string | null;
+  promoDiscountAmount?: number | null;
   totalPrice?: number | null;
-  status?: ('PENDING' | 'CONFIRMED' | 'ONGOING' | 'COMPLETED' | 'CANCELLED' | 'REJECTED') | null;
+  depositSnapshot?: number | null;
+  initialPaymentDue?: number | null;
+  remainingAmount?: number | null;
+  handoverNote?: string | null;
+  extraFee?: number | null;
+  extraFeeNote?: string | null;
+  contractNumber?: string | null;
+  returnOdometer?: number | null;
+  returnCondition?: string | null;
+  statusHistory?:
+    | {
+        status: string;
+        changedAt: string;
+        changedBy?: string | null;
+        note?: string | null;
+        id?: string | null;
+      }[]
+    | null;
+  status?:
+    | (
+        | 'PENDING'
+        | 'DEPOSIT_PENDING'
+        | 'CONFIRMED'
+        | 'READY_FOR_HANDOVER'
+        | 'ONGOING'
+        | 'INSPECTING'
+        | 'COMPLETED'
+        | 'CANCELLED'
+        | 'REJECTED'
+      )
+    | null;
   createdBy?:
     | ({
         relationTo: 'admins';
@@ -640,11 +897,42 @@ export interface Booking {
 export interface SalesInquiry {
   id: string;
   reference?: string | null;
+  inquiryType?: ('CONSULTATION' | 'QUOTE' | 'VIEWING' | 'TEST_DRIVE' | 'PURCHASE_REQUEST') | null;
   customer?: (string | null) | User;
   model: string | VehicleModel;
+  vehicle?: (string | null) | Vehicle;
+  vehicleReference?: string | null;
+  variantName?: string | null;
+  colorName?: string | null;
+  paymentMethod?: ('DIRECT' | 'INSTALLMENT' | 'CONSULT_FINANCE') | null;
+  preferredDate?: string | null;
+  preferredLocation?: string | null;
+  quotedPriceSnapshot?: number | null;
+  estimatedRollingSnapshot?: number | null;
   phone: string;
   note?: string | null;
-  status?: ('NEW' | 'CONTACTED' | 'CLOSED') | null;
+  adminNote?: string | null;
+  statusHistory?:
+    | {
+        status: string;
+        changedAt: string;
+        changedBy?: string | null;
+        note?: string | null;
+        id?: string | null;
+      }[]
+    | null;
+  status?:
+    | (
+        | 'NEW'
+        | 'CONTACTED'
+        | 'TEST_DRIVE_SCHEDULED'
+        | 'DEPOSIT_PENDING'
+        | 'CONTRACT_SIGNED'
+        | 'DELIVERED'
+        | 'CLOSED'
+        | 'CANCELLED'
+      )
+    | null;
   createdBy?:
     | ({
         relationTo: 'admins';
@@ -665,6 +953,156 @@ export interface SalesInquiry {
       } | null);
   updatedAt: string;
   createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "promotions".
+ */
+export interface Promotion {
+  id: string;
+  code: string;
+  name: string;
+  description?: string | null;
+  discountType: 'PERCENT' | 'FIXED';
+  discountValue: number;
+  maxDiscount?: number | null;
+  minDays?: number | null;
+  appliesTo?: ('ALL' | 'RENT' | 'SALE') | null;
+  validFrom?: string | null;
+  validTo?: string | null;
+  usageLimit?: number | null;
+  usedCount?: number | null;
+  active?: boolean | null;
+  createdBy?:
+    | ({
+        relationTo: 'admins';
+        value: string | Admin;
+      } | null)
+    | ({
+        relationTo: 'users';
+        value: string | User;
+      } | null);
+  updatedBy?:
+    | ({
+        relationTo: 'admins';
+        value: string | Admin;
+      } | null)
+    | ({
+        relationTo: 'users';
+        value: string | User;
+      } | null);
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "payments".
+ */
+export interface Payment {
+  id: string;
+  reference?: string | null;
+  booking?: (string | null) | Booking;
+  inquiry?: (string | null) | SalesInquiry;
+  customer?: (string | null) | User;
+  paymentType: 'DEPOSIT' | 'RENTAL_FEE' | 'EXTRA_FEE' | 'PURCHASE_DEPOSIT' | 'REFUND';
+  method: 'BANK_TRANSFER' | 'CASH' | 'CARD_POS';
+  amount: number;
+  status: 'PENDING' | 'CONFIRMED' | 'REFUNDED' | 'CANCELLED';
+  paidAt?: string | null;
+  recordedBy?: string | null;
+  note?: string | null;
+  createdBy?:
+    | ({
+        relationTo: 'admins';
+        value: string | Admin;
+      } | null)
+    | ({
+        relationTo: 'users';
+        value: string | User;
+      } | null);
+  updatedBy?:
+    | ({
+        relationTo: 'admins';
+        value: string | Admin;
+      } | null)
+    | ({
+        relationTo: 'users';
+        value: string | User;
+      } | null);
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "reviews".
+ */
+export interface Review {
+  id: string;
+  customer?: (string | null) | User;
+  booking: string | Booking;
+  model: string | VehicleModel;
+  vehicle?: (string | null) | Vehicle;
+  rating: number;
+  title?: string | null;
+  comment: string;
+  status?: ('PUBLISHED' | 'HIDDEN') | null;
+  createdBy?:
+    | ({
+        relationTo: 'admins';
+        value: string | Admin;
+      } | null)
+    | ({
+        relationTo: 'users';
+        value: string | User;
+      } | null);
+  updatedBy?:
+    | ({
+        relationTo: 'admins';
+        value: string | Admin;
+      } | null)
+    | ({
+        relationTo: 'users';
+        value: string | User;
+      } | null);
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "posts".
+ */
+export interface Post {
+  id: string;
+  title: string;
+  slug: string;
+  category: 'NEWS' | 'GUIDE' | 'PROMOTION';
+  excerpt?: string | null;
+  content: string;
+  cover?: (string | null) | Media;
+  publishedAt?: string | null;
+  seoTitle?: string | null;
+  seoDescription?: string | null;
+  createdBy?:
+    | ({
+        relationTo: 'admins';
+        value: string | Admin;
+      } | null)
+    | ({
+        relationTo: 'users';
+        value: string | User;
+      } | null);
+  updatedBy?:
+    | ({
+        relationTo: 'admins';
+        value: string | Admin;
+      } | null)
+    | ({
+        relationTo: 'users';
+        value: string | User;
+      } | null);
+  updatedAt: string;
+  createdAt: string;
+  _status?: ('draft' | 'published') | null;
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
@@ -719,6 +1157,10 @@ export interface PayloadLockedDocument {
         value: string | Vehicle;
       } | null)
     | ({
+        relationTo: 'maintenance-schedules';
+        value: string | MaintenanceSchedule;
+      } | null)
+    | ({
         relationTo: 'rental-days';
         value: string | RentalDay;
       } | null)
@@ -729,6 +1171,18 @@ export interface PayloadLockedDocument {
     | ({
         relationTo: 'sales-inquiries';
         value: string | SalesInquiry;
+      } | null)
+    | ({
+        relationTo: 'promotions';
+        value: string | Promotion;
+      } | null)
+    | ({
+        relationTo: 'payments';
+        value: string | Payment;
+      } | null)
+    | ({
+        relationTo: 'posts';
+        value: string | Post;
       } | null);
   globalSlug?: string | null;
   user:
@@ -819,11 +1273,46 @@ export interface PayloadLlmInstruction {
  * via the `definition` "admins_select".
  */
 export interface AdminsSelect<T extends boolean = true> {
-  figmaHandle?: T;
-  figmaImageUrl?: T;
-  userGroups?: T;
-  makePermission?: T;
+  fullName?: T;
+  adminRole?: T;
+  permissions?: T;
+  createdBy?: T;
+  updatedBy?: T;
+  updatedAt?: T;
+  createdAt?: T;
   email?: T;
+  resetPasswordToken?: T;
+  resetPasswordExpiration?: T;
+  salt?: T;
+  hash?: T;
+  resetPasswordRequestedAt?: T;
+  loginAttempts?: T;
+  lockUntil?: T;
+  sessions?:
+    | T
+    | {
+        id?: T;
+        createdAt?: T;
+        expiresAt?: T;
+        refreshCount?: T;
+        refreshedAt?: T;
+      };
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "audit-logs_select".
+ */
+export interface AuditLogsSelect<T extends boolean = true> {
+  action?: T;
+  entity?: T;
+  entityId?: T;
+  entityLabel?: T;
+  summary?: T;
+  fromStatus?: T;
+  toStatus?: T;
+  actorType?: T;
+  actorId?: T;
+  actorEmail?: T;
   createdBy?: T;
   updatedBy?: T;
   updatedAt?: T;
@@ -835,10 +1324,16 @@ export interface AdminsSelect<T extends boolean = true> {
  */
 export interface MediaSelect<T extends boolean = true> {
   alt?: T;
+  sourceUrl?: T;
+  sourceName?: T;
+  license?: T;
+  modelYear?: T;
+  variantName?: T;
+  colorName?: T;
+  mediaCategory?: T;
+  verified?: T;
   _h_folders?: T;
   _h_tags?: T;
-  prefix?: T;
-  _objectKey?: T;
   createdBy?: T;
   updatedBy?: T;
   updatedAt?: T;
@@ -905,6 +1400,10 @@ export interface UsersSelect<T extends boolean = true> {
   phone?: T;
   role?: T;
   status?: T;
+  driverLicenseNumber?: T;
+  idCardNumber?: T;
+  verificationStatus?: T;
+  verificationNote?: T;
   createdBy?: T;
   updatedBy?: T;
   updatedAt?: T;
@@ -936,8 +1435,36 @@ export interface VehicleModelsSelect<T extends boolean = true> {
   slug?: T;
   brand?: T;
   category?: T;
+  subCategory?: T;
   bodyStyle?: T;
+  segment?: T;
+  origin?: T;
+  modelYear?: T;
+  seats?: T;
+  fuelType?: T;
+  transmission?: T;
+  driveType?: T;
+  listedPrice?: T;
+  referenceRentPrice?: T;
+  suitableFor?: T;
   description?: T;
+  exteriorOverview?: T;
+  interiorOverview?: T;
+  engineOverview?: T;
+  highlights?:
+    | T
+    | {
+        text?: T;
+        id?: T;
+      };
+  features?:
+    | T
+    | {
+        name?: T;
+        category?: T;
+        variantNote?: T;
+        id?: T;
+      };
   cover?: T;
   gallery?:
     | T
@@ -945,13 +1472,19 @@ export interface VehicleModelsSelect<T extends boolean = true> {
         image?: T;
         kind?: T;
         caption?: T;
+        variantName?: T;
+        colorName?: T;
+        sourceUrl?: T;
+        license?: T;
         id?: T;
       };
   specifications?:
     | T
     | {
+        group?: T;
         label?: T;
         value?: T;
+        variantName?: T;
         source?: T;
         id?: T;
       };
@@ -959,16 +1492,27 @@ export interface VehicleModelsSelect<T extends boolean = true> {
     | T
     | {
         name?: T;
+        year?: T;
+        listedPrice?: T;
+        referenceRentPrice?: T;
+        fuelType?: T;
+        transmission?: T;
+        driveType?: T;
+        seats?: T;
+        summary?: T;
         colors?:
           | T
           | {
               name?: T;
+              hex?: T;
+              sourceUrl?: T;
               image?: T;
               id?: T;
             };
         id?: T;
       };
   source?: T;
+  verificationStatus?: T;
   visible?: T;
   featured?: T;
   sortOrder?: T;
@@ -986,13 +1530,41 @@ export interface VehiclesSelect<T extends boolean = true> {
   model?: T;
   licensePlate?: T;
   intent?: T;
+  isDemo?: T;
+  vehicleConditionType?: T;
+  manufactureYear?: T;
   pricePerDay?: T;
+  pricePerHour?: T;
+  pricePerWeek?: T;
+  pricePerMonth?: T;
+  weekendSurcharge?: T;
+  holidaySurcharge?: T;
+  depositAmount?: T;
+  deliveryFee?: T;
+  kmLimitPerDay?: T;
+  overKmFee?: T;
+  lateReturnFeePerHour?: T;
+  bufferHours?: T;
   salePrice?: T;
+  listedPrice?: T;
+  discountPrice?: T;
+  reservationDeposit?: T;
+  estimatedRollingPrice?: T;
+  negotiable?: T;
+  warrantyPolicy?: T;
+  priceSourceNote?: T;
   odometer?: T;
   condition?: T;
+  exteriorCondition?: T;
+  interiorCondition?: T;
+  engineCondition?: T;
+  maintenanceHistory?: T;
   inspectedAt?: T;
   version?: T;
   color?: T;
+  location?: T;
+  pickupLocation?: T;
+  operationStatus?: T;
   photos?:
     | T
     | {
@@ -1002,6 +1574,25 @@ export interface VehiclesSelect<T extends boolean = true> {
         id?: T;
       };
   status?: T;
+  createdBy?: T;
+  updatedBy?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "maintenance-schedules_select".
+ */
+export interface MaintenanceSchedulesSelect<T extends boolean = true> {
+  vehicle?: T;
+  title?: T;
+  maintenanceType?: T;
+  startDate?: T;
+  endDate?: T;
+  odometerAtService?: T;
+  cost?: T;
+  status?: T;
+  notes?: T;
   createdBy?: T;
   updatedBy?: T;
   updatedAt?: T;
@@ -1031,11 +1622,44 @@ export interface BookingsSelect<T extends boolean = true> {
   vehicle?: T;
   startDate?: T;
   endDate?: T;
+  pickupTime?: T;
+  returnTime?: T;
+  pickupLocation?: T;
+  deliveryRequested?: T;
+  addonServices?: T;
+  customerPhone?: T;
+  driverLicenseNumber?: T;
+  note?: T;
   totalDays?: T;
   vehicleNameSnapshot?: T;
   vehicleReferenceSnapshot?: T;
   dailyPriceSnapshot?: T;
+  baseRentPrice?: T;
+  weekendSurchargeTotal?: T;
+  deliveryFeeSnapshot?: T;
+  addonFeeTotal?: T;
+  discountAmount?: T;
+  promoCode?: T;
+  promoDiscountAmount?: T;
   totalPrice?: T;
+  depositSnapshot?: T;
+  initialPaymentDue?: T;
+  remainingAmount?: T;
+  handoverNote?: T;
+  extraFee?: T;
+  extraFeeNote?: T;
+  contractNumber?: T;
+  returnOdometer?: T;
+  returnCondition?: T;
+  statusHistory?:
+    | T
+    | {
+        status?: T;
+        changedAt?: T;
+        changedBy?: T;
+        note?: T;
+        id?: T;
+      };
   status?: T;
   createdBy?: T;
   updatedBy?: T;
@@ -1048,15 +1672,117 @@ export interface BookingsSelect<T extends boolean = true> {
  */
 export interface SalesInquiriesSelect<T extends boolean = true> {
   reference?: T;
+  inquiryType?: T;
   customer?: T;
   model?: T;
+  vehicle?: T;
+  vehicleReference?: T;
+  variantName?: T;
+  colorName?: T;
+  paymentMethod?: T;
+  preferredDate?: T;
+  preferredLocation?: T;
+  quotedPriceSnapshot?: T;
+  estimatedRollingSnapshot?: T;
   phone?: T;
   note?: T;
+  adminNote?: T;
+  statusHistory?:
+    | T
+    | {
+        status?: T;
+        changedAt?: T;
+        changedBy?: T;
+        note?: T;
+        id?: T;
+      };
   status?: T;
   createdBy?: T;
   updatedBy?: T;
   updatedAt?: T;
   createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "promotions_select".
+ */
+export interface PromotionsSelect<T extends boolean = true> {
+  code?: T;
+  name?: T;
+  description?: T;
+  discountType?: T;
+  discountValue?: T;
+  maxDiscount?: T;
+  minDays?: T;
+  appliesTo?: T;
+  validFrom?: T;
+  validTo?: T;
+  usageLimit?: T;
+  usedCount?: T;
+  active?: T;
+  createdBy?: T;
+  updatedBy?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "payments_select".
+ */
+export interface PaymentsSelect<T extends boolean = true> {
+  reference?: T;
+  booking?: T;
+  inquiry?: T;
+  customer?: T;
+  paymentType?: T;
+  method?: T;
+  amount?: T;
+  status?: T;
+  paidAt?: T;
+  recordedBy?: T;
+  note?: T;
+  createdBy?: T;
+  updatedBy?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "reviews_select".
+ */
+export interface ReviewsSelect<T extends boolean = true> {
+  customer?: T;
+  booking?: T;
+  model?: T;
+  vehicle?: T;
+  rating?: T;
+  title?: T;
+  comment?: T;
+  status?: T;
+  createdBy?: T;
+  updatedBy?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "posts_select".
+ */
+export interface PostsSelect<T extends boolean = true> {
+  title?: T;
+  slug?: T;
+  category?: T;
+  excerpt?: T;
+  content?: T;
+  cover?: T;
+  publishedAt?: T;
+  seoTitle?: T;
+  seoDescription?: T;
+  createdBy?: T;
+  updatedBy?: T;
+  updatedAt?: T;
+  createdAt?: T;
+  _status?: T;
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
@@ -1120,6 +1846,13 @@ export interface PayloadLlmInstructionsSelect<T extends boolean = true> {
  */
 export interface NoriSite {
   id: string;
+  siteName?: string | null;
+  tagline?: string | null;
+  logo?: (string | null) | Media;
+  favicon?: (string | null) | Media;
+  seoTitle?: string | null;
+  seoDescription?: string | null;
+  ogImage?: (string | null) | Media;
   heroImages?:
     | {
         image: string | Media;
@@ -1128,10 +1861,63 @@ export interface NoriSite {
       }[]
     | null;
   storyImage?: (string | null) | Media;
+  homeIntroTitle?: string | null;
+  homeIntroDescription?: string | null;
+  showHeroSection?: boolean | null;
+  showBenefitsSection?: boolean | null;
+  showFeaturedSection?: boolean | null;
+  showHowItWorksSection?: boolean | null;
+  showStorySection?: boolean | null;
+  showCtaSection?: boolean | null;
+  headerMenu?:
+    | {
+        label: string;
+        href: string;
+        visible?: boolean | null;
+        id?: string | null;
+      }[]
+    | null;
+  footerLinks?:
+    | {
+        label: string;
+        href: string;
+        group?: string | null;
+        id?: string | null;
+      }[]
+    | null;
+  socialLinks?:
+    | {
+        platform: string;
+        url: string;
+        id?: string | null;
+      }[]
+    | null;
+  aboutSummary?: string | null;
   address?: string | null;
   phone?: string | null;
   email?: string | null;
   openingHours?: string | null;
+  contactNote?: string | null;
+  rentalPolicySummary?: string | null;
+  purchasePolicySummary?: string | null;
+  ageRequirement?: string | null;
+  licenseRequirement?: string | null;
+  cancellationPolicy?: string | null;
+  depositPolicy?: string | null;
+  privacyPolicy?: string | null;
+  termsOfUse?: string | null;
+  faqs?:
+    | {
+        question: string;
+        answer: string;
+        order?: number | null;
+        id?: string | null;
+      }[]
+    | null;
+  depositHoldHours?: number | null;
+  maxPendingBookings?: number | null;
+  maintenanceBannerEnabled?: boolean | null;
+  maintenanceBannerText?: string | null;
   createdBy?:
     | ({
         relationTo: 'admins';
@@ -1150,6 +1936,7 @@ export interface NoriSite {
         relationTo: 'users';
         value: string | User;
       } | null);
+  _status?: ('draft' | 'published') | null;
   updatedAt?: string | null;
   createdAt?: string | null;
 }
@@ -1158,6 +1945,13 @@ export interface NoriSite {
  * via the `definition` "nori-site_select".
  */
 export interface NoriSiteSelect<T extends boolean = true> {
+  siteName?: T;
+  tagline?: T;
+  logo?: T;
+  favicon?: T;
+  seoTitle?: T;
+  seoDescription?: T;
+  ogImage?: T;
   heroImages?:
     | T
     | {
@@ -1166,12 +1960,66 @@ export interface NoriSiteSelect<T extends boolean = true> {
         id?: T;
       };
   storyImage?: T;
+  homeIntroTitle?: T;
+  homeIntroDescription?: T;
+  showHeroSection?: T;
+  showBenefitsSection?: T;
+  showFeaturedSection?: T;
+  showHowItWorksSection?: T;
+  showStorySection?: T;
+  showCtaSection?: T;
+  headerMenu?:
+    | T
+    | {
+        label?: T;
+        href?: T;
+        visible?: T;
+        id?: T;
+      };
+  footerLinks?:
+    | T
+    | {
+        label?: T;
+        href?: T;
+        group?: T;
+        id?: T;
+      };
+  socialLinks?:
+    | T
+    | {
+        platform?: T;
+        url?: T;
+        id?: T;
+      };
+  aboutSummary?: T;
   address?: T;
   phone?: T;
   email?: T;
   openingHours?: T;
+  contactNote?: T;
+  rentalPolicySummary?: T;
+  purchasePolicySummary?: T;
+  ageRequirement?: T;
+  licenseRequirement?: T;
+  cancellationPolicy?: T;
+  depositPolicy?: T;
+  privacyPolicy?: T;
+  termsOfUse?: T;
+  faqs?:
+    | T
+    | {
+        question?: T;
+        answer?: T;
+        order?: T;
+        id?: T;
+      };
+  depositHoldHours?: T;
+  maxPendingBookings?: T;
+  maintenanceBannerEnabled?: T;
+  maintenanceBannerText?: T;
   createdBy?: T;
   updatedBy?: T;
+  _status?: T;
   updatedAt?: T;
   createdAt?: T;
   globalType?: T;
@@ -1205,14 +2053,20 @@ export interface CollectionQueryWidget {
     title?: string | null;
     relatedCollection:
       | 'admins'
+      | 'audit-logs'
       | 'media'
       | 'folders'
       | 'tags'
       | 'users'
       | 'vehicle-models'
       | 'vehicles'
+      | 'maintenance-schedules'
       | 'bookings'
-      | 'sales-inquiries';
+      | 'sales-inquiries'
+      | 'promotions'
+      | 'payments'
+      | 'reviews'
+      | 'posts';
     where?:
       | {
           [k: string]: unknown;
@@ -1237,14 +2091,20 @@ export interface ActivityWidget {
     excludedCollections?:
       | (
           | 'admins'
+          | 'audit-logs'
           | 'media'
           | 'folders'
           | 'tags'
           | 'users'
           | 'vehicle-models'
           | 'vehicles'
+          | 'maintenance-schedules'
           | 'bookings'
           | 'sales-inquiries'
+          | 'promotions'
+          | 'payments'
+          | 'reviews'
+          | 'posts'
         )[]
       | null;
   };

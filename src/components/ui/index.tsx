@@ -16,8 +16,14 @@ export function cn(...values: (string | false | null | undefined)[]) {
   return values.filter(Boolean).join(' ')
 }
 
-const control =
-  'inline-flex min-h-touch items-center justify-center gap-2.5 rounded-control px-5 py-3 text-body font-semibold transition-colors focus-visible:outline-offset-4 disabled:pointer-events-none disabled:opacity-45 active:translate-y-px'
+const controlBase =
+  'inline-flex min-h-touch items-center justify-center gap-2.5 rounded-control text-body font-semibold transition-colors focus-visible:outline-offset-4 disabled:pointer-events-none disabled:opacity-45 active:translate-y-px'
+const control = `${controlBase} px-5 py-3`
+const buttonSizes = {
+  default: 'px-5 py-3',
+  sm: 'min-h-control-sm px-3.5 py-2 text-caption',
+  cell: 'min-h-touch px-0.5 py-1.5',
+}
 const variants = {
   primary: 'bg-brand text-inverse hover:bg-brand-hover',
   dark: 'bg-ink text-inverse hover:bg-night-soft',
@@ -30,17 +36,22 @@ type Variant = keyof typeof variants
 
 export function Button({
   variant = 'primary',
+  size = 'default',
   loading,
   children,
   className,
   disabled,
   type = 'button',
   ...props
-}: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: Variant; loading?: boolean }) {
+}: ButtonHTMLAttributes<HTMLButtonElement> & {
+  variant?: Variant
+  size?: keyof typeof buttonSizes
+  loading?: boolean
+}) {
   return (
     <button
       type={type}
-      className={cn(control, variants[variant], className)}
+      className={cn(controlBase, buttonSizes[size], variants[variant], className)}
       disabled={disabled || loading}
       aria-busy={loading || undefined}
       {...props}
@@ -461,25 +472,51 @@ export function CardSkeleton() {
 export function StatusBadge({ status }: { status: string }) {
   const labels: Record<string, string> = {
     PENDING: 'Chờ xác nhận',
+    DEPOSIT_PENDING: 'Chờ đặt cọc',
     CONFIRMED: 'Đã xác nhận',
+    READY_FOR_HANDOVER: 'Chờ giao xe',
     ONGOING: 'Đang thuê',
+    INSPECTING: 'Chờ kiểm tra & quyết toán',
     COMPLETED: 'Hoàn thành',
     CANCELLED: 'Đã hủy',
     REJECTED: 'Đã từ chối',
     NEW: 'Đã tiếp nhận',
     CONTACTED: 'Đã liên hệ',
+    TEST_DRIVE_SCHEDULED: 'Đã hẹn xem / lái thử',
+    CONTRACT_SIGNED: 'Đã ký hồ sơ',
+    DELIVERED: 'Đã bàn giao xe',
     CLOSED: 'Đã đóng',
     ACTIVE: 'Đang kinh doanh',
     INACTIVE: 'Tạm ngừng',
+    READY: 'Sẵn sàng',
+    RENTED: 'Đang cho thuê',
+    RESERVED: 'Đang giữ chỗ',
+    MAINTENANCE: 'Đang bảo dưỡng',
+    SOLD: 'Đã bán',
   }
   return (
     <Badge
       tone={
-        ['PENDING', 'NEW'].includes(status)
+        ['PENDING', 'DEPOSIT_PENDING', 'NEW', 'INSPECTING', 'MAINTENANCE', 'RESERVED'].includes(
+          status,
+        )
           ? 'warning'
-          : ['CONFIRMED', 'ONGOING', 'ACTIVE', 'COMPLETED'].includes(status)
+          : [
+                'CONFIRMED',
+                'READY_FOR_HANDOVER',
+                'ONGOING',
+                'ACTIVE',
+                'COMPLETED',
+                'READY',
+                'CONTACTED',
+                'TEST_DRIVE_SCHEDULED',
+                'CONTRACT_SIGNED',
+                'DELIVERED',
+              ].includes(status)
             ? 'brand'
-            : 'muted'
+            : ['REJECTED', 'CANCELLED'].includes(status)
+              ? 'danger'
+              : 'muted'
       }
     >
       {labels[status] ?? status}

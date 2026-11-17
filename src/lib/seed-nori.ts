@@ -1,0 +1,362 @@
+import fs from 'node:fs/promises'
+import path from 'node:path'
+import type { Payload } from 'payload'
+import manifest from './seed-media-manifest.json'
+import {
+  SEED_DEMO_FLEET,
+  SEED_MODELS,
+  SEED_SITE_INFO,
+  getEstimatedRollingForSeed,
+  type SeedModelSpec,
+} from './vehicle-seed-data'
+
+type ManifestEntry = {
+  filename: string
+  alt: string
+  kind: string
+  modelYear: string
+  sourceUrl: string
+  sourceName: string
+  license: string
+}
+
+const typedManifest = manifest as Record<string, ManifestEntry>
+
+async function ensureMedia(payload: Payload, key: string): Promise<string | null> {
+  const entry = typedManifest[key]
+  if (!entry) return null
+
+  const existing = await payload.find({
+    collection: 'media',
+    where: { filename: { equals: entry.filename } },
+    limit: 1,
+    overrideAccess: true,
+    depth: 0,
+  })
+  if (existing.docs[0]) return existing.docs[0].id
+
+  const filePath = path.resolve(process.cwd(), 'public', 'seed-media', entry.filename)
+  let data: Buffer
+  try {
+    data = await fs.readFile(filePath)
+  } catch {
+    return null
+  }
+
+  const created = await payload.create({
+    collection: 'media',
+    data: {
+      alt: entry.alt,
+      sourceUrl: entry.sourceUrl,
+      sourceName: entry.sourceName,
+      license: entry.license,
+      modelYear: entry.modelYear,
+      mediaCategory:
+        entry.kind === 'HERO' || entry.kind === 'STORY' ? 'ILLUSTRATION' : 'CATALOGUE_REFERENCE',
+      verified: true,
+    },
+    file: {
+      data,
+      mimetype: 'image/jpeg',
+      name: entry.filename,
+      size: data.byteLength,
+    },
+    overrideAccess: true,
+    context: { skipRevalidate: true },
+  })
+  return created.id
+}
+
+function buildModelPayloadData(spec: SeedModelSpec, mediaIds: Map<string, string>) {
+  const coverId = mediaIds.get(spec.coverKey)
+  return {
+    name: spec.name,
+    slug: spec.slug,
+    brand: spec.brand,
+    category: spec.category,
+    subCategory: spec.subCategory as never,
+    bodyStyle: spec.bodyStyle,
+    segment: spec.segment,
+    origin: spec.origin,
+    modelYear: spec.modelYear,
+    seats: spec.seats,
+    fuelType: spec.fuelType,
+    transmission: spec.transmission,
+    driveType: spec.driveType,
+    listedPrice: spec.listedPrice,
+    referenceRentPrice: spec.referenceRentPrice,
+    suitableFor: spec.suitableFor,
+    description: spec.description,
+    exteriorOverview: spec.exteriorOverview,
+    interiorOverview: spec.interiorOverview,
+    engineOverview: spec.engineOverview,
+    highlights: spec.highlights.map((text) => ({ text })),
+    features: spec.features.map((f) => ({
+      name: f.name,
+      category: f.category,
+      variantNote: f.variantNote,
+    })),
+    ...(coverId ? { cover: coverId } : {}),
+    gallery: spec.gallery.flatMap((g) => {
+      const id = mediaIds.get(g.mediaKey)
+      const meta = typedManifest[g.mediaKey]
+      if (!id) return []
+      return [
+        {
+          image: id,
+          kind: g.kind,
+          caption: g.caption,
+          variantName: g.variantName,
+          colorName: g.colorName,
+          sourceUrl: meta?.sourceUrl,
+          license: meta?.license,
+        },
+      ]
+    }),
+    specifications: spec.specifications.map((s) => ({
+      group: s.group,
+      label: s.label,
+      value: s.value,
+      variantName: s.variantName,
+      source: s.source,
+    })),
+    variants: spec.variants.map((v) => ({
+      name: v.name,
+      year: v.year,
+      listedPrice: v.listedPrice,
+      referenceRentPrice: v.referenceRentPrice,
+      fuelType: v.fuelType,
+      transmission: v.transmission,
+      driveType: v.driveType,
+      seats: v.seats,
+      summary: v.summary,
+      colors: v.colors.map((c) => {
+        const colorImgId = c.mediaKey ? mediaIds.get(c.mediaKey) : undefined
+        const colorMeta = c.mediaKey ? typedManifest[c.mediaKey] : undefined
+        return {
+          name: c.name,
+          hex: c.hex,
+          sourceUrl: colorMeta?.sourceUrl,
+          ...(colorImgId ? { image: colorImgId } : {}),
+        }
+      }),
+    })),
+    source: spec.source,
+    verificationStatus: 'VERIFIED' as const,
+    visible: true,
+    featured: spec.featured,
+    sortOrder: spec.sortOrder,
+  }
+}
+
+async function ensureOfficialAdmin(payload: Payload): Promise<void> {
+  const email = (process.env.NORI_ADMIN_EMAIL?.trim() || 'admin@nori.vn').toLowerCase()
+  const password = process.env.NORI_ADMIN_PASSWORD || ''
+  if (
+    !password ||
+    password.length < 8 ||
+    password.length > 72 ||
+    !/[A-Za-z]/.test(password) ||
+    !/\d/.test(password)
+  ) {
+    return
+  }
+  const existing = await payload.find({
+    collection: 'admins',
+    where: { email: { equals: email } },
+    limit: 1,
+    overrideAccess: true,
+    depth: 0,
+  })
+  if (existing.docs.length > 0) {
+    const doc = existing.docs[0]
+    if (doc.adminRole !== 'SUPER_ADMIN') {
+      await payload.update({
+        collection: 'admins',
+        id: doc.id,
+        overrideAccess: true,
+        context: { skipAudit: true },
+        data: { adminRole: 'SUPER_ADMIN', fullName: doc.fullName || 'Quản trị viên NORI' },
+      })
+    }
+    return
+  }
+  await payload.create({
+    collection: 'admins',
+    overrideAccess: true,
+    context: { skipAudit: true },
+    data: { email, password, fullName: 'Quản trị viên NORI', adminRole: 'SUPER_ADMIN' },
+  })
+}
+
+export async function seedNoriIfEmpty(payload: Payload): Promise<void> {
+  await ensureOfficialAdmin(payload)
+  const [modelCount, vehicleCount, siteDoc] = await Promise.all([
+    payload.count({ collection: 'vehicle-models', overrideAccess: true }),
+    payload.count({ collection: 'vehicles', overrideAccess: true }),
+    payload.findGlobal({ slug: 'nori-site', overrideAccess: true, depth: 0 }),
+  ])
+
+  const needsSiteUpgrade = !siteDoc.address || !siteDoc.rentalPolicySummary
+  if (
+    modelCount.totalDocs >= SEED_MODELS.length &&
+    vehicleCount.totalDocs >= SEED_DEMO_FLEET.length &&
+    !needsSiteUpgrade
+  ) {
+    return
+  }
+
+  const allKeys = new Set<string>(['nori-hero-1', 'nori-hero-2', 'nori-hero-3', 'nori-story'])
+  for (const m of SEED_MODELS) {
+    allKeys.add(m.coverKey)
+    for (const g of m.gallery) allKeys.add(g.mediaKey)
+    for (const v of m.variants) {
+      for (const c of v.colors) {
+        if (c.mediaKey) allKeys.add(c.mediaKey)
+      }
+    }
+  }
+  for (const v of SEED_DEMO_FLEET) {
+    for (const p of v.photoKeys) allKeys.add(p.mediaKey)
+  }
+
+  const mediaIds = new Map<string, string>()
+  for (const key of allKeys) {
+    const id = await ensureMedia(payload, key)
+    if (id) mediaIds.set(key, id)
+  }
+
+  const modelIdBySlug = new Map<string, string>()
+  const modelSpecBySlug = new Map<string, SeedModelSpec>()
+
+  for (const spec of SEED_MODELS) {
+    modelSpecBySlug.set(spec.slug, spec)
+    const existing = await payload.find({
+      collection: 'vehicle-models',
+      where: { slug: { equals: spec.slug } },
+      limit: 1,
+      overrideAccess: true,
+      depth: 1,
+    })
+    const doc = existing.docs[0]
+    const data = buildModelPayloadData(spec, mediaIds)
+
+    if (doc) {
+      const coverFilename =
+        typeof doc.cover === 'object' && doc.cover ? (doc.cover.filename ?? '') : ''
+      const isLegacy =
+        !doc.subCategory ||
+        (doc.specifications?.length ?? 0) < 5 ||
+        coverFilename.endsWith('-catalogue.png')
+      if (isLegacy) {
+        await payload.update({
+          collection: 'vehicle-models',
+          id: doc.id,
+          data,
+          overrideAccess: true,
+          context: { skipRevalidate: true },
+        })
+      }
+      modelIdBySlug.set(spec.slug, doc.id)
+    } else {
+      const created = await payload.create({
+        collection: 'vehicle-models',
+        data,
+        overrideAccess: true,
+        context: { skipRevalidate: true },
+      })
+      modelIdBySlug.set(spec.slug, created.id)
+    }
+  }
+
+  for (const v of SEED_DEMO_FLEET) {
+    const modelId = modelIdBySlug.get(v.modelSlug)
+    const modelSpec = modelSpecBySlug.get(v.modelSlug)
+    if (!modelId || !modelSpec) continue
+    const existing = await payload.find({
+      collection: 'vehicles',
+      where: { reference: { equals: v.reference } },
+      limit: 1,
+      overrideAccess: true,
+      depth: 0,
+    })
+    if (existing.docs[0]) continue
+
+    const photos = v.photoKeys.flatMap((p) => {
+      const id = mediaIds.get(p.mediaKey)
+      return id ? [{ image: id, caption: p.caption, kind: p.kind }] : []
+    })
+
+    await payload.create({
+      collection: 'vehicles',
+      overrideAccess: true,
+      context: { skipRevalidate: true },
+      data: {
+        reference: v.reference,
+        model: modelId,
+        licensePlate: v.licensePlate,
+        intent: v.intent,
+        isDemo: true,
+        vehicleConditionType: v.vehicleConditionType,
+        manufactureYear: v.manufactureYear,
+        version: v.version,
+        color: v.color,
+        odometer: v.odometer,
+        pricePerDay: v.pricePerDay,
+        pricePerHour: v.pricePerHour,
+        pricePerWeek: v.pricePerWeek,
+        pricePerMonth: v.pricePerMonth,
+        weekendSurcharge: v.weekendSurcharge,
+        holidaySurcharge: v.holidaySurcharge,
+        depositAmount: v.depositAmount,
+        deliveryFee: v.deliveryFee,
+        kmLimitPerDay: v.kmLimitPerDay,
+        overKmFee: v.overKmFee,
+        lateReturnFeePerHour: v.lateReturnFeePerHour,
+        bufferHours: 2,
+        salePrice: v.salePrice,
+        listedPrice: v.listedPrice,
+        discountPrice: v.discountPrice,
+        reservationDeposit: v.reservationDeposit,
+        estimatedRollingPrice: getEstimatedRollingForSeed(v, modelSpec),
+        negotiable: v.negotiable,
+        warrantyPolicy: v.warrantyPolicy,
+        priceSourceNote: 'Giá minh họa phục vụ kiểm thử đồ án NORI (DEMO)',
+        condition: v.condition,
+        exteriorCondition: v.exteriorCondition,
+        interiorCondition: v.interiorCondition,
+        engineCondition: v.engineCondition,
+        maintenanceHistory: v.maintenanceHistory,
+        inspectedAt: v.inspectedAt,
+        location: v.location,
+        pickupLocation: v.pickupLocation,
+        operationStatus: 'READY',
+        status: 'ACTIVE',
+        photos,
+      },
+    })
+  }
+
+  if (needsSiteUpgrade) {
+    const hero1 = mediaIds.get('nori-hero-1')
+    const hero2 = mediaIds.get('nori-hero-2')
+    const hero3 = mediaIds.get('nori-hero-3')
+    const story = mediaIds.get('nori-story')
+    const heroImages = [
+      hero1 ? { image: hero1, credit: 'Steffen Schmitz · Wikimedia Commons (CC BY-SA 4.0)' } : null,
+      hero2 ? { image: hero2, credit: 'Steffen Schmitz · Wikimedia Commons (CC BY-SA 4.0)' } : null,
+      hero3 ? { image: hero3, credit: 'Shyamal · Wikimedia Commons (CC BY-SA 4.0)' } : null,
+    ].filter((item): item is { image: string; credit: string } => item !== null)
+
+    await payload.updateGlobal({
+      slug: 'nori-site',
+      overrideAccess: true,
+      context: { skipRevalidate: true },
+      data: {
+        ...(heroImages.length ? { heroImages } : {}),
+        ...(story ? { storyImage: story } : {}),
+        ...SEED_SITE_INFO,
+      },
+    })
+  }
+}

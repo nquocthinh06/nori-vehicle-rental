@@ -14,17 +14,18 @@ export const metadata: Metadata = {
 
 export default async function HomePage() {
   const [models, site] = await Promise.all([getCatalogue(), getSiteContent()])
+  const locations = [...new Set(models.flatMap((m) => m.locations))].sort()
   return (
     <main id="main-content">
-      <Hero images={site.heroImages} />
+      {site.showHeroSection && <Hero images={site.heroImages} />}
       <Container>
-        <SearchBar />
-        <Benefits />
-        <Featured models={models} />
-        <Story image={site.storyImage} />
-        <HowItWorks />
+        <SearchBar locations={locations} />
+        {site.showBenefitsSection && <Benefits />}
+        {site.showFeaturedSection && <Featured models={models} />}
+        {site.showStorySection && <Story image={site.storyImage} />}
+        {site.showHowItWorksSection && <HowItWorks />}
       </Container>
-      <CallToAction />
+      {site.showCtaSection && <CallToAction />}
     </main>
   )
 }

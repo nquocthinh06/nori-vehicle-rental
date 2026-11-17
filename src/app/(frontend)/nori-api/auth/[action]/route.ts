@@ -1,16 +1,44 @@
 import { appAuth } from '@/lib/app-auth'
 import { getPayloadClient } from '@/lib/payload'
-import { apiError, assertOrigin, body, fail, json, text } from '@/lib/api-utils'
+import { apiError, assertOrigin, assertRateLimit, body, fail, json, text } from '@/lib/api-utils'
 
 type Context = { params: Promise<{ action: string }> }
 
 function publicUser(user: { id: string; fullName: string; email: string; phone?: string | null }) {
-  return { id: user.id, fullName: user.fullName, email: user.email, phone: user.phone ?? null }
+  return {
+    id: user.id,
+    fullName: user.fullName,
+    email: user.email,
+    phone: user.phone ?? null,
+    role: 'CUSTOMER' as const,
+    isAdmin: false,
+  }
+}
+
+function publicAdmin(admin: {
+  id: string
+  email: string
+  fullName?: string
+  adminRole?: 'SUPER_ADMIN' | 'OPERATOR'
+  permissions?: Record<string, string[]>
+}) {
+  return {
+    id: admin.id,
+    fullName: admin.fullName || 'Quản trị viên NORI',
+    email: admin.email,
+    phone: null,
+    role: 'ADMIN' as const,
+    adminRole: admin.adminRole ?? 'OPERATOR',
+    permissions: admin.permissions ?? {},
+    isAdmin: true,
+  }
 }
 
 export async function GET(_request: Request, context: Context) {
   if ((await context.params).action !== 'me') return fail('Không tìm thấy trang.', 404, 'NOT_FOUND')
   try {
+    const admin = await appAuth.currentAdmin()
+    if (admin) return json(publicAdmin(admin))
     const user = await appAuth.currentUser()
     return user ? json(publicUser(user)) : json(null)
   } catch (error) {
@@ -26,6 +54,65 @@ export async function POST(request: Request, context: Context) {
       await appAuth.logout()
       return json({ loggedOut: true })
     }
+    if (action === 'password') {
+      assertRateLimit(request, 'auth-password', 20, 60_000)
+      const admin = await appAuth.currentAdmin()
+      const user = admin ? null : await appAuth.currentUser()
+      if (!admin && !user) return fail('Vui lòng đăng nhập để đổi mật khẩu.', 401, 'UNAUTHORIZED')
+      const data = await body(request, ['currentPassword', 'newPassword', 'confirmPassword'])
+      const currentPassword = typeof data.currentPassword === 'string' ? data.currentPassword : ''
+      const newPassword = typeof data.newPassword === 'string' ? data.newPassword : ''
+      const confirmPassword = typeof data.confirmPassword === 'string' ? data.confirmPassword : ''
+      const fields: Record<string, string> = {}
+      if (!currentPassword) fields.currentPassword = 'Vui lòng nhập mật khẩu hiện tại.'
+      if (newPassword.length < 8 || newPassword.length > 72)
+        fields.newPassword = 'Mật khẩu mới cần từ 8 đến 72 ký tự.'
+      else if (!/[A-Za-z]/.test(newPassword) || !/\d/.test(newPassword))
+        fields.newPassword = 'Mật khẩu mới cần ít nhất một chữ cái và một chữ số.'
+      else if (newPassword === currentPassword)
+        fields.newPassword = 'Mật khẩu mới cần khác mật khẩu hiện tại.'
+      if (confirmPassword !== newPassword) fields.confirmPassword = 'Mật khẩu xác nhận chưa khớp.'
+      if (Object.keys(fields).length) {
+        return fail('Vui lòng kiểm tra lại thông tin mật khẩu.', 400, 'VALIDATION_ERROR', fields)
+      }
+      const payload = await getPayloadClient()
+      if (admin) {
+        try {
+          await appAuth.loginAdmin(admin.email, currentPassword)
+        } catch {
+          return fail('Mật khẩu hiện tại chưa chính xác.', 401, 'UNAUTHORIZED', {
+            currentPassword: 'Mật khẩu hiện tại chưa chính xác.',
+          })
+        }
+        await payload.update({
+          collection: 'admins',
+          id: admin.id,
+          data: { password: newPassword },
+          user: { ...admin, collection: 'admins' } as never,
+          overrideAccess: false,
+        })
+        const refreshedAdmin = await appAuth.loginAdmin(admin.email, newPassword)
+        return json({ updated: true, user: publicAdmin(refreshedAdmin) })
+      }
+      if (!user) return fail('Vui lòng đăng nhập để đổi mật khẩu.', 401, 'UNAUTHORIZED')
+      try {
+        await appAuth.login(user.email, currentPassword)
+      } catch {
+        return fail('Mật khẩu hiện tại chưa chính xác.', 401, 'UNAUTHORIZED', {
+          currentPassword: 'Mật khẩu hiện tại chưa chính xác.',
+        })
+      }
+      await payload.update({
+        collection: 'users',
+        id: user.id,
+        data: { password: newPassword },
+        user,
+        overrideAccess: false,
+      })
+      const refreshed = await appAuth.login(user.email, newPassword)
+      return json({ updated: true, user: publicUser(refreshed) })
+    }
+    assertRateLimit(request, `auth-${action}`, 40, 60_000)
     if (!['login', 'register'].includes(action))
       return fail('Không tìm thấy chức năng.', 404, 'NOT_FOUND')
     const data = await body(
@@ -58,6 +145,23 @@ export async function POST(request: Request, context: Context) {
           fields,
         )
       const payload = await getPayloadClient()
+      const adminCollision = await payload.find({
+        collection: 'admins',
+        where: { email: { equals: email } },
+        limit: 1,
+        overrideAccess: true,
+        depth: 0,
+      })
+      const officialAdminEmail = (
+        process.env.NORI_ADMIN_EMAIL?.trim() || 'admin@nori.vn'
+      ).toLowerCase()
+      if (email === officialAdminEmail || adminCollision.docs.length > 0) {
+        return fail(
+          'Chưa thể tạo tài khoản. Email có thể đã được sử dụng; hãy đăng nhập hoặc thử email khác.',
+          409,
+          'ACCOUNT_NOT_CREATED',
+        )
+      }
       try {
         await payload.create({
           collection: 'users',
@@ -81,6 +185,20 @@ export async function POST(request: Request, context: Context) {
     } else if (Object.keys(fields).length)
       return fail('Vui lòng kiểm tra email và mật khẩu.', 400, 'VALIDATION_ERROR', fields)
     try {
+      if (action === 'login') {
+        const payload = await getPayloadClient()
+        const adminMatches = await payload.find({
+          collection: 'admins',
+          where: { email: { equals: email } },
+          limit: 1,
+          overrideAccess: true,
+          depth: 0,
+        })
+        if (adminMatches.docs.length > 0) {
+          const admin = await appAuth.loginAdmin(email, password)
+          return json(publicAdmin(admin), 200)
+        }
+      }
       const user = await appAuth.login(email, password)
       return json(publicUser(user), action === 'register' ? 201 : 200)
     } catch {
