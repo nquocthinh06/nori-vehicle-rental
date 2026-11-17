@@ -1,0 +1,233 @@
+@import url('https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&display=swap');
+@import 'tailwindcss';
+
+@theme {
+  --font-sans: 'Be Vietnam Pro', Arial, sans-serif;
+  --color-canvas: #ffffff;
+  --color-ink: #192a2c;
+  --color-muted: #5e6d69;
+  --color-subtle: #f4f6f5;
+  --color-soft: #eaf4f0;
+  --color-line: #e2e8e5;
+  --color-control-line: #7e8e87;
+  --color-brand: #087568;
+  --color-brand-hover: #056355;
+  --color-brand-soft: #e7f3ee;
+  --color-brand-bright: #b6e5bf;
+  --color-inverse: #ffffff;
+  --color-night: #142b28;
+  --color-night-soft: #223b36;
+  --color-on-night-muted: #bed0c7;
+  --color-danger: #b42318;
+  --color-danger-soft: #fff0ed;
+  --color-warning: #86540a;
+  --color-warning-soft: #fff5dc;
+  --color-focus: #168573;
+  --color-overlay: #102722;
+  --color-transparent: transparent;
+
+  --text-micro: 0.6875rem;
+  --text-caption: 0.75rem;
+  --text-small: 0.8125rem;
+  --text-body: 0.875rem;
+  --text-lead: 1rem;
+  --text-subtitle: 1.125rem;
+  --text-title: 1.5rem;
+  --text-section: 2.25rem;
+  --text-display: 3.25rem;
+  --text-hero: 4.25rem;
+  --text-hero-mobile: 2.5rem;
+  --text-wordmark: 2.45rem;
+  --text-brand-display: 6rem;
+
+  --radius-control: 0.5rem;
+  --radius-card: 0.875rem;
+  --radius-panel: 1.125rem;
+  --radius-pill: 999rem;
+  --shadow-float: 0 12px 48px -12px rgb(20 43 40 / 0.15);
+  --shadow-card: 0 8px 28px -10px rgb(20 43 40 / 0.14);
+  --shadow-focus: 0 0 0 3px rgb(22 133 115 / 0.2);
+  --spacing-page: 3.5rem;
+  --spacing-section: 5.5rem;
+  --spacing-header: 5.25rem;
+  --spacing-hero: 39rem;
+  --spacing-hero-mobile: 34rem;
+  --spacing-control: 3rem;
+  --spacing-control-sm: 2.5rem;
+  --spacing-icon: 1.25rem;
+  --spacing-icon-sm: 1rem;
+  --spacing-content: 82rem;
+  --spacing-reading: 46rem;
+  --spacing-panel: 26rem;
+  --spacing-card-image: 16rem;
+  --spacing-gallery: 33rem;
+  --spacing-gallery-mobile: 20rem;
+  --spacing-hero-copy: 41rem;
+  --spacing-card-min: 18rem;
+  --spacing-touch: 2.75rem;
+  --spacing-dialog: 34rem;
+  --spacing-dialog-viewport: 90dvh;
+  --spacing-form: 28rem;
+  --spacing-topbar: 2rem;
+  --aspect-vehicle: 1.55;
+  --ease-nori: cubic-bezier(0.2, 0.7, 0.2, 1);
+  --animate-enter: enter 450ms var(--ease-nori) both;
+  --animate-skeleton: skeleton 1500ms ease-in-out infinite;
+  --animate-spin: spin 1s linear infinite;
+
+  @keyframes enter {
+    from {
+      opacity: 0;
+      transform: translateY(12px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  @keyframes skeleton {
+    0%,
+    100% {
+      opacity: 0.45;
+    }
+    50% {
+      opacity: 0.85;
+    }
+  }
+}
+
+@layer base {
+  :root {
+    color-scheme: light;
+  }
+  html {
+    scroll-behavior: smooth;
+    scroll-padding-top: 7rem;
+  }
+  body {
+    font-family: var(--font-sans);
+    color: var(--color-ink);
+    background: var(--color-canvas);
+    font-size: var(--text-body);
+    -webkit-font-smoothing: antialiased;
+  }
+  ::selection {
+    background: var(--color-brand-bright);
+    color: var(--color-night);
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-focus);
+    outline-offset: 4px;
+  }
+  button,
+  a,
+  input,
+  select,
+  textarea,
+  summary {
+    -webkit-tap-highlight-color: transparent;
+  }
+  button:not(:disabled),
+  summary,
+  select {
+    cursor: pointer;
+  }
+  button:disabled {
+    cursor: not-allowed;
+  }
+  :where(h1, h2, h3, h4, p, label, dt, dd, button) {
+    overflow-wrap: anywhere;
+  }
+  input,
+  select,
+  textarea {
+    accent-color: var(--color-brand);
+  }
+  input[type='date'] {
+    min-width: 0;
+  }
+  input[type='date']::-webkit-calendar-picker-indicator {
+    opacity: 0.55;
+    cursor: pointer;
+  }
+  summary {
+    list-style: none;
+  }
+  summary::-webkit-details-marker {
+    display: none;
+  }
+  dialog {
+    margin: auto;
+  }
+  dialog::backdrop {
+    background: rgb(16 39 34 / 0.6);
+    backdrop-filter: blur(4px);
+  }
+  a,
+  button,
+  input,
+  select,
+  textarea {
+    transition-duration: 180ms;
+    transition-timing-function: var(--ease-nori);
+  }
+  img {
+    color: var(--color-muted);
+  }
+}
+
+@layer utilities {
+  .hero-shade {
+    background:
+      linear-gradient(
+        90deg,
+        rgb(9 27 24 / 0.88) 0%,
+        rgb(9 27 24 / 0.65) 37%,
+        rgb(9 27 24 / 0.04) 75%
+      ),
+      linear-gradient(0deg, rgb(9 27 24 / 0.25), transparent 40%);
+  }
+  .image-shade {
+    background: linear-gradient(0deg, rgb(9 27 24 / 0.8), transparent 80%);
+  }
+  .nori-wordmark {
+    font-style: italic;
+    letter-spacing: -0.085em;
+    font-weight: 800;
+  }
+  .text-balance {
+    text-wrap: balance;
+  }
+  .figma-custom-code-fragment {
+    display: contents;
+  }
+  .figma-bypass-link {
+    position: fixed;
+    top: 0.5rem;
+    left: 0.5rem;
+    z-index: 100;
+    transform: translateY(-180%);
+    opacity: 0;
+    pointer-events: none;
+    border-radius: var(--radius-control);
+    background: var(--color-night);
+    color: var(--color-inverse);
+    padding: 0.75rem 1rem;
+  }
+  .figma-bypass-link:focus {
+    transform: translateY(0);
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
