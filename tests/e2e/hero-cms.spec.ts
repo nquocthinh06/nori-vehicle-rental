@@ -11,10 +11,17 @@ const AUTH_HEADERS = { origin: ORIGIN, referer: `${ORIGIN}/` }
 function getDbPath(): string {
   const envPath =
     process.env.NORI_SQLITE_PATH?.trim() || process.env.DATABASE_URI?.replace(/^file:/, '').trim()
-  if (envPath) return path.resolve(envPath)
-  const standaloneDb = path.resolve('.next/standalone/nori.db')
-  if (fs.existsSync(standaloneDb)) return standaloneDb
-  return path.resolve('nori.db')
+  const resolved = envPath
+    ? path.resolve(envPath)
+    : fs.existsSync(path.resolve('.next/standalone/nori.db'))
+      ? path.resolve('.next/standalone/nori.db')
+      : path.resolve('nori.db')
+  if (resolved === path.resolve('nori.db') && process.env.NORI_ALLOW_LIVE_DB_TEST !== '1') {
+    throw new Error(
+      '[SAFEGUARD] Refusing E2E access to live ./nori.db without NORI_ALLOW_LIVE_DB_TEST=1.',
+    )
+  }
+  return resolved
 }
 
 function getAdminCredentials() {
