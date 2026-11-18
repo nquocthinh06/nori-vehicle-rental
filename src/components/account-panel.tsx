@@ -34,7 +34,7 @@ const paymentMethodLabels: Record<string, string> = {
 }
 
 export function AccountPanel() {
-  const { user, loading, refresh, logout } = useAuth()
+  const { user, isCustomer, isAdmin, loading, refresh, logout } = useAuth()
   const router = useRouter()
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
@@ -49,7 +49,17 @@ export function AccountPanel() {
   const [retry, setRetry] = useState(0)
 
   useEffect(() => {
-    if (!user) return
+    void refresh()
+  }, [refresh])
+
+  useEffect(() => {
+    if (!isCustomer || !user) {
+      setInquiries([])
+      setBookings([])
+      setInquiriesLoading(false)
+      setInquiriesError('')
+      return
+    }
     let active = true
     setInquiriesLoading(true)
     setInquiriesError('')
@@ -72,7 +82,7 @@ export function AccountPanel() {
     return () => {
       active = false
     }
-  }, [user?.id, retry])
+  }, [isCustomer, user?.id, retry])
 
   async function save(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -146,6 +156,102 @@ export function AccountPanel() {
           Đăng nhập <Icon name="arrow-right" className="size-4" />
         </ButtonLink>
       </EmptyState>
+    )
+
+  if (isAdmin)
+    return (
+      <div className="grid items-start gap-7 lg:grid-cols-3">
+        <aside className="rounded-card border border-line p-6">
+          <div className="mb-4 flex size-14 items-center justify-center rounded-pill bg-brand-soft text-brand">
+            <Icon name="shield" className="size-6" />
+          </div>
+          <Heading as="h2" size="subtitle" className="break-words">
+            {user.fullName}
+          </Heading>
+          <Text className="mt-2 break-all text-small text-muted">{user.email}</Text>
+          <Badge tone="warning" className="mt-4">
+            Quản trị viên NORI
+          </Badge>
+          <div className="mt-6 grid gap-3 border-t border-line pt-6">
+            <ButtonLink href="/dashboard" className="justify-start text-small">
+              <Icon name="shield" className="size-4" />
+              Vào Quản trị hệ thống <Icon name="arrow-up-right" className="ml-auto size-4" />
+            </ButtonLink>
+            <Button
+              variant="ghost"
+              onClick={signOut}
+              loading={busy}
+              className="justify-start text-small text-muted"
+            >
+              <Icon name="logout" className="size-4" />
+              Đăng xuất quản trị
+            </Button>
+          </div>
+        </aside>
+        <div className="space-y-7 lg:col-span-2">
+          <section className="rounded-card border border-line p-6 md:p-8">
+            <Heading as="h2" size="title">
+              Tài khoản Quản trị hệ thống
+            </Heading>
+            <Notice tone="info" className="mt-4">
+              Bạn đang đăng nhập bằng tài khoản quản trị ({user.email}). Nghiệp vụ đặt thuê xe và
+              quản lý đơn thuê cá nhân chỉ dành cho tài khoản khách hàng.
+            </Notice>
+            <div className="mt-5 flex flex-wrap gap-3">
+              <ButtonLink href="/dashboard">Đi tới Dashboard Quản trị</ButtonLink>
+              <Button variant="secondary" onClick={signOut} loading={busy}>
+                Đăng xuất để chuyển sang tài khoản khách hàng
+              </Button>
+            </div>
+          </section>
+
+          <section className="rounded-card border border-line p-6 md:p-8">
+            <Heading as="h2" size="title">
+              Đổi mật khẩu quản trị
+            </Heading>
+            <Text className="mb-6 mt-2 text-small text-muted">
+              Mật khẩu mới cần từ 8 đến 72 ký tự, bao gồm chữ cái và chữ số.
+            </Text>
+            <form onSubmit={changePassword} className="space-y-4">
+              <Input
+                id="pwd-current"
+                name="currentPassword"
+                label="Mật khẩu hiện tại"
+                type="password"
+                autoComplete="current-password"
+                required
+              />
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Input
+                  id="pwd-new"
+                  name="newPassword"
+                  label="Mật khẩu mới"
+                  type="password"
+                  autoComplete="new-password"
+                  minLength={8}
+                  maxLength={72}
+                  required
+                />
+                <Input
+                  id="pwd-confirm"
+                  name="confirmPassword"
+                  label="Xác nhận mật khẩu mới"
+                  type="password"
+                  autoComplete="new-password"
+                  minLength={8}
+                  maxLength={72}
+                  required
+                />
+              </div>
+              {pwdError && <Notice tone="error">{pwdError}</Notice>}
+              {pwdMessage && <Notice tone="success">{pwdMessage}</Notice>}
+              <Button type="submit" variant="secondary" loading={pwdBusy}>
+                Cập nhật mật khẩu
+              </Button>
+            </form>
+          </section>
+        </div>
+      </div>
     )
 
   return (

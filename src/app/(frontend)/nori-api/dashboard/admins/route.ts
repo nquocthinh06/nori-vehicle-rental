@@ -3,7 +3,7 @@ import { apiError, assertOrigin, body, fail, json, text } from '@/lib/api-utils'
 
 export async function GET() {
   try {
-    const auth = await requireAdmin()
+    const auth = await requireAdmin({ permission: ['admins', 'read'] })
     if (!auth.ok) return auth.response
     const { payload, user, admin } = auth
 

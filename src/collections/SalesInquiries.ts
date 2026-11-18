@@ -1,5 +1,11 @@
 import { APIError, type CollectionConfig } from 'payload'
-import { customerOnly, ownRecords, serverField, adminField } from '@/access/nori'
+import {
+  adminField,
+  adminHasAnyPermission,
+  adminPermission,
+  customerOnly,
+  serverField,
+} from '@/access/nori'
 import { auditCollection } from '@/hooks/audit-nori'
 import {
   calculateRollingPrice,
@@ -28,8 +34,22 @@ export const SalesInquiries: CollectionConfig = {
   },
   access: {
     create: customerOnly,
-    read: ownRecords,
-    update: ({ req }) => req.user?.collection === 'admins',
+    read: ({ req }) => {
+      if (
+        adminHasAnyPermission(req.user, [
+          ['inquiries', 'read'],
+          ['customers', 'read'],
+          ['reports', 'read'],
+        ])
+      ) {
+        return true
+      }
+      if (req.user?.collection === 'users' && req.user.status === 'ACTIVE') {
+        return { customer: { equals: req.user.id } }
+      }
+      return false
+    },
+    update: adminPermission('inquiries', 'update'),
     delete: () => false,
   },
   hooks: {

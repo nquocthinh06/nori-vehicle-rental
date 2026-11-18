@@ -1,11 +1,14 @@
 import 'server-only'
 import { APIError } from 'payload'
 
+const NO_STORE_HEADERS = {
+  'Cache-Control': 'private, no-store, no-cache, must-revalidate',
+  Pragma: 'no-cache',
+  Vary: 'Cookie',
+}
+
 export function json(data: unknown, status = 200) {
-  return Response.json(
-    { success: true, data },
-    { status, headers: { 'Cache-Control': 'private, no-store' } },
-  )
+  return Response.json({ success: true, data }, { status, headers: NO_STORE_HEADERS })
 }
 
 export function fail(
@@ -16,7 +19,7 @@ export function fail(
 ) {
   return Response.json(
     { success: false, error: { message, code, fields } },
-    { status, headers: { 'Cache-Control': 'private, no-store' } },
+    { status, headers: NO_STORE_HEADERS },
   )
 }
 
@@ -87,14 +90,37 @@ export function assertOrigin(request: Request) {
     }
   }
   if (!candidateOrigin) return
-  const allowed = [process.env.NEXT_PUBLIC_SITE_URL, request.url]
-    .filter(Boolean)
-    .map((value) => new URL(value!).origin)
-  const host = request.headers.get('host')
-  // Next can build request.url from its bind address behind a proxy.
-  // The actual Host supports same-origin local validation without broad wildcards.
-  if (host) allowed.push(`${new URL(request.url).protocol}//${host}`)
-  if (!allowed.includes(candidateOrigin)) throw new APIError('Nguồn yêu cầu không hợp lệ.', 403)
+  const allowed = new Set<string>()
+  for (const value of [
+    process.env.NEXT_PUBLIC_SITE_URL,
+    process.env.FIGMA_PUBLIC_URL,
+    request.url,
+  ]) {
+    if (!value) continue
+    try {
+      allowed.add(new URL(value).origin)
+    } catch {
+      // ignore malformed env URL
+    }
+  }
+  const urlProto = new URL(request.url).protocol
+  const rawForwardedProto = request.headers
+    .get('x-forwarded-proto')
+    ?.split(',')[0]
+    ?.trim()
+    .toLowerCase()
+  const forwardedProto =
+    rawForwardedProto === 'https' || rawForwardedProto === 'http' ? `${rawForwardedProto}:` : null
+  const host = request.headers.get('host')?.trim()
+  const forwardedHost = request.headers.get('x-forwarded-host')?.split(',')[0]?.trim()
+  // Next can build request.url from its bind address behind a reverse proxy or LAN interface.
+  // Allow exact Host / X-Forwarded-Host origins under both direct and forwarded protocol.
+  for (const h of [host, forwardedHost]) {
+    if (!h) continue
+    allowed.add(`${urlProto}//${h}`)
+    if (forwardedProto) allowed.add(`${forwardedProto}//${h}`)
+  }
+  if (!allowed.has(candidateOrigin)) throw new APIError('Nguồn yêu cầu không hợp lệ.', 403)
 }
 
 export function apiError(error: unknown) {
@@ -122,6 +148,6 @@ export function apiError(error: unknown) {
               : 'VALIDATION_ERROR'
     return fail(err.message, err.status, code)
   }
-  console.error('[NORI] Request failed:', error instanceof Error ? error.name : 'UnknownError')
+  console.error('[NORI] Request failed:', error)
   return fail('NORI chưa thể xử lý yêu cầu. Vui lòng thử lại sau.', 503, 'SERVICE_UNAVAILABLE')
 }

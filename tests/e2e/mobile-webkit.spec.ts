@@ -72,7 +72,7 @@ test.describe('NORI Mobile WebKit & Safari Mobile Journeys', () => {
     page,
   }) => {
     const custEmail = `mobile_usr_${Date.now()}@nori.vn`
-    const origin = 'http://localhost:3000'
+    const origin = process.env.NORI_TEST_BASE_URL || `http://localhost:${process.env.PORT || 3000}`
     const authHeaders = { origin, referer: `${origin}/` }
 
     // Register test mobile user
@@ -145,5 +145,88 @@ test.describe('NORI Mobile WebKit & Safari Mobile Journeys', () => {
       .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'])
       .analyze()
     expect(results.violations).toEqual([])
+  })
+
+  test('Mobile Journey 6: Mobile Safari / WebKit Login, app-session cookie persistence, Checkout, and My Bookings', async ({
+    page,
+    context,
+  }) => {
+    const custEmail = `webkit_rent_${Date.now()}@nori.vn`
+    const origin = process.env.NORI_TEST_BASE_URL || `http://localhost:${process.env.PORT || 3000}`
+    const authHeaders = { origin, referer: `${origin}/` }
+
+    // 1. Register via UI on mobile WebKit
+    await page.goto('/register', { waitUntil: 'domcontentloaded' })
+    await page.fill('#auth-name', 'Nguyễn Safari Mobile')
+    await page.fill('#auth-email', custEmail)
+    await page.fill('#auth-phone', '0938112233')
+    await page.fill('#auth-password', 'Password123!')
+    await page.fill('#auth-confirm', 'Password123!')
+    await page.check('#auth-terms')
+    await page.getByRole('button', { name: /Tạo tài khoản NORI/i }).click()
+    await expect(page).toHaveURL(/\/account/)
+
+    // 2. Verify app-session cookie in WebKit jar
+    const cookies = await context.cookies()
+    const appSession = cookies.find((c) => c.name === 'app-session')
+    expect(appSession).toBeDefined()
+    expect(appSession?.httpOnly).toBe(true)
+    expect(appSession?.path).toBe('/')
+
+    // 3. Pick an available rent vehicle and complete Checkout on Mobile WebKit
+    const fleetRes = await page.request.get('/nori-api/fleet?modelSlug=toyota-fortuner', {
+      headers: authHeaders,
+    })
+    expect(fleetRes.status()).toBe(200)
+    const fleetJson = await fleetRes.json()
+    const rentVehicle = (
+      fleetJson.data as Array<{
+        id: string
+        intent: string
+        pricePerDay?: number | null
+      }>
+    ).find((v) => v.intent !== 'SALE' && Boolean(v.pricePerDay))
+    expect(rentVehicle).toBeDefined()
+
+    // Find a free 2-day future window
+    let chosenStart = ''
+    let chosenEnd = ''
+    const base = new Date()
+    base.setUTCDate(base.getUTCDate() + 45)
+    for (let offset = 0; offset < 30; offset += 3) {
+      const s = new Date(base.getTime() + offset * 86_400_000).toISOString().slice(0, 10)
+      const e = new Date(base.getTime() + (offset + 2) * 86_400_000).toISOString().slice(0, 10)
+      const qRes = await page.request.get(
+        `/nori-api/availability?vehicle=${encodeURIComponent(rentVehicle!.id)}&startDate=${s}&endDate=${e}`,
+      )
+      const qJson = await qRes.json()
+      if (qJson.success && qJson.data?.available) {
+        chosenStart = s
+        chosenEnd = e
+        break
+      }
+    }
+    expect(chosenStart).toBeTruthy()
+
+    await page.goto(
+      `/checkout?vehicle=${encodeURIComponent(rentVehicle!.id)}&startDate=${chosenStart}&endDate=${chosenEnd}`,
+      { waitUntil: 'domcontentloaded' },
+    )
+    await expect(page.getByText('Nguyễn Safari Mobile')).toBeVisible()
+    await expect(page.getByText(/Vui lòng đăng nhập/i)).toHaveCount(0)
+
+    await page.check('#checkout-terms')
+    const createPromise = page.waitForResponse(
+      (r) => r.url().includes('/nori-api/bookings') && r.request().method() === 'POST',
+    )
+    await page.getByRole('button', { name: /Xác nhận đặt thuê/i }).click()
+    const createRes = await createPromise
+    expect(createRes.status()).toBe(201)
+
+    await expect(page.getByRole('heading', { name: /Đã tiếp nhận hành trình mới/i })).toBeVisible()
+    await page.getByRole('link', { name: /Xem đơn thuê của tôi/i }).click()
+    await expect(page).toHaveURL(/\/my-bookings/)
+    await expect(page.getByText(/Vui lòng đăng nhập/i)).toHaveCount(0)
+    await expect(page.getByText(/1 đơn thuê/)).toBeVisible()
   })
 })

@@ -1,5 +1,5 @@
 import { APIError, type CollectionConfig, type Where } from 'payload'
-import { isAdmin } from '@/access/nori'
+import { adminHasAnyPermission, adminPermission } from '@/access/nori'
 import { auditCollection } from '@/hooks/audit-nori'
 import { revalidateCatalogue, revalidateDeletedCatalogue } from '@/hooks/revalidate-nori'
 import { HOLD_STATUSES, operationStatusLabels } from '@/lib/rental-rules'
@@ -38,9 +38,15 @@ export const Vehicles: CollectionConfig = {
     ],
   },
   access: {
-    create: isAdmin,
+    create: adminPermission('vehicles', 'create'),
     read: ({ req }): boolean | Where =>
-      req.user?.collection === 'admins'
+      adminHasAnyPermission(req.user, [
+        ['vehicles', 'read'],
+        ['bookings', 'read'],
+        ['models', 'read'],
+        ['maintenance', 'read'],
+        ['reports', 'read'],
+      ])
         ? true
         : {
             and: [
@@ -49,8 +55,8 @@ export const Vehicles: CollectionConfig = {
               { 'model.visible': { equals: true } },
             ],
           },
-    update: isAdmin,
-    delete: isAdmin,
+    update: adminPermission('vehicles', 'update'),
+    delete: adminPermission('vehicles', 'delete'),
   },
   hooks: {
     beforeDelete: [
@@ -143,7 +149,15 @@ export const Vehicles: CollectionConfig = {
       type: 'text',
       required: true,
       unique: true,
-      access: { read: ({ req }) => req.user?.collection === 'admins' },
+      access: {
+        read: ({ req }) =>
+          adminHasAnyPermission(req.user, [
+            ['vehicles', 'read'],
+            ['bookings', 'read'],
+            ['maintenance', 'read'],
+            ['reports', 'read'],
+          ]),
+      },
       hooks: {
         beforeValidate: [
           ({ value }) => (typeof value === 'string' ? value.trim().toUpperCase() : value),

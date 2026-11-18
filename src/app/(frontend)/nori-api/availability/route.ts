@@ -1,7 +1,9 @@
 import { appAuth } from '@/lib/app-auth'
 import { getPayloadClient } from '@/lib/payload'
+import { lookupAndEvaluatePromotion } from '@/lib/promo-service'
 import {
   addDays,
+  applyPromotionToQuote,
   businessToday,
   calculateRentalQuote,
   parseAddonKeys,
@@ -60,7 +62,7 @@ export async function GET(request: Request) {
       const [slots, maints] = await Promise.all([
         payload.find({
           collection: 'rental-days',
-          overrideAccess: false,
+          overrideAccess: Boolean(excludeBookingKey),
           depth: 0,
           limit: 150,
           where: {
@@ -79,12 +81,13 @@ export async function GET(request: Request) {
         }),
         payload.find({
           collection: 'maintenance-schedules',
-          overrideAccess: false,
+          overrideAccess: true,
           depth: 0,
           limit: 30,
           where: {
             and: [{ vehicle: { equals: id } }, { status: { in: ['SCHEDULED', 'IN_PROGRESS'] } }],
           },
+          select: { startDate: true, endDate: true, status: true },
         }),
       ])
       const busySet = new Set(slots.docs.map((d) => d.day))
@@ -105,7 +108,7 @@ export async function GET(request: Request) {
     const [slots, maints] = await Promise.all([
       payload.count({
         collection: 'rental-days',
-        overrideAccess: false,
+        overrideAccess: Boolean(excludeBookingKey),
         where: {
           and: [
             { vehicle: { equals: id } },
@@ -116,12 +119,13 @@ export async function GET(request: Request) {
       }),
       payload.find({
         collection: 'maintenance-schedules',
-        overrideAccess: false,
+        overrideAccess: true,
         depth: 0,
         limit: 30,
         where: {
           and: [{ vehicle: { equals: id } }, { status: { in: ['SCHEDULED', 'IN_PROGRESS'] } }],
         },
+        select: { startDate: true, endDate: true, status: true },
       }),
     ])
     const hasMaintenanceConflict = maints.docs.some(
@@ -129,7 +133,7 @@ export async function GET(request: Request) {
     )
     const deliveryRequested = ['1', 'true'].includes(params.get('delivery') ?? '')
     const addonKeys = parseAddonKeys(params.get('addons'))
-    const quote = calculateRentalQuote({
+    const baseQuote = calculateRentalQuote({
       startDate: startDate!,
       endDate: endDate!,
       dailyPrice: vehicle.pricePerDay,
@@ -142,52 +146,30 @@ export async function GET(request: Request) {
       addonKeys,
       vehicleDeposit: vehicle.depositAmount,
     })
+
     const promoCodeParam = (params.get('promoCode') ?? '').trim().toUpperCase()
-    let promoDiscountAmount = 0
-    let promoName: string | null = null
-    let promoError: string | null = null
+    let promoEval = null
     if (promoCodeParam) {
-      const promoRes = await payload.find({
-        collection: 'promotions',
-        overrideAccess: false,
-        depth: 0,
-        limit: 1,
-        where: { code: { equals: promoCodeParam } },
+      const { evaluation } = await lookupAndEvaluatePromotion(payload, {
+        code: promoCodeParam,
+        serviceType: 'RENT',
+        totalDays: baseQuote.totalDays,
+        subtotalBeforePromo: baseQuote.estimatedTotal,
+        alreadyHeldByCurrentBooking: existingBookingPromo === promoCodeParam,
       })
-      const promo = promoRes.docs[0]
-      const today = businessToday()
-      const alreadyHeldByThisBooking = existingBookingPromo === promoCodeParam
-      if (
-        !promo ||
-        !promo.active ||
-        (promo.appliesTo !== 'ALL' && promo.appliesTo !== 'RENT') ||
-        (promo.validFrom && today < promo.validFrom) ||
-        (promo.validTo && today > promo.validTo) ||
-        (promo.minDays && quote.totalDays < promo.minDays) ||
-        (!alreadyHeldByThisBooking &&
-          promo.usageLimit != null &&
-          (promo.usedCount ?? 0) >= promo.usageLimit)
-      ) {
-        promoError = 'Mã khuyến mãi không hợp lệ hoặc chưa đủ điều kiện.'
-      } else {
-        const raw =
-          promo.discountType === 'PERCENT'
-            ? Math.round((quote.estimatedTotal * promo.discountValue) / 100)
-            : promo.discountValue
-        const capped = promo.maxDiscount != null ? Math.min(raw, promo.maxDiscount) : raw
-        promoDiscountAmount = Math.max(0, Math.min(capped, quote.estimatedTotal))
-        promoName = promo.name
-      }
+      promoEval = evaluation
     }
-    const finalEstimatedTotal = Math.max(0, quote.estimatedTotal - promoDiscountAmount)
+
+    const finalQuote = applyPromotionToQuote(baseQuote, promoEval)
+
     return json({
       available: slots.totalDocs === 0 && !hasMaintenanceConflict,
-      ...quote,
-      estimatedTotal: finalEstimatedTotal,
-      remainingAmount: Math.max(0, finalEstimatedTotal - quote.initialPaymentDue),
-      promoDiscountAmount,
-      promoName,
-      promoError,
+      ...finalQuote,
+      promoCode: promoEval?.valid ? promoEval.promoCode : null,
+      promoName: promoEval?.valid ? promoEval.promoName : null,
+      promoStatus: promoEval?.status ?? null,
+      promoMessage: promoEval?.valid ? promoEval.message : null,
+      promoError: promoEval && !promoEval.valid ? promoEval.message : null,
       kmLimitPerDay: vehicle.kmLimitPerDay ?? null,
       overKmFee: vehicle.overKmFee ?? null,
       lateReturnFeePerHour: vehicle.lateReturnFeePerHour ?? null,

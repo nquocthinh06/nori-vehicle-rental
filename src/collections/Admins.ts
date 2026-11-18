@@ -1,5 +1,5 @@
 import { APIError, type CollectionConfig } from 'payload'
-import { adminRoleOf, isAdmin, isSuperAdmin, superAdminField } from '@/access/nori'
+import { adminHasPermission, adminRoleOf, isSuperAdmin, superAdminField } from '@/access/nori'
 import { auditCollection } from '@/hooks/audit-nori'
 
 const audit = auditCollection({
@@ -27,7 +27,11 @@ export const Admins: CollectionConfig = {
   access: {
     create: isSuperAdmin,
     delete: isSuperAdmin,
-    read: isAdmin,
+    read: ({ req }) => {
+      if (adminHasPermission(req.user, 'admins', 'read')) return true
+      if (req.user?.collection === 'admins') return { id: { equals: req.user.id } }
+      return false
+    },
     // Super admins manage every account; other admins may only update their own profile/password.
     update: ({ req }) => {
       const role = adminRoleOf(req.user)
@@ -41,7 +45,7 @@ export const Admins: CollectionConfig = {
     group: 'NORI · Hệ thống',
     defaultColumns: ['email', 'fullName', 'adminRole'],
   },
-  auth: true,
+  auth: { tokenExpiration: 86_400, maxLoginAttempts: 8, lockTime: 600_000 },
   hooks: {
     beforeChange: [
       async ({ data, operation, originalDoc, req }) => {

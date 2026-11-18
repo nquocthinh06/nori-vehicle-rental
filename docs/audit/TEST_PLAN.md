@@ -1,27 +1,34 @@
-# KẾ HOẠCH KIỂM THỬ HỆ THỐNG NORI (TEST PLAN — v2.3 UPGRADE)
+# KẾ HOẠCH KIỂM THỬ TOÀN DIỆN HỆ THỐNG — NORI VEHICLE RENTAL (`2026-11-18`)
 
-## 1. Mục tiêu & Nguyên tắc Kiểm thử
+## 1. Mục tiêu & Phạm vi Đợt Final Remediation
 
-- Kiểm định toàn diện bản nâng cấp nghiệp vụ, quản trị phương tiện và UI/UX hệ thống **NORI** trên môi trường sản xuất cục bộ (`pnpm build` + `next start`) và cơ sở dữ liệu SQLite (`./nori.db`).
-- Phạm vi bao phủ 100% 5 nhóm mã kiểm thử bắt buộc:
-  - **`BK-01..BK-24`**: Chỉnh sửa đơn thuê chờ duyệt, loại trừ tự trùng lịch, khóa đối soát thanh toán, khóa xung đột duyệt đồng thời (Optimistic Locking) và lịch sử thay đổi.
-  - **`NT-01..NT-18`**: Thông báo Popup sau duyệt đơn (hiển thị 1 lần, Chuông thông báo, phân biệt chưa thanh toán, chống trùng idempotent, tính lịch làm việc kế tiếp qua cuối tuần/ngày lễ, cảnh báo đơn gấp, quy trình nhân viên gọi tư vấn, và ẩn popup khi đơn bị hủy).
-  - **`HR-01..HR-20`**: Hero Carousel 5 slide phương tiện quản trị từ CMS (`NoriSite`), chuyển slide mượt, điều hướng, Pause/Play, vuốt cảm ứng, bảo toàn `<SearchBar />`, `prefers-reduced-motion`, fallback ảnh lỗi/0 slide và tương thích 9 độ rộng màn hình (`320px`–`1920px`).
-  - **`MD-01..MD-18`**: Tải 1 ảnh & đa ảnh, chọn ảnh chính, sắp xếp, phân loại góc chụp động, chặn giả mạo magic-byte, chặn tệp >8MB, phân quyền Admin `403`, và chặn xóa ảnh đang được tham chiếu (`409`).
-  - **`VH-01..VH-20`**: Không gian quản trị dòng xe 10 tab thích ứng động (`CAR`, `MOTORBIKE`, `PICKUP`, `Điện (EV)`), làm giàu dữ liệu xác thực `VinFast Evo Max`, đồng bộ tức thì Admin → Khách hàng, và bảo toàn snapshot giá của đơn đã xác nhận khi Admin đổi giá xe.
-- Mọi bản ghi sinh ra trong quá trình kiểm thử tự động đều được dọn sạch trong khối `finally`, giữ nguyên toàn vẹn dữ liệu thực của người dùng và đạt `PRAGMA integrity_check = 'ok'`, `PRAGMA foreign_key_check = []`.
+Tiếp nối đợt audit nền (`241` Unit, `89` E2E), đợt kiểm thử nghiệm thu cuối tập trung xử lý triệt để:
+
+1. **Khôi phục tính toàn vẹn `./nori.db`**: Kiểm toán 25 vi phạm FK cũ và Hero Slide #1 `"Hero Test 6e1f916c"`, xây dựng [`scripts/repair-nori-db.mjs`](../../scripts/repair-nori-db.mjs) chạy thử trên bản sao [`nori-qa-remediation.db`](../../DATABASE_INTEGRITY_REPORT.md) và xin xác nhận chủ sở hữu trước khi chạm DB gốc.
+2. **Siết phân quyền RBAC 3 tầng**: Đóng `Folders`/`Tags`, khóa toàn bộ Payload `/api/*` theo ma trận 13 module, bổ sung quyền thứ 5 `publish` cho `Posts` & `NoriSite`, lọc PII khi Operator không có `customers:read`.
+3. **Đồng bộ Trạng thái & Concurrency**: Thêm `expectedRevision`, `expectedTotalPrice`, khóa ghi giao dịch thanh toán với đơn `CANCELLED`/`REJECTED`, tự hủy phiếu `PENDING` & đưa `remainingAmount` về `0`, chặn khách tự hủy khi đã thu `CONFIRMED`.
+4. **Hiệu năng, UAT, Multi-Browser & Vận hành Thực tế**: Tối ưu Mobile CWV & `/nori-api/fleet` (đo 3 lần độc lập), tải đồng thời `50` luồng, đo unit V8 coverage thực tế, chạy Chrome/Edge/Mobile WebKit, walkthrough UAT 7 bước, thêm `/nori-api/health`, `NORI_DISABLE_DEMO_SEED`, webhook fallback & diễn tập Backup/Restore.
 
 ---
 
-## 2. Công cụ & Lệnh Thực thi
+## 2. Chiến lược Cô lập Dữ liệu Kiểm thử
 
-| Hạng mục                                   | Lệnh thực thi                                              | Kết quả yêu cầu                                                               |
-| :----------------------------------------- | :--------------------------------------------------------- | :---------------------------------------------------------------------------- |
-| Định dạng mã nguồn                         | `pnpm format:check` (`oxfmt`)                              | `0` lỗi định dạng                                                             |
-| Kiểm tra kiểu tĩnh                         | `pnpm typecheck` (`tsc --noEmit`)                          | `0` lỗi TypeScript                                                            |
-| Phân tích tĩnh & Bảo mật CSRF              | `pnpm lint` (`node scripts/static-lint.mjs`)               | `0` vi phạm trên toàn bộ `149` tệp nguồn                                      |
-| Unit Tests nghiệp vụ                       | `pnpm test` (`node --test tests/rental-rules.test.mjs`)    | `225/225 PASS`                                                                |
-| Kiểm thử Admin cô lập                      | `pnpm test:admin` (`node scripts/test-admin-isolated.mjs`) | `PASS` (`pbkdf2-sha256-v1`, `integrity = ok`)                                 |
-| Production Build & Route Table             | `pnpm build` (`payload build` + `next build`)              | `74/74` trang tĩnh prerender thành công, `0` route công khai bị `ƒ (Dynamic)` |
-| Playwright E2E & Accessibility             | `pnpm exec playwright test --project=chromium`             | `62/62 PASS` (`0` vi phạm `axe-core` WCAG 2.2 AA)                             |
-| Cloud Sandbox (`figma make verify-deploy`) | `NOT_RUN` / `BLOCKED`                                      | Không có binary `figma` trên máy Windows cục bộ                               |
+1. Giữ nguyên an toàn `./nori.db` (có 2 bản sao lưu `VACUUM INTO` trong `backups/`).
+2. Mọi lệnh build, đo hiệu năng, tải đồng thời, UAT và `92` Playwright E2E chỉ thao tác trên bản sao đã vá lỗi `./nori-qa-isolated.db` (`NORI_SQLITE_PATH`, `DATABASE_URI`).
+
+---
+
+## 3. Tiêu chí Đạt / Không Đạt (Exit Criteria)
+
+| Tiêu chí                                           | Ngưỡng chấp nhận                                                |                                                 Kết quả đã xác minh                                                 |
+| :------------------------------------------------- | :-------------------------------------------------------------- | :-----------------------------------------------------------------------------------------------------------------: |
+| Typecheck & Static Lint                            | `0` lỗi TypeScript, `0` lỗi AST security                        |                                            **ĐẠT (`0` lỗi / `166` tệp)**                                            |
+| Format Check (`oxfmt`)                             | `100%` tệp nguồn & audit chuẩn format                           |                                                  **ĐẠT (`100%`)**                                                   |
+| Unit Tests & Coverage                              | `100%` PASS, công bố độ phủ thực tế                             |                                    **ĐẠT (`247/247` PASS · `93.54%` line cov)**                                     |
+| Playwright Full E2E (`chromium` + `mobile-webkit`) | `100%` PASS (`0` fail, `0` skip)                                |                                      **ĐẠT (`92/92` PASS · `5.4m` · `0` FK)**                                       |
+| Cross-Browser Edge & Repeat Stability              | Edge PASS + 30 lượt `--repeat-each=3` PASS                      |                            **ĐẠT (Edge `9/9` · Stability `30/30` · Firefox `BLOCKED`)**                             |
+| Browser UAT Walkthrough                            | Full luồng Khách + Admin, `0` lỗi console/5xx                   |                                   **ĐẠT (`7/7` PASS · `0` console/5xx · `0` FK)**                                   |
+| Concurrent API Load (`50` users)                   | `0` lỗi `5xx`, tối ưu `/nori-api/fleet`                         |                                   **ĐẠT (`606 RPS`, `p95=83ms`, `0` lỗi `5xx`)**                                    |
+| Desktop & Mobile CWV                               | Desktop GOOD; Mobile cải thiện tối đa có kiểm chứng             | **Desktop GOOD (`244–408ms`); Mobile Catalogue `2260ms`, INP `64ms`, Home/Detail `2.87–3.06s` trên local raw JPEG** |
+| Khôi phục `./nori.db` gốc                          | `integrity_check = ok`, `foreign_key_check = []`, Slide #1 đúng |                           **Bản sao ĐẠT (`0` FK) · `./nori.db` CHỜ XÁC NHẬN CHỦ SỞ HỮU**                            |
+| Cloud `figma make verify-deploy`                   | Thực thi trên sandbox Make                                      |                                     **BLOCKED (thiếu binary `figma` ở local)**                                      |

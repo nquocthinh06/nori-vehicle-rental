@@ -1,5 +1,11 @@
 import { requireAdmin } from '@/lib/admin-api'
 import { apiError, assertOrigin, body, fail, json, text } from '@/lib/api-utils'
+import { findPromotionByCode } from '@/lib/promo-service'
+import {
+  businessToday,
+  getPromotionRuntimeStatus,
+  validatePromotionInput,
+} from '@/lib/rental-rules'
 
 export async function GET(request: Request) {
   try {
@@ -16,24 +22,41 @@ export async function GET(request: Request) {
       limit: 200,
       sort: '-createdAt',
     })
+    const today = businessToday()
     const items = res.docs
       .filter((p) => !q || `${p.code} ${p.name}`.toLowerCase().includes(q))
-      .map((p) => ({
-        id: p.id,
-        code: p.code,
-        name: p.name,
-        description: p.description ?? '',
-        discountType: p.discountType,
-        discountValue: p.discountValue,
-        maxDiscount: p.maxDiscount ?? null,
-        minDays: p.minDays ?? 1,
-        appliesTo: p.appliesTo ?? 'RENT',
-        validFrom: p.validFrom ?? '',
-        validTo: p.validTo ?? '',
-        usageLimit: p.usageLimit ?? null,
-        usedCount: p.usedCount ?? 0,
-        active: Boolean(p.active),
-      }))
+      .map((p) => {
+        const runtime = getPromotionRuntimeStatus(
+          {
+            active: Boolean(p.active),
+            validFrom: p.validFrom ?? null,
+            validTo: p.validTo ?? null,
+            usageLimit: p.usageLimit ?? null,
+            usedCount: p.usedCount ?? 0,
+          },
+          today,
+        )
+        return {
+          id: p.id,
+          code: p.code,
+          name: p.name,
+          description: p.description ?? '',
+          discountType: p.discountType,
+          discountValue: p.discountValue,
+          maxDiscount: p.maxDiscount ?? null,
+          minDays: p.minDays ?? 1,
+          appliesTo: p.appliesTo ?? 'RENT',
+          validFrom: p.validFrom ?? '',
+          validTo: p.validTo ?? '',
+          usageLimit: p.usageLimit ?? null,
+          usedCount: p.usedCount ?? 0,
+          remainingUses: runtime.remainingUses,
+          active: Boolean(p.active),
+          runtimeStatus: runtime.status,
+          runtimeStatusLabel: runtime.label,
+          runtimeStatusTone: runtime.tone,
+        }
+      })
     return json({ items })
   } catch (error) {
     return apiError(error)
@@ -61,31 +84,50 @@ export async function POST(request: Request) {
       'usageLimit',
       'active',
     ])
-    const code = text(data.code, 40).toUpperCase()
-    const name = text(data.name, 160)
-    const discountValue = Number(data.discountValue)
-    if (!code || !name || !Number.isSafeInteger(discountValue) || discountValue < 1) {
-      return fail('Vui lòng nhập mã, tên chương trình và giá trị giảm hợp lệ.')
+
+    const validation = validatePromotionInput(
+      {
+        code: text(data.code, 40),
+        name: text(data.name, 160),
+        description: text(data.description, 500),
+        discountType: typeof data.discountType === 'string' ? data.discountType : 'PERCENT',
+        discountValue: data.discountValue,
+        maxDiscount: data.maxDiscount,
+        minDays: data.minDays ?? 1,
+        appliesTo: typeof data.appliesTo === 'string' ? data.appliesTo : 'RENT',
+        validFrom: text(data.validFrom, 10),
+        validTo: text(data.validTo, 10),
+        usageLimit: data.usageLimit,
+        active: data.active !== false,
+      },
+      0,
+    )
+    if (validation.error || !validation.normalized) {
+      return fail(validation.error ?? 'Thông tin khuyến mãi không hợp lệ.')
     }
+    const n = validation.normalized
+    const existing = await findPromotionByCode(payload, n.code)
+    if (existing) {
+      return fail('Mã khuyến mãi này đã tồn tại. Vui lòng nhập mã khác.', 409, 'DUPLICATE_PROMO')
+    }
+
     const created = await payload.create({
       collection: 'promotions',
       user,
       overrideAccess: false,
       data: {
-        code,
-        name,
-        description: text(data.description, 500) || undefined,
-        discountType: data.discountType === 'FIXED' ? 'FIXED' : 'PERCENT',
-        discountValue,
-        maxDiscount: data.maxDiscount ? Number(data.maxDiscount) : undefined,
-        minDays: data.minDays ? Number(data.minDays) : 1,
-        appliesTo: (['ALL', 'RENT', 'SALE'].includes(String(data.appliesTo))
-          ? data.appliesTo
-          : 'RENT') as 'ALL' | 'RENT' | 'SALE',
-        validFrom: text(data.validFrom, 10) || undefined,
-        validTo: text(data.validTo, 10) || undefined,
-        usageLimit: data.usageLimit ? Number(data.usageLimit) : undefined,
-        active: data.active !== false,
+        code: n.code,
+        name: n.name,
+        description: n.description ?? undefined,
+        discountType: n.discountType,
+        discountValue: n.discountValue,
+        maxDiscount: n.maxDiscount ?? undefined,
+        minDays: n.minDays,
+        appliesTo: n.appliesTo,
+        validFrom: n.validFrom ?? undefined,
+        validTo: n.validTo ?? undefined,
+        usageLimit: n.usageLimit ?? undefined,
+        active: n.active,
       },
     })
     return json({ id: created.id, code: created.code }, 201)
@@ -117,28 +159,64 @@ export async function PATCH(request: Request) {
     ])
     const id = text(data.id, 100)
     if (!id) return fail('Thiếu mã khuyến mãi.')
-    const patch: Record<string, unknown> = {}
-    if (data.name !== undefined) patch.name = text(data.name, 160)
-    if (data.description !== undefined) patch.description = text(data.description, 500) || null
-    if (data.discountType !== undefined)
-      patch.discountType = data.discountType === 'FIXED' ? 'FIXED' : 'PERCENT'
-    if (data.discountValue !== undefined) patch.discountValue = Number(data.discountValue)
-    if (data.maxDiscount !== undefined)
-      patch.maxDiscount = data.maxDiscount ? Number(data.maxDiscount) : null
-    if (data.minDays !== undefined) patch.minDays = data.minDays ? Number(data.minDays) : 1
-    if (data.appliesTo !== undefined) patch.appliesTo = String(data.appliesTo)
-    if (data.validFrom !== undefined) patch.validFrom = text(data.validFrom, 10) || null
-    if (data.validTo !== undefined) patch.validTo = text(data.validTo, 10) || null
-    if (data.usageLimit !== undefined)
-      patch.usageLimit = data.usageLimit ? Number(data.usageLimit) : null
-    if (data.active !== undefined) patch.active = Boolean(data.active)
+
+    const current = await payload.findByID({
+      collection: 'promotions',
+      id,
+      user,
+      overrideAccess: false,
+      depth: 0,
+    })
+
+    const validation = validatePromotionInput(
+      {
+        code: current.code,
+        name: data.name !== undefined ? text(data.name, 160) : current.name,
+        description:
+          data.description !== undefined
+            ? text(data.description, 500)
+            : (current.description ?? ''),
+        discountType:
+          data.discountType !== undefined ? String(data.discountType) : current.discountType,
+        discountValue:
+          data.discountValue !== undefined ? data.discountValue : current.discountValue,
+        maxDiscount:
+          data.maxDiscount !== undefined ? data.maxDiscount : (current.maxDiscount ?? null),
+        minDays: data.minDays !== undefined ? data.minDays : (current.minDays ?? 1),
+        appliesTo:
+          data.appliesTo !== undefined ? String(data.appliesTo) : (current.appliesTo ?? 'RENT'),
+        validFrom:
+          data.validFrom !== undefined ? text(data.validFrom, 10) : (current.validFrom ?? ''),
+        validTo: data.validTo !== undefined ? text(data.validTo, 10) : (current.validTo ?? ''),
+        usageLimit: data.usageLimit !== undefined ? data.usageLimit : (current.usageLimit ?? null),
+        active: data.active !== undefined ? Boolean(data.active) : Boolean(current.active),
+      },
+      Number(current.usedCount ?? 0),
+    )
+
+    if (validation.error || !validation.normalized) {
+      return fail(validation.error ?? 'Thông tin cập nhật khuyến mãi không hợp lệ.')
+    }
+    const n = validation.normalized
 
     const updated = await payload.update({
       collection: 'promotions',
       id,
       user,
       overrideAccess: false,
-      data: patch,
+      data: {
+        name: n.name,
+        description: n.description,
+        discountType: n.discountType,
+        discountValue: n.discountValue,
+        maxDiscount: n.maxDiscount,
+        minDays: n.minDays,
+        appliesTo: n.appliesTo,
+        validFrom: n.validFrom,
+        validTo: n.validTo,
+        usageLimit: n.usageLimit,
+        active: n.active,
+      },
     })
     return json({ id: updated.id, active: updated.active })
   } catch (error) {

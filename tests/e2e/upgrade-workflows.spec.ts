@@ -10,6 +10,9 @@ const ORIGIN = process.env.NORI_TEST_BASE_URL || `http://localhost:${process.env
 const AUTH_HEADERS = { origin: ORIGIN, referer: `${ORIGIN}/` }
 
 function getDbPath(): string {
+  const envPath =
+    process.env.NORI_SQLITE_PATH?.trim() || process.env.DATABASE_URI?.replace(/^file:/, '').trim()
+  if (envPath) return path.resolve(envPath)
   const standaloneDb = path.resolve('.next/standalone/nori.db')
   if (fs.existsSync(standaloneDb)) return standaloneDb
   return path.resolve('nori.db')
@@ -118,6 +121,8 @@ function cleanupUpgradeTestData({
         'DELETE FROM consultations_rels WHERE parent_id IN (SELECT id FROM consultations WHERE customer_id = ?)',
       ).run(user.id)
       db.prepare('DELETE FROM consultations WHERE customer_id = ?').run(user.id)
+      db.prepare('DELETE FROM audit_logs_rels WHERE users_id = ?').run(user.id)
+      db.prepare('DELETE FROM bookings_rels WHERE users_id = ?').run(user.id)
       db.prepare('DELETE FROM users_sessions WHERE _parent_id = ?').run(user.id)
       db.prepare('DELETE FROM users_rels WHERE parent_id = ? OR users_id = ?').run(user.id, user.id)
       db.prepare('DELETE FROM users WHERE id = ?').run(user.id)

@@ -1,5 +1,18 @@
 import fs from 'node:fs'
+import path from 'node:path'
 import { defineConfig, devices } from '@playwright/test'
+
+const mainDb = path.resolve('nori.db')
+const configuredDbRaw =
+  process.env.NORI_SQLITE_PATH?.trim() || process.env.DATABASE_URI?.replace(/^file:/, '').trim()
+if (
+  process.env.NORI_ALLOW_LIVE_DB_TEST !== '1' &&
+  (!configuredDbRaw || path.resolve(configuredDbRaw) === mainDb)
+) {
+  throw new Error(
+    '[NORI SAFETY GUARD] Refusing to run Playwright E2E tests against live ./nori.db. Run "pnpm test:e2e:isolated" or set NORI_SQLITE_PATH / DATABASE_URI to an isolated database copy.',
+  )
+}
 
 const chromiumCandidates = [
   process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE,

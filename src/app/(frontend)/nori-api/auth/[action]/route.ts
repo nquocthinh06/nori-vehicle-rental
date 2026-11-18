@@ -37,10 +37,13 @@ function publicAdmin(admin: {
 export async function GET(_request: Request, context: Context) {
   if ((await context.params).action !== 'me') return fail('Không tìm thấy trang.', 404, 'NOT_FOUND')
   try {
+    // Check active customer session (`app-session`) first so `/auth/me` is strictly
+    // invariant with `appAuth.currentUser()` across Checkout, Bookings, and Account.
+    const user = await appAuth.currentUser()
+    if (user) return json(publicUser(user))
     const admin = await appAuth.currentAdmin()
     if (admin) return json(publicAdmin(admin))
-    const user = await appAuth.currentUser()
-    return user ? json(publicUser(user)) : json(null)
+    return json(null)
   } catch (error) {
     return apiError(error)
   }
@@ -51,13 +54,13 @@ export async function POST(request: Request, context: Context) {
   try {
     assertOrigin(request)
     if (action === 'logout') {
-      await appAuth.logout()
+      await appAuth.logout(request)
       return json({ loggedOut: true })
     }
     if (action === 'password') {
       assertRateLimit(request, 'auth-password', 20, 60_000)
-      const admin = await appAuth.currentAdmin()
-      const user = admin ? null : await appAuth.currentUser()
+      const user = await appAuth.currentUser()
+      const admin = user ? null : await appAuth.currentAdmin()
       if (!admin && !user) return fail('Vui lòng đăng nhập để đổi mật khẩu.', 401, 'UNAUTHORIZED')
       const data = await body(request, ['currentPassword', 'newPassword', 'confirmPassword'])
       const currentPassword = typeof data.currentPassword === 'string' ? data.currentPassword : ''
@@ -78,7 +81,7 @@ export async function POST(request: Request, context: Context) {
       const payload = await getPayloadClient()
       if (admin) {
         try {
-          await appAuth.loginAdmin(admin.email, currentPassword)
+          await appAuth.loginAdmin(admin.email, currentPassword, request)
         } catch {
           return fail('Mật khẩu hiện tại chưa chính xác.', 401, 'UNAUTHORIZED', {
             currentPassword: 'Mật khẩu hiện tại chưa chính xác.',
@@ -91,12 +94,12 @@ export async function POST(request: Request, context: Context) {
           user: { ...admin, collection: 'admins' } as never,
           overrideAccess: false,
         })
-        const refreshedAdmin = await appAuth.loginAdmin(admin.email, newPassword)
+        const refreshedAdmin = await appAuth.loginAdmin(admin.email, newPassword, request)
         return json({ updated: true, user: publicAdmin(refreshedAdmin) })
       }
       if (!user) return fail('Vui lòng đăng nhập để đổi mật khẩu.', 401, 'UNAUTHORIZED')
       try {
-        await appAuth.login(user.email, currentPassword)
+        await appAuth.login(user.email, currentPassword, request)
       } catch {
         return fail('Mật khẩu hiện tại chưa chính xác.', 401, 'UNAUTHORIZED', {
           currentPassword: 'Mật khẩu hiện tại chưa chính xác.',
@@ -109,7 +112,7 @@ export async function POST(request: Request, context: Context) {
         user,
         overrideAccess: false,
       })
-      const refreshed = await appAuth.login(user.email, newPassword)
+      const refreshed = await appAuth.login(user.email, newPassword, request)
       return json({ updated: true, user: publicUser(refreshed) })
     }
     assertRateLimit(request, `auth-${action}`, 40, 60_000)
@@ -119,7 +122,7 @@ export async function POST(request: Request, context: Context) {
       request,
       action === 'register'
         ? ['email', 'password', 'confirmPassword', 'fullName', 'phone']
-        : ['email', 'password'],
+        : ['email', 'password', 'accountType'],
     )
     const email = text(data.email).toLowerCase()
     const password = typeof data.password === 'string' ? data.password : ''
@@ -186,20 +189,48 @@ export async function POST(request: Request, context: Context) {
       return fail('Vui lòng kiểm tra email và mật khẩu.', 400, 'VALIDATION_ERROR', fields)
     try {
       if (action === 'login') {
+        const requestedType = text(data.accountType, 20).toUpperCase()
         const payload = await getPayloadClient()
-        const adminMatches = await payload.find({
-          collection: 'admins',
-          where: { email: { equals: email } },
-          limit: 1,
-          overrideAccess: true,
-          depth: 0,
-        })
-        if (adminMatches.docs.length > 0) {
-          const admin = await appAuth.loginAdmin(email, password)
-          return json(publicAdmin(admin), 200)
+        const [adminMatches, userMatches] = await Promise.all([
+          payload.find({
+            collection: 'admins',
+            where: { email: { equals: email } },
+            limit: 1,
+            overrideAccess: true,
+            depth: 0,
+          }),
+          payload.find({
+            collection: 'users',
+            where: { email: { equals: email } },
+            limit: 1,
+            overrideAccess: true,
+            depth: 0,
+          }),
+        ])
+        const hasAdmin = adminMatches.docs.length > 0
+        const hasCustomer = userMatches.docs.length > 0
+
+        if (requestedType === 'CUSTOMER' && hasCustomer) {
+          try {
+            const user = await appAuth.login(email, password, request)
+            return json(publicUser(user), 200)
+          } catch (err) {
+            if (!hasAdmin) throw err
+            const admin = await appAuth.loginAdmin(email, password, request)
+            return json(publicAdmin(admin), 200)
+          }
+        }
+
+        if (hasAdmin) {
+          try {
+            const admin = await appAuth.loginAdmin(email, password, request)
+            return json(publicAdmin(admin), 200)
+          } catch (err) {
+            if (!hasCustomer) throw err
+          }
         }
       }
-      const user = await appAuth.login(email, password)
+      const user = await appAuth.login(email, password, request)
       return json(publicUser(user), action === 'register' ? 201 : 200)
     } catch {
       return fail(
@@ -218,8 +249,13 @@ export async function PATCH(request: Request, context: Context) {
     assertOrigin(request)
     if ((await context.params).action !== 'me')
       return fail('Không tìm thấy chức năng.', 404, 'NOT_FOUND')
-    const user = await appAuth.currentUser()
-    if (!user) return fail('Vui lòng đăng nhập để tiếp tục.', 401, 'UNAUTHORIZED')
+    const auth = await appAuth.requireCustomer({
+      unauthMessage: 'Vui lòng đăng nhập để tiếp tục.',
+      adminForbiddenMessage:
+        'Bạn đang đăng nhập bằng tài khoản quản trị. Vui lòng sử dụng tài khoản khách hàng để cập nhật hồ sơ thuê xe.',
+    })
+    if (!auth.ok) return auth.response
+    const user = auth.user
     const data = await body(request, ['fullName', 'phone'])
     const fullName = text(data.fullName, 100)
     const phone = text(data.phone, 16)

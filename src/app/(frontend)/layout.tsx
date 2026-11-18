@@ -1,6 +1,16 @@
 import React from 'react'
 import type { Metadata, Viewport } from 'next'
+import { Be_Vietnam_Pro } from 'next/font/google'
 import Script from 'next/script'
+
+const beVietnamPro = Be_Vietnam_Pro({
+  subsets: ['latin', 'vietnamese'],
+  weight: ['400', '600'],
+  display: 'swap',
+  preload: false,
+  variable: '--font-be-vietnam',
+  fallback: ['Arial', 'sans-serif'],
+})
 import { BodyCustomCode, renderHeadCustomCode } from '@/lib/make-custom-code'
 import { makeSiteSettings, sanitizeHtmlAttribute } from '@/lib/make-site-settings'
 import './styles.css'
@@ -68,13 +78,23 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const customScripts = makeSiteSettings.customScripts
   const site = await getSiteContent()
 
+  // Browser security/scanner extensions (e.g. Kaspersky Protection, Bisect) inject
+  // dynamic `__processed_<uuid>__` attributes directly onto <html> / <body> before
+  // React hydration. Targeted suppressHydrationWarning on root html/body prevents
+  // false-positive attribute warnings on outer document tags without masking any
+  // real SSR/CSR mismatches inside React application components.
   return (
-    <html lang={language} data-scroll-behavior="smooth">
+    <html
+      lang={language}
+      data-scroll-behavior="smooth"
+      className={beVietnamPro.variable}
+      suppressHydrationWarning
+    >
       <head>
         {renderHeadCustomCode(customScripts?.headStart, 'head-start')}
         {renderHeadCustomCode(customScripts?.headEnd, 'head-end')}
       </head>
-      <body className="min-h-screen bg-canvas text-ink antialiased">
+      <body className="min-h-screen bg-canvas text-ink antialiased" suppressHydrationWarning>
         <BodyCustomCode html={customScripts?.bodyStart} />
         <ExternalLink className="figma-bypass-link" href="#main-content">
           Bỏ qua điều hướng, đến nội dung

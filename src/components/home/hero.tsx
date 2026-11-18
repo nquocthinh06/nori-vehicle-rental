@@ -1,12 +1,14 @@
 'use client'
 
-import Image from 'next/image'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { getImageProps } from 'next/image'
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import type { HeroSlideView, SiteContent } from '@/lib/catalogue'
 import { Button, ButtonLink, Container, Heading, Text, cn } from '@/components/ui'
 import { Icon } from '@/components/ui/icon'
 
-type NormalizedSlide = {
+export type HeroPreviewViewport = 'desktop' | 'tablet' | 'mobile'
+
+export type NormalizedSlide = {
   id: string
   eyebrow: string
   first: string
@@ -18,7 +20,16 @@ type NormalizedSlide = {
   secondaryHref?: string
   categoryBadge: string
   desktopUrl: string
+  desktopWidth: number
+  desktopHeight: number
   mobileUrl: string
+  mobileWidth: number
+  mobileHeight: number
+  hasCustomMobile: boolean
+  focalX: number
+  focalY: number
+  mobileFocalX: number
+  mobileFocalY: number
   imageAlt: string
   credit?: string | null
   durationSeconds?: number | null
@@ -40,7 +51,16 @@ const defaultSlides: NormalizedSlide[] = [
     secondaryText: 'Cách NORI hoạt động',
     secondaryHref: '/about#how-it-works',
     desktopUrl: '/seed-media/toyota-fortuner-ext-3.jpg',
+    desktopWidth: 1600,
+    desktopHeight: 1000,
     mobileUrl: '/seed-media/toyota-fortuner-ext-3.jpg',
+    mobileWidth: 1600,
+    mobileHeight: 1000,
+    hasCustomMobile: false,
+    focalX: 50,
+    focalY: 50,
+    mobileFocalX: 50,
+    mobileFocalY: 50,
     imageAlt: 'Ô tô SUV di chuyển trên cung đường hành trình ven biển và núi cùng NORI',
     credit: 'Matti Blume · CC BY-SA 4.0',
   },
@@ -57,7 +77,16 @@ const defaultSlides: NormalizedSlide[] = [
     secondaryText: 'Cách NORI hoạt động',
     secondaryHref: '/about#how-it-works',
     desktopUrl: '/seed-media/mazda-cx5-ext-1.jpg',
+    desktopWidth: 1600,
+    desktopHeight: 1000,
     mobileUrl: '/seed-media/mazda-cx5-ext-1.jpg',
+    mobileWidth: 1600,
+    mobileHeight: 1000,
+    hasCustomMobile: false,
+    focalX: 50,
+    focalY: 50,
+    mobileFocalX: 50,
+    mobileFocalY: 50,
     imageAlt: 'Mazda CX-5 đại diện phân khúc ô tô phổ thông và SUV gia đình tại NORI',
     credit: 'Wikimedia Commons · CC BY-SA 4.0',
   },
@@ -74,7 +103,16 @@ const defaultSlides: NormalizedSlide[] = [
     secondaryText: 'Liên hệ tư vấn',
     secondaryHref: '/support',
     desktopUrl: '/seed-media/mercedes-c300-ext-1.jpg',
+    desktopWidth: 1600,
+    desktopHeight: 1000,
     mobileUrl: '/seed-media/mercedes-c300-ext-1.jpg',
+    mobileWidth: 1600,
+    mobileHeight: 1000,
+    hasCustomMobile: false,
+    focalX: 50,
+    focalY: 50,
+    mobileFocalX: 50,
+    mobileFocalY: 50,
     imageAlt: 'Mercedes-Benz C 300 AMG dòng xe hạng sang hiện đại tại NORI',
     credit: 'Wikimedia Commons · CC BY-SA 4.0',
   },
@@ -91,7 +129,16 @@ const defaultSlides: NormalizedSlide[] = [
     secondaryText: 'Xem xe máy điện',
     secondaryHref: '/vehicles?type=MOTORBIKE&fuel=%C4%90i%E1%BB%87n+(EV)',
     desktopUrl: '/seed-media/honda-sh350i-ext-1.jpg',
+    desktopWidth: 1600,
+    desktopHeight: 1000,
     mobileUrl: '/seed-media/vinfast-evo200-ext-1.jpg',
+    mobileWidth: 1600,
+    mobileHeight: 1000,
+    hasCustomMobile: true,
+    focalX: 50,
+    focalY: 50,
+    mobileFocalX: 50,
+    mobileFocalY: 50,
     imageAlt: 'Xe máy và xe máy điện đô thị linh hoạt tại NORI',
     credit: 'Wikimedia Commons · CC BY-SA 4.0',
   },
@@ -108,22 +155,51 @@ const defaultSlides: NormalizedSlide[] = [
     secondaryText: 'Xem dòng bán tải',
     secondaryHref: '/vehicles?type=PICKUP',
     desktopUrl: '/seed-media/ford-ranger-raptor-ext-1.jpg',
+    desktopWidth: 1600,
+    desktopHeight: 1000,
     mobileUrl: '/seed-media/ford-ranger-raptor-ext-1.jpg',
+    mobileWidth: 1600,
+    mobileHeight: 1000,
+    hasCustomMobile: false,
+    focalX: 50,
+    focalY: 50,
+    mobileFocalX: 50,
+    mobileFocalY: 50,
     imageAlt: 'Xe bán tải Ford Ranger Raptor chinh phục cung đường khám phá cùng NORI',
     credit: 'Alexander-93 · CC BY-SA 4.0',
   },
 ]
 
-function normalizeCmsSlides(cmsSlides?: HeroSlideView[]): NormalizedSlide[] {
+function clampPercent(val: unknown, fallback = 50): number {
+  if (typeof val !== 'number' || !Number.isFinite(val)) return fallback
+  return Math.min(100, Math.max(0, Math.round(val)))
+}
+
+export function normalizeCmsSlides(cmsSlides?: HeroSlideView[]): NormalizedSlide[] {
   if (!cmsSlides || cmsSlides.length === 0) return []
   return cmsSlides.map((s, idx) => {
     const fallback = defaultSlides[idx % defaultSlides.length]
     const desktopUrl = s.desktopImage?.url || fallback.desktopUrl
+    const desktopWidth = s.desktopImage?.width || 1600
+    const desktopHeight = s.desktopImage?.height || 900
+    const hasCustomMobile = Boolean(s.mobileImage?.url)
     const mobileUrl = s.mobileImage?.url || desktopUrl
+    const mobileWidth = s.mobileImage?.width || desktopWidth
+    const mobileHeight = s.mobileImage?.height || desktopHeight
+    const focalX = clampPercent(s.focalX, s.desktopImage?.focalX ?? 50)
+    const focalY = clampPercent(s.focalY, s.desktopImage?.focalY ?? 50)
+    const mobileFocalX = hasCustomMobile
+      ? clampPercent(s.mobileFocalX, s.mobileImage?.focalX ?? 50)
+      : focalX
+    const mobileFocalY = hasCustomMobile
+      ? clampPercent(s.mobileFocalY, s.mobileImage?.focalY ?? 50)
+      : focalY
+
     const imageAlt =
       s.desktopImage?.alt ||
       s.mobileImage?.alt ||
       `${s.titleFirst} ${s.titleSecond ?? ''} — NORI`.trim()
+
     return {
       id: s.id || `cms-slide-${idx + 1}`,
       categoryBadge: s.categoryBadge || 'Phương tiện NORI',
@@ -136,12 +212,256 @@ function normalizeCmsSlides(cmsSlides?: HeroSlideView[]): NormalizedSlide[] {
       secondaryText: s.secondaryText || undefined,
       secondaryHref: s.secondaryHref || undefined,
       desktopUrl,
+      desktopWidth,
+      desktopHeight,
       mobileUrl,
+      mobileWidth,
+      mobileHeight,
+      hasCustomMobile,
+      focalX,
+      focalY,
+      mobileFocalX,
+      mobileFocalY,
       imageAlt,
       credit: s.credit,
       durationSeconds: s.durationSeconds,
     }
   })
+}
+
+function HeroSlideMedia({
+  slide,
+  isPrimary,
+  isCurrent,
+  isReducedMotion,
+  previewViewport,
+  failedUrls,
+  onImageError,
+}: {
+  slide: NormalizedSlide
+  isPrimary: boolean
+  isCurrent: boolean
+  isReducedMotion: boolean
+  previewViewport?: HeroPreviewViewport
+  failedUrls: Record<string, boolean>
+  onImageError: (url: string) => void
+}) {
+  const resolvedDesktop = failedUrls[slide.desktopUrl] ? FALLBACK_SLIDE_IMAGE : slide.desktopUrl
+  const resolvedMobile = failedUrls[slide.mobileUrl] ? resolvedDesktop : slide.mobileUrl
+  const desktopPosition = `${slide.focalX}% ${slide.focalY}%`
+  const mobilePosition = slide.hasCustomMobile
+    ? `${slide.mobileFocalX}% ${slide.mobileFocalY}%`
+    : desktopPosition
+  const allowZoom = isCurrent && !isReducedMotion && slide.desktopWidth >= 1200
+
+  const commonSizes =
+    previewViewport === 'mobile'
+      ? '390px'
+      : previewViewport === 'tablet'
+        ? '768px'
+        : '(max-width: 767px) 100vw, 100vw'
+
+  const {
+    props: { srcSet: desktopSrcSet, ...desktopImgProps },
+  } = getImageProps({
+    src: resolvedDesktop,
+    alt: slide.imageAlt,
+    fill: true,
+    sizes: commonSizes,
+    quality: 84,
+    loading: isPrimary ? 'eager' : 'lazy',
+  })
+
+  const {
+    props: { srcSet: mobileSrcSet, ...mobileImgProps },
+  } = getImageProps({
+    src: resolvedMobile,
+    alt: slide.imageAlt,
+    fill: true,
+    sizes: commonSizes,
+    quality: 80,
+    loading: isPrimary ? 'eager' : 'lazy',
+  })
+
+  if (previewViewport) {
+    const activeProps = previewViewport === 'mobile' ? mobileImgProps : desktopImgProps
+    const activeSrcSet = previewViewport === 'mobile' ? mobileSrcSet : desktopSrcSet
+    const activePos = previewViewport === 'mobile' ? mobilePosition : desktopPosition
+    const activeUrl = previewViewport === 'mobile' ? slide.mobileUrl : slide.desktopUrl
+
+    return (
+      <img
+        {...activeProps}
+        srcSet={activeSrcSet}
+        alt={slide.imageAlt}
+        onError={() => onImageError(activeUrl)}
+        style={{
+          ...activeProps.style,
+          objectFit: 'cover',
+          objectPosition: activePos,
+        }}
+        className="size-full object-cover"
+      />
+    )
+  }
+
+  const focalVars = {
+    '--hero-focal-desktop': desktopPosition,
+    '--hero-focal-mobile': mobilePosition,
+  } as CSSProperties
+
+  return (
+    <picture className="block size-full" style={focalVars}>
+      <source media="(min-width: 768px)" srcSet={desktopSrcSet} sizes="100vw" />
+      <img
+        {...mobileImgProps}
+        srcSet={mobileSrcSet}
+        alt={slide.imageAlt}
+        fetchPriority={isPrimary ? 'high' : 'auto'}
+        decoding={isPrimary ? 'sync' : 'async'}
+        onError={() => {
+          if (slide.hasCustomMobile && !failedUrls[slide.mobileUrl]) {
+            onImageError(slide.mobileUrl)
+          } else {
+            onImageError(slide.desktopUrl)
+          }
+        }}
+        style={{
+          ...mobileImgProps.style,
+          objectFit: 'cover',
+        }}
+        className={cn(
+          'hero-focal-img size-full object-cover transition-transform duration-[6000ms] ease-out',
+          allowZoom ? 'scale-[1.03]' : 'scale-100',
+        )}
+      />
+    </picture>
+  )
+}
+
+export function HeroSlidePreviewCanvas({
+  slide,
+  viewport,
+}: {
+  slide: NormalizedSlide
+  viewport: HeroPreviewViewport
+}) {
+  const [failedUrls, setFailedUrls] = useState<Record<string, boolean>>({})
+  const onImageError = useCallback((url: string) => {
+    setFailedUrls((prev) => (prev[url] ? prev : { ...prev, [url]: true }))
+  }, [])
+
+  const frameClass =
+    viewport === 'mobile'
+      ? 'mx-auto w-full max-w-[390px] aspect-[4/5] min-h-[30rem]'
+      : viewport === 'tablet'
+        ? 'mx-auto w-full max-w-[768px] aspect-[16/10] min-h-[28rem]'
+        : 'w-full aspect-video min-h-[28rem] max-h-[38rem]'
+
+  const isMobile = viewport === 'mobile'
+  const isTablet = viewport === 'tablet'
+
+  return (
+    <section
+      aria-label={`Xem trước Slide (${viewport})`}
+      className={cn(
+        'relative flex flex-col justify-between overflow-hidden rounded-card bg-night text-inverse select-none',
+        frameClass,
+      )}
+    >
+      <div className="absolute inset-0" aria-hidden="true">
+        <HeroSlideMedia
+          slide={slide}
+          isPrimary
+          isCurrent
+          isReducedMotion
+          previewViewport={viewport}
+          failedUrls={failedUrls}
+          onImageError={onImageError}
+        />
+        <div className={cn('absolute inset-0 z-2', isMobile ? 'bg-night/72' : 'bg-night/48')} />
+        <div className="hero-shade absolute inset-0 z-2" />
+      </div>
+
+      <div
+        className={cn(
+          'relative z-10 flex flex-1 flex-col justify-between gap-6',
+          isMobile ? 'px-5 pb-10 pt-8' : isTablet ? 'px-8 pb-12 pt-10' : 'px-10 pb-14 pt-12',
+        )}
+      >
+        <div className="max-w-hero-copy">
+          <div className="mb-3 flex flex-wrap items-center gap-2.5">
+            <span className="inline-flex items-center gap-1.5 rounded-pill bg-brand/90 px-3 py-1 text-micro font-semibold text-inverse shadow-xs">
+              <Icon name="road" className="size-3 text-brand-bright" />
+              {slide.categoryBadge}
+            </span>
+            <Text className="flex items-center gap-2 text-micro font-medium tracking-widest text-inverse/90">
+              <span className="h-px w-4 bg-brand-bright" />
+              {slide.eyebrow}
+            </Text>
+          </div>
+
+          <Heading
+            as="h3"
+            size="display"
+            className={cn(
+              'font-semibold leading-[1.15] tracking-tight text-inverse',
+              isMobile ? 'text-[1.75rem]' : isTablet ? 'text-[2.25rem]' : 'text-[2.75rem]',
+            )}
+          >
+            {slide.first}
+            {slide.second && (
+              <>
+                <br />
+                <span className="text-brand-bright">{slide.second}</span>
+              </>
+            )}
+          </Heading>
+
+          {slide.description && (
+            <Text
+              className={cn(
+                'mt-3 max-w-reading line-clamp-3 leading-relaxed text-inverse/90',
+                isMobile ? 'text-small' : 'text-body',
+              )}
+            >
+              {slide.description}
+            </Text>
+          )}
+
+          <div className="mt-5 flex flex-wrap items-center gap-3">
+            <span className="inline-flex min-h-touch items-center gap-2 rounded-control bg-brand px-5 py-2.5 text-small font-semibold text-inverse shadow-md">
+              {slide.ctaText}
+              <Icon name="arrow-up-right" className="size-4" />
+            </span>
+            {slide.secondaryText && slide.secondaryHref && (
+              <span className="inline-flex min-h-touch items-center gap-2 rounded-control border border-inverse/40 px-4 py-2.5 text-small font-medium text-inverse">
+                {slide.secondaryText}
+                <Icon name="arrow-right" className="size-3.5" />
+              </span>
+            )}
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between gap-2 text-micro text-inverse/80">
+          <span className="truncate">
+            {slide.credit
+              ? `Hình ảnh tham khảo (${slide.credit})`
+              : 'Không chỉ là điểm đến. Là trọn vẹn hành trình cùng NORI.'}
+          </span>
+          <span className="shrink-0 rounded-pill border border-inverse/20 bg-night/75 px-2.5 py-1 text-micro">
+            {isMobile
+              ? slide.hasCustomMobile
+                ? 'Mobile · Ảnh riêng'
+                : `Mobile · Crop từ Desktop (${slide.focalX}% ${slide.focalY}%)`
+              : isTablet
+                ? `Tablet · Crop 16:10 (${slide.focalX}% ${slide.focalY}%)`
+                : `Desktop · 16:9 (${slide.focalX}% ${slide.focalY}%)`}
+          </span>
+        </div>
+      </div>
+    </section>
+  )
 }
 
 export function Hero({
@@ -166,6 +486,7 @@ export function Hero({
   }, [cmsSlides, hasConfiguredSlides])
 
   const [active, setActive] = useState(0)
+  const [mountedIndices, setMountedIndices] = useState<number[]>([0])
   const [isPaused, setIsPaused] = useState(false)
   const [isControlHovered, setIsControlHovered] = useState(false)
   const [isControlsFocused, setIsControlsFocused] = useState(false)
@@ -186,6 +507,10 @@ export function Hero({
       setActive(0)
     }
   }, [active, totalSlides])
+
+  useEffect(() => {
+    setMountedIndices((prev) => (prev.includes(safeActive) ? prev : [...prev, safeActive]))
+  }, [safeActive])
 
   // Respect prefers-reduced-motion
   useEffect(() => {
@@ -217,6 +542,10 @@ export function Hero({
     if (totalSlides <= 1) return
     setActive((prev) => (prev - 1 + totalSlides) % totalSlides)
   }, [totalSlides])
+
+  const handleImageError = useCallback((url: string) => {
+    setFailedUrls((prev) => (prev[url] ? prev : { ...prev, [url]: true }))
+  }, [])
 
   const currentSlide = slides[safeActive] ?? null
   const activeDurationSec = Math.min(
@@ -327,17 +656,14 @@ export function Hero({
           nextSlide()
         }
       }}
-      className="relative overflow-hidden bg-night select-none md:min-h-hero"
+      className="relative overflow-hidden bg-night select-none md:min-h-hero lg:max-h-[41rem]"
     >
-      {/* Layered Crossfade Vehicle Slides */}
+      {/* Layered Crossfade Vehicle Slides (lazy mounted on demand; slide 0 prioritized) */}
       <div className="absolute inset-0" aria-hidden="true">
         {slides.map((slide, idx) => {
           const isCurrent = idx === safeActive
-          const resolvedDesktop = failedUrls[slide.desktopUrl]
-            ? FALLBACK_SLIDE_IMAGE
-            : slide.desktopUrl
-          const resolvedMobile = failedUrls[slide.mobileUrl] ? resolvedDesktop : slide.mobileUrl
-          const hasDistinctMobile = resolvedMobile !== resolvedDesktop
+          const shouldMount = idx === 0 || isCurrent || mountedIndices.includes(idx)
+          if (!shouldMount) return null
 
           return (
             <div
@@ -347,41 +673,14 @@ export function Hero({
                 isCurrent ? 'z-1 opacity-100' : 'z-0 opacity-0 pointer-events-none',
               )}
             >
-              <Image
-                src={resolvedDesktop}
-                alt={slide.imageAlt}
-                fill
-                sizes="100vw"
-                priority={idx === 0}
-                onError={() =>
-                  setFailedUrls((prev) =>
-                    prev[slide.desktopUrl] ? prev : { ...prev, [slide.desktopUrl]: true },
-                  )
-                }
-                className={cn(
-                  'object-cover object-center transition-transform duration-[6000ms] ease-out',
-                  hasDistinctMobile && 'hidden md:block',
-                  isCurrent && !isReducedMotion ? 'scale-[1.03]' : 'scale-100',
-                )}
+              <HeroSlideMedia
+                slide={slide}
+                isPrimary={idx === 0}
+                isCurrent={isCurrent}
+                isReducedMotion={isReducedMotion}
+                failedUrls={failedUrls}
+                onImageError={handleImageError}
               />
-              {hasDistinctMobile && (
-                <Image
-                  src={resolvedMobile}
-                  alt={slide.imageAlt}
-                  fill
-                  sizes="100vw"
-                  priority={idx === 0}
-                  onError={() =>
-                    setFailedUrls((prev) =>
-                      prev[slide.mobileUrl] ? prev : { ...prev, [slide.mobileUrl]: true },
-                    )
-                  }
-                  className={cn(
-                    'object-cover object-center md:hidden transition-transform duration-[6000ms] ease-out',
-                    isCurrent && !isReducedMotion ? 'scale-[1.03]' : 'scale-100',
-                  )}
-                />
-              )}
             </div>
           )
         })}
@@ -391,7 +690,7 @@ export function Hero({
       </div>
 
       {/* Foreground Content & Controls in Normal Document Flow (Zero Overlap Across 320px-1920px) */}
-      <Container className="relative z-10 flex min-h-hero-mobile flex-col justify-between gap-7 pb-18 pt-8 text-inverse md:min-h-hero md:pb-26 md:pt-12">
+      <Container className="relative z-10 flex min-h-hero-mobile flex-col justify-between gap-7 pb-18 pt-8 text-inverse sm:aspect-[4/3] md:aspect-[16/10] md:min-h-hero md:max-h-[41rem] md:pb-26 md:pt-12 lg:aspect-video">
         <div
           key={`hero-copy-${currentSlide.id}-${safeActive}`}
           className="max-w-hero-copy pt-2 md:pt-4 animate-enter"

@@ -36,6 +36,15 @@ const nextConfig: NextConfig = {
     loader: 'custom',
     loaderFile: './figma-image-loader.ts',
   },
+  async headers() {
+    const securityHeaders = [
+      { key: 'X-Content-Type-Options', value: 'nosniff' },
+      { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+      { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=()' },
+      ...(process.env.FIGMA !== '1' ? [{ key: 'X-Frame-Options', value: 'SAMEORIGIN' }] : []),
+    ]
+    return [{ source: '/(.*)', headers: securityHeaders }]
+  },
   // Don't block publishing or preview deploys on errors if the emitted JS is valid
   typescript: {
     ignoreBuildErrors: true,

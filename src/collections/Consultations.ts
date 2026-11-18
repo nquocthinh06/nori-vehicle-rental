@@ -1,5 +1,5 @@
 import type { CollectionConfig } from 'payload'
-import { isAdmin } from '@/access/nori'
+import { adminPermission } from '@/access/nori'
 import { auditCollection } from '@/hooks/audit-nori'
 import { consultationStatusLabels } from '@/lib/rental-rules'
 
@@ -33,9 +33,9 @@ export const Consultations: CollectionConfig = {
     ],
   },
   access: {
-    create: isAdmin,
-    read: isAdmin,
-    update: isAdmin,
+    create: adminPermission('bookings', 'update'),
+    read: adminPermission('bookings', 'read'),
+    update: adminPermission('bookings', 'update'),
     delete: () => false,
   },
   hooks: {

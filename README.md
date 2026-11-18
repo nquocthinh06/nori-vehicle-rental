@@ -95,19 +95,19 @@ graph TD
 
 ## 4. Công nghệ sử dụng
 
-| Lĩnh vực                | Công nghệ               | Phiên bản            | Vai trò                                                     |
-| :---------------------- | :---------------------- | :------------------- | :---------------------------------------------------------- |
-| **Framework**           | Next.js                 | 16.4.6               | App Router, Turbopack, Standalone deployment                |
-| **UI Library**          | React                   | 19.3.1               | Giao diện tương tác người dùng                              |
-| **Styling**             | Tailwind CSS            | 4.0.0                | Hệ thống semantic tokens, CSS biến thể mới                  |
-| **Headless CMS**        | Payload CMS             | 4.0.0-beta.8         | Quản trị dữ liệu, phân quyền và API cốt lõi                 |
-| **Database**            | SQLite                  | 3.x                  | Lưu trữ dữ liệu quan hệ, transaction toàn vẹn               |
-| **Database Adapter**    | `@payloadcms/db-sqlite` | 4.0.0-beta.8         | Kết nối SQLite & Drizzle ORM                                |
-| **Runtime & Toolchain** | Node.js / pnpm          | >=24.22.1 / pnpm 10+ | Môi trường thực thi và quản lý gói phụ thuộc                |
-| **Testing Engine**      | Node Test Runner        | Node.js built-in     | Thực thi 225 Unit tests nghiệp vụ                           |
-| **E2E Testing**         | Playwright              | 1.65.1               | 62 kịch bản E2E Chromium (Desktop, Mobile, Admin, Security) |
-| **A11y Testing**        | Axe Core                | 4.14.0               | Kiểm tra chuẩn tiếp cận WCAG 2.2 AA                         |
-| **Linter & Formatter**  | oxfmt & Custom AST      | 0.73.0               | Chuẩn hóa định dạng và quét bảo mật tĩnh                    |
+| Lĩnh vực                | Công nghệ               | Phiên bản            | Vai trò                                                    |
+| :---------------------- | :---------------------- | :------------------- | :--------------------------------------------------------- |
+| **Framework**           | Next.js                 | 16.4.6               | App Router, Turbopack, Standalone deployment               |
+| **UI Library**          | React                   | 19.3.1               | Giao diện tương tác người dùng                             |
+| **Styling**             | Tailwind CSS            | 4.0.0                | Hệ thống semantic tokens, CSS biến thể mới                 |
+| **Headless CMS**        | Payload CMS             | 4.0.0-beta.8         | Quản trị dữ liệu, phân quyền và API cốt lõi                |
+| **Database**            | SQLite                  | 3.x                  | Lưu trữ dữ liệu quan hệ, transaction toàn vẹn              |
+| **Database Adapter**    | `@payloadcms/db-sqlite` | 4.0.0-beta.8         | Kết nối SQLite & Drizzle ORM                               |
+| **Runtime & Toolchain** | Node.js / pnpm          | >=24.22.1 / pnpm 10+ | Môi trường thực thi và quản lý gói phụ thuộc               |
+| **Testing Engine**      | Node Test Runner        | Node.js built-in     | Thực thi 247 Unit tests nghiệp vụ & phân quyền             |
+| **E2E Testing**         | Playwright              | 1.65.1               | 108 kịch bản E2E (Chromium Desktop/Mobile & Mobile WebKit) |
+| **A11y Testing**        | Axe Core                | 4.14.0               | Kiểm tra chuẩn tiếp cận WCAG 2.2 AA                        |
+| **Linter & Formatter**  | oxfmt & Custom AST      | 0.73.0               | Chuẩn hóa định dạng và quét bảo mật tĩnh                   |
 
 ---
 
@@ -195,7 +195,7 @@ pnpm seed:admin
 
 ## 8. Hướng dẫn kiểm thử (Testing Suite)
 
-Dự án thiết lập hệ thống kiểm thử tự động toàn diện với **268 Automated Tests** (100% PASS):
+Dự án thiết lập hệ thống kiểm thử tự động toàn diện với **355 Automated Tests** (247 Unit Tests + 108 Playwright E2E Tests, 100% PASS):
 
 ```bash
 # 1. Kiểm tra định dạng mã nguồn
@@ -207,23 +207,20 @@ pnpm lint
 # 3. Kiểm tra kiểu dữ liệu TypeScript nghiêm ngặt
 pnpm typecheck
 
-# 4. Chạy toàn bộ 205 Unit Tests nghiệp vụ
+# 4. Chạy toàn bộ 247 Unit Tests nghiệp vụ & RBAC
 pnpm test
 
 # 5. Kiểm thử DB cô lập Admin
 pnpm test:admin
 
-# 6. Chạy toàn bộ 63 Playwright E2E Tests (Yêu cầu server đang chạy ở port 3000)
-pnpm test:e2e
+# 6. Chạy toàn bộ 108 Playwright E2E Tests trên DB cô lập (Bảo vệ 100% nori.db)
+pnpm test:e2e:isolated
 ```
 
-### Phân rã 268 kịch bản kiểm thử:
+### Phân rã hệ thống kiểm thử:
 
-- **205 Unit Tests (`tests/rental-rules.test.mjs`)**: Kiểm tra toàn diện công thức tính giá theo ngày/tuần/tháng, phụ phí ngày lễ, ma trận 9×9 trạng thái chuyển đổi đơn thuê, voucher giảm giá, kiểm tra quá hạn cọc.
-- **43 Playwright Core E2E Tests (`tests/e2e/nori.spec.ts`)**: Toàn trình tìm kiếm xe, giỏ hàng, gửi đơn, duyệt đơn Admin, bàn giao xe, kiểm duyệt đánh giá, xuất báo cáo CSV, quét chuẩn WCAG 2.2 AA.
-- **7 Responsive & PWA Tests (`tests/e2e/mobile-pwa.spec.ts`)**: Kiểm tra 11 breakpoints, Bottom Navigation, Bottom Sheet filter, Service Worker, Offline fallback.
-- **8 Data Sync & Security Tests (`tests/e2e/data-sync.spec.ts`)**: Đồng bộ giá không cần rebuild, Dynamic slug rendering, chống đặt trùng lịch 409, chống lặp thanh toán 409, phân quyền RBAC 13 route Dashboard.
-- **5 Mobile WebKit Tests (`tests/e2e/mobile-webkit.spec.ts`)**: Mô phỏng iPhone 14 Safari WebKit thực tế.
+- **247 Unit Tests (`tests/rental-rules.test.mjs`, `tests/rbac-access.test.mjs`)**: Kiểm tra toàn diện công thức tính giá theo ngày/tuần/tháng, phụ phí ngày lễ, ma trận 9×9 trạng thái chuyển đổi đơn thuê, vòng đời voucher giảm giá (`evaluatePromotion`, `applyPromotionToQuote`), phân tách tiền cọc và tiền thuê còn lại, kiểm tra quá hạn cọc, cookie phiên động (`session-cookie.ts`) và ma trận phân quyền RBAC.
+- **108 Playwright E2E Tests (`tests/e2e/*.spec.ts` - 10 bộ kịch bản)**: Toàn trình tìm kiếm xe, xác thực & đồng bộ phiên khách hàng/Admin (`auth-session-booking-regression.spec.ts`), khuyến mãi & chống đặt trùng lúc checkout (`promo-checkout-regression.spec.ts`), quản trị Hero Carousel CMS (`hero-cms.spec.ts`), tin tức & liên kết khuyến mãi (`posts-banner.spec.ts`), duyệt đơn & bàn giao xe (`nori.spec.ts`, `upgrade-workflows.spec.ts`), kiểm toán QA tổng thể (`qa-comprehensive-audit.spec.ts`), đồng bộ dữ liệu & bảo mật (`data-sync.spec.ts`), Responsive/PWA (`mobile-pwa.spec.ts`) và Safari iOS (`mobile-webkit.spec.ts`).
 
 ---
 

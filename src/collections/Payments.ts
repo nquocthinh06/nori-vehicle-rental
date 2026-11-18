@@ -1,6 +1,7 @@
-import type { CollectionConfig } from 'payload'
-import { isAdmin, ownRecords } from '@/access/nori'
+import { APIError, type CollectionConfig } from 'payload'
+import { adminHasAnyPermission, adminPermission } from '@/access/nori'
 import { auditCollection } from '@/hooks/audit-nori'
+import { relationId } from '@/lib/rental-rules'
 
 const paymentAudit = auditCollection({
   entity: 'payment',
@@ -25,19 +26,66 @@ export const Payments: CollectionConfig = {
     defaultColumns: ['reference', 'paymentType', 'method', 'amount', 'status', 'paidAt'],
   },
   access: {
-    create: isAdmin,
-    read: ownRecords,
-    update: isAdmin,
+    create: adminPermission('payments', 'create'),
+    read: ({ req }) => {
+      if (
+        adminHasAnyPermission(req.user, [
+          ['payments', 'read'],
+          ['reports', 'read'],
+          ['bookings', 'read'],
+        ])
+      ) {
+        return true
+      }
+      if (req.user?.collection === 'users' && req.user.status === 'ACTIVE') {
+        return { customer: { equals: req.user.id } }
+      }
+      return false
+    },
+    update: adminPermission('payments', 'update'),
     delete: () => false,
   },
   hooks: {
     beforeChange: [
-      ({ data, operation, req }) => {
+      async ({ data, operation, originalDoc, req }) => {
+        if (!data) return data
         if (operation === 'create' && !data.reference) {
           data.reference = `PAY-${crypto.randomUUID().slice(0, 8).toUpperCase()}`
         }
         if (req.user?.email && !data.recordedBy) {
           data.recordedBy = req.user.email
+        }
+
+        const nextStatus = String(data.status ?? originalDoc?.status ?? 'CONFIRMED')
+        const nextType = String(data.paymentType ?? originalDoc?.paymentType ?? 'DEPOSIT')
+        if (
+          operation === 'update' &&
+          originalDoc?.status === 'REFUNDED' &&
+          nextStatus !== 'REFUNDED'
+        ) {
+          throw new APIError('Giao dịch đã hoàn tiền không thể chuyển ngược trạng thái.', 409)
+        }
+
+        const bookingId = relationId(data.booking ?? originalDoc?.booking)
+        if (bookingId && nextStatus !== 'CANCELLED' && nextType !== 'REFUND') {
+          const booking = await req.payload
+            .findByID({
+              collection: 'bookings',
+              id: bookingId,
+              req,
+              overrideAccess: true,
+              depth: 0,
+            })
+            .catch(() => null)
+          if (!booking) {
+            throw new APIError('Đơn thuê liên kết không tồn tại.', 404)
+          }
+          if (['CANCELLED', 'REJECTED'].includes(String(booking.status ?? ''))) {
+            throw new APIError(
+              'Không thể ghi nhận hoặc xác nhận khoản thu cho đơn thuê đã hủy hoặc bị từ chối.',
+              409,
+            )
+          }
         }
         return data
       },

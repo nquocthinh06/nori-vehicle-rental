@@ -4,7 +4,7 @@ import { HOLD_STATUSES } from '@/lib/rental-rules'
 
 export async function GET(request: Request) {
   try {
-    const auth = await requireAdmin()
+    const auth = await requireAdmin({ permission: ['reports', 'read'] })
     if (!auth.ok) return auth.response
     const { payload, user } = auth
 
@@ -21,40 +21,49 @@ export async function GET(request: Request) {
           }
         : undefined
 
-    const [vehiclesRes, bookingsRes, inquiriesRes, usersRes] = await Promise.all([
-      payload.find({
-        collection: 'vehicles',
-        user,
-        overrideAccess: false,
-        depth: 1,
-        limit: 500,
-      }),
-      payload.find({
-        collection: 'bookings',
-        user,
-        overrideAccess: false,
-        depth: 0,
-        limit: 500,
-        ...(createdAtFilter ? { where: createdAtFilter } : {}),
-      }),
-      payload.find({
-        collection: 'sales-inquiries',
-        user,
-        overrideAccess: false,
-        depth: 0,
-        limit: 500,
-        ...(createdAtFilter ? { where: createdAtFilter } : {}),
-      }),
-      payload.find({
-        collection: 'users',
-        user,
-        overrideAccess: false,
-        depth: 0,
-        limit: 500,
-        select: { status: true, createdAt: true },
-        ...(createdAtFilter ? { where: createdAtFilter } : {}),
-      }),
-    ])
+    const [vehiclesRes, bookingsRes, inquiriesRes, activeUsersCount, disabledUsersCount] =
+      await Promise.all([
+        payload.find({
+          collection: 'vehicles',
+          user,
+          overrideAccess: false,
+          depth: 1,
+          limit: 500,
+        }),
+        payload.find({
+          collection: 'bookings',
+          user,
+          overrideAccess: false,
+          depth: 0,
+          limit: 500,
+          ...(createdAtFilter ? { where: createdAtFilter } : {}),
+        }),
+        payload.find({
+          collection: 'sales-inquiries',
+          user,
+          overrideAccess: false,
+          depth: 0,
+          limit: 500,
+          ...(createdAtFilter ? { where: createdAtFilter } : {}),
+        }),
+        payload.count({
+          collection: 'users',
+          overrideAccess: true,
+          where: {
+            and: [{ status: { equals: 'ACTIVE' } }, ...(createdAtFilter ? [createdAtFilter] : [])],
+          },
+        }),
+        payload.count({
+          collection: 'users',
+          overrideAccess: true,
+          where: {
+            and: [
+              { status: { equals: 'DISABLED' } },
+              ...(createdAtFilter ? [createdAtFilter] : []),
+            ],
+          },
+        }),
+      ])
 
     const fleetByOp: Record<string, number> = {}
     let demoVehicles = 0
@@ -93,8 +102,8 @@ export async function GET(request: Request) {
       inquiriesByStatus[st] = (inquiriesByStatus[st] ?? 0) + 1
     }
 
-    const activeCustomers = usersRes.docs.filter((u) => u.status === 'ACTIVE').length
-    const disabledCustomers = usersRes.docs.filter((u) => u.status === 'DISABLED').length
+    const activeCustomers = activeUsersCount.totalDocs
+    const disabledCustomers = disabledUsersCount.totalDocs
 
     return json({
       range: { from: from || null, to: to || null },
@@ -115,7 +124,7 @@ export async function GET(request: Request) {
         byStatus: inquiriesByStatus,
       },
       customers: {
-        total: usersRes.totalDocs,
+        total: activeCustomers + disabledCustomers,
         active: activeCustomers,
         disabled: disabledCustomers,
       },

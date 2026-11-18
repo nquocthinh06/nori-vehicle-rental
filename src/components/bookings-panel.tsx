@@ -1,17 +1,19 @@
 'use client'
 
-import { Suspense, useEffect, useMemo, useState } from 'react'
-import { useSearchParams } from 'next/navigation'
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import type { BookingView, Quote } from '@/lib/domain-types'
-import { api } from '@/lib/client-api'
+import { api, RequestError } from '@/lib/client-api'
 import {
   BOOKING_CONFIRMED_LOCK_MESSAGE,
+  PROMO_REMOVED_MESSAGE,
   RENTAL_ADDONS,
   addDays,
   bookingStatusLabels,
   businessToday,
   formatDate,
   formatMoney,
+  formatVnd,
   parseAddonKeys,
   validateRentalDates,
   type AddonDefinition,
@@ -75,7 +77,8 @@ export function BookingsPanel() {
 }
 
 function BookingsPanelInner() {
-  const { user, loading: authLoading } = useAuth()
+  const router = useRouter()
+  const { user, isCustomer, isAdmin, loading: authLoading, refresh, logout } = useAuth()
   const searchParams = useSearchParams()
   const queryDetailId = searchParams.get('detail') || ''
   const queryEditId = searchParams.get('edit') || ''
@@ -88,6 +91,7 @@ function BookingsPanelInner() {
   const [retry, setRetry] = useState(0)
   const [success, setSuccess] = useState('')
   const [urlLockNotice, setUrlLockNotice] = useState('')
+  const [switchingRole, setSwitchingRole] = useState(false)
 
   // Cancel state
   const [cancel, setCancel] = useState<BookingView | null>(null)
@@ -110,18 +114,41 @@ function BookingsPanelInner() {
   const [editPhone, setEditPhone] = useState('')
   const [editEmail, setEditEmail] = useState('')
   const [editAddons, setEditAddons] = useState<AddonDefinition['id'][]>([])
-  const [editPromoCode, setEditPromoCode] = useState('')
+  const [editPromoDraft, setEditPromoDraft] = useState('')
+  const [editCheckingPromo, setEditCheckingPromo] = useState('')
+  const [editConfirmedPromo, setEditConfirmedPromo] = useState('')
+  const [editPromoFeedback, setEditPromoFeedback] = useState<{
+    tone: 'success' | 'error' | 'info'
+    message: string
+  } | null>(null)
   const [editNote, setEditNote] = useState('')
   const [editReason, setEditReason] = useState('')
 
   const [previewQuote, setPreviewQuote] = useState<Quote | null>(null)
+  const [loadedEditQuoteKey, setLoadedEditQuoteKey] = useState('')
   const [quoteChecking, setQuoteChecking] = useState(false)
   const [editError, setEditError] = useState('')
   const [savingEdit, setSavingEdit] = useState(false)
 
+  const editQuoteSeqRef = useRef(0)
+  const editQuoteAbortRef = useRef<AbortController | null>(null)
+  const editDebounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const editFormDirtyRef = useRef(false)
+  const editConfirmedPromoRef = useRef('')
+  editConfirmedPromoRef.current = editConfirmedPromo
+  const editSubmittingRef = useRef(false)
+  const cancelSubmittingRef = useRef(false)
+
+  // Always verify live backend session when entering My Bookings
   useEffect(() => {
-    if (!user) {
+    void refresh()
+  }, [refresh])
+
+  useEffect(() => {
+    if (!isCustomer || !user) {
+      setData(null)
       setLoading(false)
+      setError('')
       return
     }
     let active = true
@@ -134,7 +161,12 @@ function BookingsPanelInner() {
         if (active) setData(result)
       })
       .catch((e) => {
-        if (active) setError(e.message)
+        if (!active) return
+        if (e instanceof RequestError && e.status === 401) {
+          void refresh()
+          return
+        }
+        setError((e as Error).message)
       })
       .finally(() => {
         if (active) setLoading(false)
@@ -142,9 +174,10 @@ function BookingsPanelInner() {
     return () => {
       active = false
     }
-  }, [user?.id, status, page, retry])
+  }, [isCustomer, user?.id, status, page, retry, refresh])
 
   function populateEditForm(b: BookingView) {
+    const initialPromo = (b.promoCode ?? '').trim().toUpperCase()
     setEditStartDate(b.startDate)
     setEditEndDate(b.endDate)
     setEditPickupTime(b.pickupTime || '08:00')
@@ -155,20 +188,26 @@ function BookingsPanelInner() {
     setEditPhone(b.customerPhone ?? user?.phone ?? '')
     setEditEmail(b.customerEmail ?? user?.email ?? '')
     setEditAddons(parseAddonKeys(b.addonServices))
-    setEditPromoCode(b.promoCode ?? '')
+    setEditPromoDraft(initialPromo)
+    setEditCheckingPromo('')
+    setEditConfirmedPromo(initialPromo)
+    setEditPromoFeedback(null)
     setEditNote(b.note ?? '')
     setEditReason('')
     setPreviewQuote(null)
+    setLoadedEditQuoteKey('')
     setEditError('')
     setEditLockedMessage('')
   }
 
   async function openEditModal(booking: BookingView) {
     setUrlLockNotice('')
+    setSuccess('')
     if (booking.status !== 'PENDING' || booking.canModify === false) {
       setUrlLockNotice(booking.modifyLockReason || BOOKING_CONFIRMED_LOCK_MESSAGE)
       return
     }
+    editFormDirtyRef.current = false
     populateEditForm(booking)
     setEditingBooking(booking)
     // Verify latest live state from server immediately on open
@@ -180,7 +219,9 @@ function BookingsPanelInner() {
         setRetry((r) => r + 1)
       } else {
         setEditingBooking(fresh)
-        populateEditForm(fresh)
+        if (!editFormDirtyRef.current && (fresh.revision ?? 1) !== (booking.revision ?? 1)) {
+          populateEditForm(fresh)
+        }
       }
     } catch {
       // Keep local booking snapshot if network hiccups
@@ -189,7 +230,7 @@ function BookingsPanelInner() {
 
   // Handle deep links (?detail=... or ?edit=...) safely with backend permission enforcement
   useEffect(() => {
-    if (!user || !data) return
+    if (!isCustomer || !user || !data) return
     if (queryDetailId) {
       const match = data.docs.find((b) => b.id === queryDetailId)
       if (match) {
@@ -230,8 +271,7 @@ function BookingsPanelInner() {
       editEmail.trim().toLowerCase() !==
         (editingBooking.customerEmail ?? user?.email ?? '').trim().toLowerCase() ||
       nextAddons !== origAddons ||
-      editPromoCode.trim().toUpperCase() !==
-        (editingBooking.promoCode ?? '').trim().toUpperCase() ||
+      editConfirmedPromo !== (editingBooking.promoCode ?? '').trim().toUpperCase() ||
       editNote.trim() !== (editingBooking.note ?? '').trim()
     )
   }, [
@@ -246,47 +286,121 @@ function BookingsPanelInner() {
     editPhone,
     editEmail,
     editAddons,
-    editPromoCode,
+    editConfirmedPromo,
     editNote,
     user?.email,
   ])
 
-  async function checkModifiedQuote() {
-    if (!editingBooking || !editingBooking.vehicleId) return
-    const dateCheck = validateRentalDates(editStartDate, editEndDate)
-    if (dateCheck.error) {
-      setEditError(dateCheck.error)
-      setPreviewQuote(null)
-      return
-    }
-    setQuoteChecking(true)
-    setEditError('')
-    try {
-      const sp = new URLSearchParams({
-        vehicle: editingBooking.vehicleId,
-        startDate: editStartDate,
-        endDate: editEndDate,
-        excludeBookingId: editingBooking.id,
-      })
-      if (editDeliveryRequested) sp.set('delivery', '1')
-      if (editAddons.length > 0) sp.set('addons', editAddons.join(','))
-      if (editPromoCode.trim()) sp.set('promoCode', editPromoCode.trim().toUpperCase())
-      const quote = await api<Quote>(`/availability?${sp.toString()}`)
-      setPreviewQuote(quote)
-      if (!quote.available) {
-        setEditError(
-          'Xe đã có đơn đặt khác hoặc lịch bảo trì trong khoảng ngày mới. Vui lòng chọn ngày khác.',
-        )
-      } else if (quote.promoError) {
-        setEditError(quote.promoError)
+  const editAddonKeyStr = [...editAddons].sort().join(',')
+  const targetEditQuoteKey = editingBooking?.vehicleId
+    ? `${editingBooking.id}|${editingBooking.vehicleId}|${editStartDate}|${editEndDate}|${editDeliveryRequested ? '1' : '0'}|${editAddonKeyStr}|${editConfirmedPromo}`
+    : ''
+  const isEditQuoteFresh = Boolean(
+    previewQuote &&
+    loadedEditQuoteKey === targetEditQuoteKey &&
+    !quoteChecking &&
+    !editCheckingPromo,
+  )
+
+  const checkModifiedQuote = useCallback(
+    async (promoToCheck: string, explicitPromoAction = false) => {
+      if (!editingBooking || !editingBooking.vehicleId) return
+      const dateCheck = validateRentalDates(editStartDate, editEndDate)
+      if (dateCheck.error) {
+        setEditError(dateCheck.error)
+        setPreviewQuote(null)
+        setLoadedEditQuoteKey('')
+        return
       }
-    } catch (err) {
-      setEditError((err as Error).message)
-      setPreviewQuote(null)
-    } finally {
-      setQuoteChecking(false)
-    }
-  }
+
+      editQuoteAbortRef.current?.abort()
+      const controller = new AbortController()
+      editQuoteAbortRef.current = controller
+      const seq = ++editQuoteSeqRef.current
+
+      const normalizedCandidate = promoToCheck.trim().toUpperCase()
+      setQuoteChecking(true)
+      if (explicitPromoAction && normalizedCandidate) {
+        setEditCheckingPromo(normalizedCandidate)
+      }
+      setEditError('')
+
+      try {
+        const sp = new URLSearchParams({
+          vehicle: editingBooking.vehicleId,
+          startDate: editStartDate,
+          endDate: editEndDate,
+          excludeBookingId: editingBooking.id,
+        })
+        if (editDeliveryRequested) sp.set('delivery', '1')
+        if (editAddons.length > 0) sp.set('addons', editAddons.join(','))
+        if (normalizedCandidate) sp.set('promoCode', normalizedCandidate)
+
+        const quote = await api<Quote>(`/availability?${sp.toString()}`, {
+          signal: controller.signal,
+        })
+        if (seq !== editQuoteSeqRef.current || controller.signal.aborted) return
+
+        setPreviewQuote(quote)
+        if (!quote.available) {
+          setEditError(
+            'Xe đã có đơn đặt khác hoặc lịch bảo trì trong khoảng ngày mới. Vui lòng chọn ngày khác.',
+          )
+        }
+
+        if (normalizedCandidate) {
+          if (quote.promoCode && !quote.promoError) {
+            const validCode = quote.promoCode.trim().toUpperCase()
+            setEditConfirmedPromo(validCode)
+            if (
+              explicitPromoAction ||
+              validCode !== (editingBooking.promoCode ?? '').trim().toUpperCase()
+            ) {
+              setEditPromoFeedback({
+                tone: 'success',
+                message: quote.promoMessage || 'Mã đã được áp dụng thành công.',
+              })
+            }
+            setLoadedEditQuoteKey(
+              `${editingBooking.id}|${editingBooking.vehicleId}|${editStartDate}|${editEndDate}|${editDeliveryRequested ? '1' : '0'}|${[...editAddons].sort().join(',')}|${validCode}`,
+            )
+          } else {
+            setEditConfirmedPromo('')
+            setEditPromoFeedback({
+              tone: 'error',
+              message:
+                quote.promoError || 'Mã khuyến mãi không đủ điều kiện cho lịch trình hiện tại.',
+            })
+            setLoadedEditQuoteKey(
+              `${editingBooking.id}|${editingBooking.vehicleId}|${editStartDate}|${editEndDate}|${editDeliveryRequested ? '1' : '0'}|${[...editAddons].sort().join(',')}|`,
+            )
+          }
+        } else {
+          setEditConfirmedPromo('')
+          setLoadedEditQuoteKey(
+            `${editingBooking.id}|${editingBooking.vehicleId}|${editStartDate}|${editEndDate}|${editDeliveryRequested ? '1' : '0'}|${[...editAddons].sort().join(',')}|`,
+          )
+        }
+      } catch (err) {
+        if (
+          seq !== editQuoteSeqRef.current ||
+          controller.signal.aborted ||
+          (err instanceof Error && err.name === 'AbortError')
+        ) {
+          return
+        }
+        setEditError((err as Error).message)
+        setPreviewQuote(null)
+        setLoadedEditQuoteKey('')
+      } finally {
+        if (seq === editQuoteSeqRef.current) {
+          setQuoteChecking(false)
+          setEditCheckingPromo('')
+        }
+      }
+    },
+    [editingBooking, editStartDate, editEndDate, editDeliveryRequested, editAddons],
+  )
 
   // Automatically recalculate quote whenever pricing/schedule inputs change while modal is open
   useEffect(() => {
@@ -294,24 +408,81 @@ function BookingsPanelInner() {
     const dateCheck = validateRentalDates(editStartDate, editEndDate)
     if (dateCheck.error) {
       setPreviewQuote(null)
+      setLoadedEditQuoteKey('')
       return
     }
     const timer = setTimeout(() => {
-      void checkModifiedQuote()
-    }, 220)
-    return () => clearTimeout(timer)
+      editDebounceTimerRef.current = null
+      void checkModifiedQuote(editConfirmedPromoRef.current)
+    }, 180)
+    editDebounceTimerRef.current = timer
+    return () => {
+      clearTimeout(timer)
+      if (editDebounceTimerRef.current === timer) editDebounceTimerRef.current = null
+      editQuoteAbortRef.current?.abort()
+    }
   }, [
     editingBooking?.id,
     editLockedMessage,
     editStartDate,
     editEndDate,
     editDeliveryRequested,
-    editAddons.join(','),
-    editPromoCode,
+    editAddonKeyStr,
   ])
+
+  function cancelPendingEditDebounce() {
+    if (editDebounceTimerRef.current) {
+      clearTimeout(editDebounceTimerRef.current)
+      editDebounceTimerRef.current = null
+    }
+  }
+
+  function handleEditPromoInputChange(rawValue: string) {
+    editFormDirtyRef.current = true
+    const nextUpper = rawValue.toUpperCase()
+    setEditPromoDraft(nextUpper)
+    const trimmed = nextUpper.trim()
+
+    if (editConfirmedPromo && trimmed !== editConfirmedPromo) {
+      cancelPendingEditDebounce()
+      setEditConfirmedPromo('')
+      editConfirmedPromoRef.current = ''
+      setEditPromoFeedback(trimmed === '' ? { tone: 'info', message: PROMO_REMOVED_MESSAGE } : null)
+      void checkModifiedQuote('')
+      return
+    }
+    if (!editConfirmedPromo && editPromoFeedback) {
+      setEditPromoFeedback(null)
+    }
+  }
+
+  function handleEditApplyPromo() {
+    editFormDirtyRef.current = true
+    cancelPendingEditDebounce()
+    const candidate = editPromoDraft.trim().toUpperCase()
+    if (!candidate) {
+      if (editConfirmedPromo) handleEditRemovePromo()
+      return
+    }
+    setEditPromoFeedback(null)
+    void checkModifiedQuote(candidate, true)
+  }
+
+  function handleEditRemovePromo() {
+    editFormDirtyRef.current = true
+    cancelPendingEditDebounce()
+    editQuoteAbortRef.current?.abort()
+    setEditPromoDraft('')
+    setEditCheckingPromo('')
+    setEditConfirmedPromo('')
+    editConfirmedPromoRef.current = ''
+    setEditPromoFeedback({ tone: 'info', message: PROMO_REMOVED_MESSAGE })
+    void checkModifiedQuote('')
+  }
 
   async function submitModification(e: React.FormEvent) {
     e.preventDefault()
+    if (editSubmittingRef.current || savingEdit) return
     if (!editingBooking || editLockedMessage) return
     if (!hasFormChanges) {
       setEditError('Thông tin thuê chưa có thay đổi nào so với đơn hiện tại.')
@@ -322,11 +493,21 @@ function BookingsPanelInner() {
       setEditError(dateCheck.error)
       return
     }
-    if (previewQuote && !previewQuote.available) {
+    if (!isEditQuoteFresh || !previewQuote) {
+      setEditError('Đang cập nhật báo giá mới nhất. Vui lòng đợi ít giây rồi xác nhận lại.')
+      return
+    }
+    if (!previewQuote.available) {
       setEditError('Khoảng thời gian mới không khả dụng. Vui lòng chọn ngày khác.')
       return
     }
 
+    const promoToSubmit =
+      editConfirmedPromo && editPromoDraft.trim().toUpperCase() === editConfirmedPromo
+        ? editConfirmedPromo
+        : ''
+
+    editSubmittingRef.current = true
     setSavingEdit(true)
     setEditError('')
     try {
@@ -335,6 +516,7 @@ function BookingsPanelInner() {
         body: JSON.stringify({
           id: editingBooking.id,
           expectedRevision: editingBooking.revision ?? 1,
+          expectedTotalPrice: previewQuote.estimatedTotal,
           startDate: editStartDate,
           endDate: editEndDate,
           pickupTime: editPickupTime,
@@ -345,7 +527,7 @@ function BookingsPanelInner() {
           customerPhone: editPhone.trim(),
           customerEmail: editEmail.trim(),
           addonServices: editAddons,
-          promoCode: editPromoCode.trim().toUpperCase(),
+          promoCode: promoToSubmit,
           note: editNote.trim(),
           ...(editReason.trim() ? { reason: editReason.trim() } : {}),
         }),
@@ -372,13 +554,16 @@ function BookingsPanelInner() {
         // ignore refresh error
       }
       setEditError(msg)
+      void checkModifiedQuote(promoToSubmit)
     } finally {
+      editSubmittingRef.current = false
       setSavingEdit(false)
     }
   }
 
   async function confirmCancel() {
-    if (!cancel) return
+    if (!cancel || cancelSubmittingRef.current || busy) return
+    cancelSubmittingRef.current = true
     setBusy(true)
     setCancelError('')
     try {
@@ -389,12 +574,44 @@ function BookingsPanelInner() {
     } catch (e) {
       setCancelError((e as Error).message)
     } finally {
+      cancelSubmittingRef.current = false
       setBusy(false)
     }
   }
 
+  async function switchAdminToCustomer() {
+    setSwitchingRole(true)
+    setError('')
+    try {
+      await logout()
+      router.push('/login?accountType=customer&returnTo=%2Fmy-bookings')
+      router.refresh()
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setSwitchingRole(false)
+    }
+  }
+
   if (authLoading) return <Skeleton className="h-64" />
-  if (!user)
+  if (isAdmin && user)
+    return (
+      <EmptyState
+        icon="shield"
+        title="Bạn đang đăng nhập bằng tài khoản quản trị"
+        description={`Bạn đang đăng nhập bằng tài khoản quản trị (${user.email}). Vui lòng sử dụng tài khoản khách hàng để thực hiện đặt thuê và xem đơn thuê cá nhân, hoặc chuyển đến khu vực Quản trị hệ thống.`}
+      >
+        <div className="flex flex-wrap justify-center gap-3">
+          <Button onClick={switchAdminToCustomer} loading={switchingRole}>
+            Đăng nhập tài khoản khách hàng <Icon name="arrow-right" className="size-4" />
+          </Button>
+          <ButtonLink href="/dashboard/bookings" variant="secondary">
+            Quản lý đơn thuê hệ thống
+          </ButtonLink>
+        </div>
+      </EmptyState>
+    )
+  if (!isCustomer || !user)
     return (
       <EmptyState
         icon="calendar"
@@ -514,7 +731,7 @@ function BookingsPanelInner() {
                   <div>
                     <Text className="mb-1 text-caption text-muted">Tổng tiền thuê dự kiến</Text>
                     <Text className="text-small font-semibold text-brand">
-                      {formatMoney(booking.totalPrice)}
+                      {formatVnd(booking.totalPrice)}
                     </Text>
                   </div>
                   <div>
@@ -707,11 +924,11 @@ function BookingsPanelInner() {
                 )}
                 {(detailBooking.promoDiscountAmount ?? 0) > 0 && (
                   <p className="text-brand">
-                    Mã {detailBooking.promoCode}: -{formatMoney(detailBooking.promoDiscountAmount)}
+                    Mã {detailBooking.promoCode}: -{formatVnd(detailBooking.promoDiscountAmount)}
                   </p>
                 )}
                 <p className="pt-1 font-semibold text-brand">
-                  Tổng tiền thuê dự kiến: {formatMoney(detailBooking.totalPrice)}
+                  Tổng tiền thuê dự kiến: {formatVnd(detailBooking.totalPrice)}
                 </p>
                 <p>Tiền đặt cọc tách riêng: {formatMoney(detailBooking.depositSnapshot)}</p>
               </div>
@@ -918,13 +1135,71 @@ function BookingsPanelInner() {
                     value={editEmail}
                     onChange={(e) => setEditEmail(e.target.value)}
                   />
-                  <Input
-                    id="edit-promo-code"
-                    label="Mã khuyến mãi (nếu có)"
-                    placeholder="Nhập mã ưu đãi"
-                    value={editPromoCode}
-                    onChange={(e) => setEditPromoCode(e.target.value.toUpperCase())}
-                  />
+                  <div className="space-y-1.5">
+                    <div className="flex items-end gap-2">
+                      <Input
+                        id="edit-promo-code"
+                        label="Mã khuyến mãi (nếu có)"
+                        placeholder="Nhập mã ưu đãi"
+                        wrapperClassName="flex-1"
+                        value={editPromoDraft}
+                        onChange={(e) => handleEditPromoInputChange(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault()
+                            handleEditApplyPromo()
+                          }
+                        }}
+                        error={
+                          editPromoFeedback?.tone === 'error'
+                            ? editPromoFeedback.message
+                            : undefined
+                        }
+                      />
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        loading={Boolean(editCheckingPromo)}
+                        disabled={
+                          Boolean(editCheckingPromo) ||
+                          !editPromoDraft.trim() ||
+                          (Boolean(editConfirmedPromo) &&
+                            editPromoDraft.trim().toUpperCase() === editConfirmedPromo)
+                        }
+                        onClick={handleEditApplyPromo}
+                      >
+                        {editConfirmedPromo &&
+                        editPromoDraft.trim().toUpperCase() === editConfirmedPromo
+                          ? 'Đã áp dụng'
+                          : 'Áp dụng'}
+                      </Button>
+                    </div>
+                    {(editConfirmedPromo ||
+                      editPromoDraft.trim() ||
+                      editPromoFeedback?.tone === 'error') && (
+                      <div className="flex items-center justify-between gap-2 text-micro">
+                        {editConfirmedPromo ? (
+                          <span className="font-semibold text-brand">
+                            Đang áp dụng: {editConfirmedPromo}
+                          </span>
+                        ) : (
+                          <span />
+                        )}
+                        <button
+                          type="button"
+                          onClick={handleEditRemovePromo}
+                          className="font-semibold text-danger hover:underline"
+                        >
+                          Bỏ mã khuyến mãi
+                        </button>
+                      </div>
+                    )}
+                    {editPromoFeedback && editPromoFeedback.tone !== 'error' && (
+                      <Text className="text-micro font-medium text-brand">
+                        {editPromoFeedback.message}
+                      </Text>
+                    )}
+                  </div>
                 </div>
 
                 <div className="rounded-control border border-line p-4">
@@ -993,7 +1268,7 @@ function BookingsPanelInner() {
                         {editingBooking.returnTime}) · {editingBooking.totalDays} ngày
                       </p>
                       <p className="mt-1">
-                        Tổng tiền thuê cũ: <strong>{formatMoney(editingBooking.totalPrice)}</strong>
+                        Tổng tiền thuê cũ: <strong>{formatVnd(editingBooking.totalPrice)}</strong>
                       </p>
                       <p>Tiền đặt cọc cũ: {formatMoney(editingBooking.depositSnapshot)}</p>
                     </div>
@@ -1008,7 +1283,9 @@ function BookingsPanelInner() {
                       <p className="mt-1">
                         Tổng tiền thuê mới:{' '}
                         <strong className="text-brand">
-                          {previewQuote ? formatMoney(previewQuote.estimatedTotal) : 'Đang tính…'}
+                          {isEditQuoteFresh && previewQuote
+                            ? formatVnd(previewQuote.estimatedTotal)
+                            : 'Đang tính…'}
                         </strong>
                       </p>
                       <p>
@@ -1060,7 +1337,8 @@ function BookingsPanelInner() {
                     type="submit"
                     loading={savingEdit}
                     disabled={
-                      quoteChecking ||
+                      savingEdit ||
+                      !isEditQuoteFresh ||
                       !hasFormChanges ||
                       Boolean(previewQuote && !previewQuote.available)
                     }

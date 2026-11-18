@@ -1,5 +1,7 @@
-import { requireAdmin } from '@/lib/admin-api'
+import { adminHasPermission } from '@/access/nori'
+import { requireAdmin, resolveCustomerDisplayNames } from '@/lib/admin-api'
 import { apiError, assertOrigin, body, fail, json, text } from '@/lib/api-utils'
+import { withBookingWriteLock } from '@/lib/promo-service'
 import { HOLD_STATUSES, isDepositExpired, type BookingStatus } from '@/lib/rental-rules'
 
 const VALID_BOOKING_STATUSES = [
@@ -30,6 +32,14 @@ export async function GET(request: Request) {
     const auth = await requireAdmin()
     if (!auth.ok) return auth.response
     const { payload, user, admin } = auth
+    const canBookings = adminHasPermission(admin, 'bookings', 'read')
+    const canInquiries = adminHasPermission(admin, 'inquiries', 'read')
+    const canCustomers = adminHasPermission(admin, 'customers', 'read')
+    const canVehicles = adminHasPermission(admin, 'vehicles', 'read')
+    const canModels = adminHasPermission(admin, 'models', 'read')
+    const canPayments = adminHasPermission(admin, 'payments', 'read')
+    const canReports = adminHasPermission(admin, 'reports', 'read')
+    const canBookingsOrReports = canBookings || canReports
     const params = new URL(request.url).searchParams
     const bookingPage = Number(params.get('bookingPage') ?? '1')
     const inquiryPage = Number(params.get('inquiryPage') ?? '1')
@@ -57,6 +67,9 @@ export async function GET(request: Request) {
     ) {
       return fail('Bộ lọc trạng thái yêu cầu chưa hợp lệ.')
     }
+    const emptyList = { docs: [], totalDocs: 0, page: 1, totalPages: 1 }
+    const zeroCount = { totalDocs: 0 }
+
     const [
       vehicles,
       models,
@@ -77,126 +90,171 @@ export async function GET(request: Request) {
       reviewsRes,
       paymentsRes,
     ] = await Promise.all([
-      payload.count({
-        collection: 'vehicles',
-        user,
-        overrideAccess: false,
-        where: { status: { equals: 'ACTIVE' } },
-      }),
-      payload.count({ collection: 'vehicle-models', user, overrideAccess: false }),
-      payload.count({ collection: 'users', user, overrideAccess: false }),
-      payload.find({
-        collection: 'bookings',
-        user,
-        overrideAccess: false,
-        depth: 2,
-        limit: 20,
-        page: bookingPage,
-        sort: '-createdAt',
-        ...(bookingStatus ? { where: { status: { equals: bookingStatus } } } : {}),
-      }),
-      payload.find({
-        collection: 'sales-inquiries',
-        user,
-        overrideAccess: false,
-        depth: 1,
-        limit: 20,
-        page: inquiryPage,
-        sort: '-createdAt',
-        ...(inquiryStatus ? { where: { status: { equals: inquiryStatus } } } : {}),
-      }),
-      payload.count({
-        collection: 'bookings',
-        user,
-        overrideAccess: false,
-        where: { status: { equals: 'PENDING' } },
-      }),
-      payload.count({
-        collection: 'bookings',
-        user,
-        overrideAccess: false,
-        where: { status: { equals: 'DEPOSIT_PENDING' } },
-      }),
-      payload.count({
-        collection: 'bookings',
-        user,
-        overrideAccess: false,
-        where: { status: { equals: 'CONFIRMED' } },
-      }),
-      payload.count({
-        collection: 'bookings',
-        user,
-        overrideAccess: false,
-        where: { status: { equals: 'READY_FOR_HANDOVER' } },
-      }),
-      payload.count({
-        collection: 'bookings',
-        user,
-        overrideAccess: false,
-        where: { status: { equals: 'ONGOING' } },
-      }),
-      payload.count({
-        collection: 'bookings',
-        user,
-        overrideAccess: false,
-        where: { status: { equals: 'INSPECTING' } },
-      }),
-      payload.count({
-        collection: 'bookings',
-        user,
-        overrideAccess: false,
-        where: { status: { equals: 'COMPLETED' } },
-      }),
-      payload.find({
-        collection: 'vehicle-models',
-        user,
-        overrideAccess: false,
-        depth: 0,
-        limit: 100,
-        sort: 'sortOrder',
-      }),
-      payload.find({
-        collection: 'vehicles',
-        user,
-        overrideAccess: false,
-        depth: 1,
-        limit: 500,
-        sort: 'reference',
-      }),
-      payload.find({
-        collection: 'bookings',
-        user,
-        overrideAccess: false,
-        depth: 0,
-        limit: 500,
-        select: { status: true, totalPrice: true, createdAt: true },
-      }),
-      payload.find({
-        collection: 'users',
-        user,
-        overrideAccess: false,
-        depth: 0,
-        limit: 20,
-        sort: '-createdAt',
-        select: { fullName: true, email: true, phone: true, status: true, createdAt: true },
-      }),
-      payload.find({
-        collection: 'reviews',
-        user,
-        overrideAccess: false,
-        depth: 1,
-        limit: 50,
-        sort: '-createdAt',
-      }),
-      payload.find({
-        collection: 'payments',
-        user,
-        overrideAccess: false,
-        depth: 0,
-        limit: 500,
-        select: { amount: true, status: true, paymentType: true },
-      }),
+      canVehicles
+        ? payload.count({
+            collection: 'vehicles',
+            user,
+            overrideAccess: false,
+            where: { status: { equals: 'ACTIVE' } },
+          })
+        : Promise.resolve(zeroCount),
+      canModels
+        ? payload.count({ collection: 'vehicle-models', user, overrideAccess: false })
+        : Promise.resolve(zeroCount),
+      canCustomers
+        ? payload.count({ collection: 'users', user, overrideAccess: false })
+        : Promise.resolve(zeroCount),
+      canBookings
+        ? payload.find({
+            collection: 'bookings',
+            user,
+            overrideAccess: false,
+            depth: 2,
+            limit: 20,
+            page: bookingPage,
+            sort: '-createdAt',
+            ...(bookingStatus ? { where: { status: { equals: bookingStatus } } } : {}),
+          })
+        : Promise.resolve(emptyList),
+      canInquiries
+        ? payload.find({
+            collection: 'sales-inquiries',
+            user,
+            overrideAccess: false,
+            depth: 1,
+            limit: 20,
+            page: inquiryPage,
+            sort: '-createdAt',
+            ...(inquiryStatus ? { where: { status: { equals: inquiryStatus } } } : {}),
+          })
+        : Promise.resolve(emptyList),
+      canBookings
+        ? payload.count({
+            collection: 'bookings',
+            user,
+            overrideAccess: false,
+            where: { status: { equals: 'PENDING' } },
+          })
+        : Promise.resolve(zeroCount),
+      canBookings
+        ? payload.count({
+            collection: 'bookings',
+            user,
+            overrideAccess: false,
+            where: { status: { equals: 'DEPOSIT_PENDING' } },
+          })
+        : Promise.resolve(zeroCount),
+      canBookings
+        ? payload.count({
+            collection: 'bookings',
+            user,
+            overrideAccess: false,
+            where: { status: { equals: 'CONFIRMED' } },
+          })
+        : Promise.resolve(zeroCount),
+      canBookings
+        ? payload.count({
+            collection: 'bookings',
+            user,
+            overrideAccess: false,
+            where: { status: { equals: 'READY_FOR_HANDOVER' } },
+          })
+        : Promise.resolve(zeroCount),
+      canBookings
+        ? payload.count({
+            collection: 'bookings',
+            user,
+            overrideAccess: false,
+            where: { status: { equals: 'ONGOING' } },
+          })
+        : Promise.resolve(zeroCount),
+      canBookings
+        ? payload.count({
+            collection: 'bookings',
+            user,
+            overrideAccess: false,
+            where: { status: { equals: 'INSPECTING' } },
+          })
+        : Promise.resolve(zeroCount),
+      canBookings
+        ? payload.count({
+            collection: 'bookings',
+            user,
+            overrideAccess: false,
+            where: { status: { equals: 'COMPLETED' } },
+          })
+        : Promise.resolve(zeroCount),
+      canModels
+        ? payload.find({
+            collection: 'vehicle-models',
+            user,
+            overrideAccess: false,
+            depth: 0,
+            limit: 100,
+            sort: 'sortOrder',
+          })
+        : Promise.resolve(emptyList),
+      canVehicles || canModels
+        ? payload.find({
+            collection: 'vehicles',
+            user,
+            overrideAccess: false,
+            depth: 1,
+            limit: 500,
+            sort: 'reference',
+          })
+        : Promise.resolve(emptyList),
+      canBookingsOrReports
+        ? payload.find({
+            collection: 'bookings',
+            user,
+            overrideAccess: false,
+            depth: 0,
+            limit: 500,
+            select: { status: true, totalPrice: true, createdAt: true },
+          })
+        : Promise.resolve(emptyList),
+      canCustomers
+        ? payload.find({
+            collection: 'users',
+            user,
+            overrideAccess: false,
+            depth: 0,
+            limit: 20,
+            sort: '-createdAt',
+            select: { fullName: true, email: true, phone: true, status: true, createdAt: true },
+          })
+        : Promise.resolve(emptyList),
+      canCustomers
+        ? payload.find({
+            collection: 'reviews',
+            user,
+            overrideAccess: false,
+            depth: 1,
+            limit: 50,
+            sort: '-createdAt',
+          })
+        : Promise.resolve(emptyList),
+      canReports || canPayments
+        ? payload.find({
+            collection: 'payments',
+            user,
+            overrideAccess: false,
+            depth: 0,
+            limit: 500,
+            select: { amount: true, status: true, paymentType: true },
+          })
+        : Promise.resolve(emptyList),
     ])
+
+    const unresolvedCustIds: string[] = []
+    for (const b of bookings.docs) {
+      if (typeof b.customer === 'string') unresolvedCustIds.push(b.customer)
+    }
+    for (const inq of inquiries.docs) {
+      if (typeof inq.customer === 'string') unresolvedCustIds.push(inq.customer)
+    }
+    const customerNameMap = await resolveCustomerDisplayNames(payload, unresolvedCustIds)
 
     const byOperationStatus: Record<string, number> = {
       READY: 0,
@@ -309,109 +367,128 @@ export async function GET(request: Request) {
         INSPECTING: inspecting.totalDocs,
         COMPLETED: completed.totalDocs,
       },
-      bookings: bookings.docs.map((b) => ({
-        id: b.id,
-        bookingKey: b.bookingKey ?? b.id,
-        status: b.status ?? 'PENDING',
-        customerName: typeof b.customer === 'object' ? b.customer?.fullName : 'Chưa cập nhật',
-        reference:
-          b.vehicleReferenceSnapshot ?? (typeof b.vehicle === 'object' ? b.vehicle.reference : ''),
-        modelName:
-          b.vehicleNameSnapshot ??
-          (typeof b.vehicle === 'object' && typeof b.vehicle.model === 'object'
-            ? b.vehicle.model.name
-            : 'Chưa cập nhật'),
-        startDate: b.startDate,
-        endDate: b.endDate,
-        pickupTime: b.pickupTime ?? '08:00',
-        returnTime: b.returnTime ?? '20:00',
-        pickupLocation: b.pickupLocation ?? null,
-        deliveryRequested: Boolean(b.deliveryRequested),
-        addonServices: b.addonServices ?? null,
-        customerPhone: b.customerPhone ?? null,
-        driverLicenseNumber: b.driverLicenseNumber ?? null,
-        note: b.note ?? null,
-        handoverNote: b.handoverNote ?? null,
-        totalDays: b.totalDays ?? 0,
-        dailyPriceSnapshot: b.dailyPriceSnapshot ?? 0,
-        baseRentPrice: b.baseRentPrice ?? 0,
-        weekendSurchargeTotal: b.weekendSurchargeTotal ?? 0,
-        deliveryFeeSnapshot: b.deliveryFeeSnapshot ?? 0,
-        addonFeeTotal: b.addonFeeTotal ?? 0,
-        discountAmount: b.discountAmount ?? 0,
-        totalPrice: b.totalPrice ?? 0,
-        depositSnapshot: b.depositSnapshot ?? 0,
-        initialPaymentDue: b.initialPaymentDue ?? b.depositSnapshot ?? 0,
-        remainingAmount: b.remainingAmount ?? b.totalPrice ?? 0,
-        depositExpired: isDepositExpired(b.createdAt, b.status ?? 'PENDING'),
-        createdAt: b.createdAt,
-      })),
-      inquiries: inquiries.docs.map((inq) => ({
-        id: inq.id,
-        reference: inq.reference ?? inq.id,
-        inquiryType: inq.inquiryType ?? 'CONSULTATION',
-        status: inq.status ?? 'NEW',
-        customerName: typeof inq.customer === 'object' ? inq.customer?.fullName : 'Chưa cập nhật',
-        phone: inq.phone,
-        modelName: typeof inq.model === 'object' ? inq.model.name : 'Chưa cập nhật',
-        modelSlug: typeof inq.model === 'object' ? inq.model.slug : '',
-        vehicleReference: inq.vehicleReference ?? null,
-        variantName: inq.variantName ?? null,
-        colorName: inq.colorName ?? null,
-        paymentMethod: inq.paymentMethod ?? null,
-        preferredDate: inq.preferredDate ?? null,
-        preferredLocation: inq.preferredLocation ?? null,
-        quotedPriceSnapshot: inq.quotedPriceSnapshot ?? null,
-        estimatedRollingSnapshot: inq.estimatedRollingSnapshot ?? null,
-        note: inq.note ?? null,
-        depositExpired: isDepositExpired(inq.createdAt, inq.status ?? 'NEW'),
-        createdAt: inq.createdAt,
-      })),
-      customersList: customersListRes.docs.map((u) => ({
-        id: u.id,
-        fullName: u.fullName,
-        email: u.email,
-        phone: u.phone ?? null,
-        status: u.status ?? 'ACTIVE',
-        createdAt: u.createdAt,
-      })),
-      vehiclesList: allVehicles.docs.map((v) => ({
-        id: v.id,
-        reference: v.reference,
-        licensePlate: v.licensePlate ?? null,
-        modelName: typeof v.model === 'object' && v.model ? v.model.name : 'Chưa cập nhật',
-        modelSlug: typeof v.model === 'object' && v.model ? v.model.slug : '',
-        intent: v.intent ?? 'BOTH',
-        operationStatus: v.operationStatus ?? 'READY',
-        status: v.status ?? 'ACTIVE',
-        pricePerDay: v.pricePerDay ?? null,
-        salePrice: v.salePrice ?? null,
-        depositAmount: v.depositAmount ?? null,
-        odometer: v.odometer ?? null,
-        isDemo: Boolean(v.isDemo),
-      })),
-      reviewsList: reviewsRes.docs.map((r) => ({
-        id: r.id,
-        rating: r.rating,
-        title: r.title ?? null,
-        comment: r.comment,
-        status: r.status ?? 'PUBLISHED',
-        customerName:
-          typeof r.customer === 'object' && r.customer ? r.customer.fullName : 'Khách hàng',
-        modelName: typeof r.model === 'object' && r.model ? r.model.name : 'Chưa cập nhật',
-        vehicleReference: typeof r.vehicle === 'object' && r.vehicle ? r.vehicle.reference : null,
-        createdAt: r.createdAt,
-      })),
+      bookings: canBookings
+        ? bookings.docs.map((b) => ({
+            id: b.id,
+            bookingKey: b.bookingKey ?? b.id,
+            revision: b.revision ?? 1,
+            status: b.status ?? 'PENDING',
+            customerName:
+              typeof b.customer === 'object'
+                ? b.customer?.fullName
+                : (customerNameMap.get(String(b.customer ?? ''))?.fullName ?? 'Chưa cập nhật'),
+            reference:
+              b.vehicleReferenceSnapshot ??
+              (typeof b.vehicle === 'object' ? b.vehicle.reference : ''),
+            modelName:
+              b.vehicleNameSnapshot ??
+              (typeof b.vehicle === 'object' && typeof b.vehicle.model === 'object'
+                ? b.vehicle.model.name
+                : 'Chưa cập nhật'),
+            startDate: b.startDate,
+            endDate: b.endDate,
+            pickupTime: b.pickupTime ?? '08:00',
+            returnTime: b.returnTime ?? '20:00',
+            pickupLocation: b.pickupLocation ?? null,
+            deliveryRequested: Boolean(b.deliveryRequested),
+            addonServices: b.addonServices ?? null,
+            customerPhone: b.customerPhone ?? null,
+            driverLicenseNumber: b.driverLicenseNumber ?? null,
+            note: b.note ?? null,
+            handoverNote: b.handoverNote ?? null,
+            totalDays: b.totalDays ?? 0,
+            dailyPriceSnapshot: b.dailyPriceSnapshot ?? 0,
+            baseRentPrice: b.baseRentPrice ?? 0,
+            weekendSurchargeTotal: b.weekendSurchargeTotal ?? 0,
+            deliveryFeeSnapshot: b.deliveryFeeSnapshot ?? 0,
+            addonFeeTotal: b.addonFeeTotal ?? 0,
+            discountAmount: b.discountAmount ?? 0,
+            totalPrice: b.totalPrice ?? 0,
+            depositSnapshot: b.depositSnapshot ?? 0,
+            initialPaymentDue: b.initialPaymentDue ?? b.depositSnapshot ?? 0,
+            remainingAmount: b.totalPrice ?? 0,
+            depositExpired: isDepositExpired(b.createdAt, b.status ?? 'PENDING'),
+            createdAt: b.createdAt,
+          }))
+        : [],
+      inquiries: canInquiries
+        ? inquiries.docs.map((inq) => ({
+            id: inq.id,
+            reference: inq.reference ?? inq.id,
+            inquiryType: inq.inquiryType ?? 'CONSULTATION',
+            status: inq.status ?? 'NEW',
+            customerName:
+              typeof inq.customer === 'object'
+                ? inq.customer?.fullName
+                : (customerNameMap.get(String(inq.customer ?? ''))?.fullName ?? 'Chưa cập nhật'),
+            phone: inq.phone,
+            modelName: typeof inq.model === 'object' ? inq.model.name : 'Chưa cập nhật',
+            modelSlug: typeof inq.model === 'object' ? inq.model.slug : '',
+            vehicleReference: inq.vehicleReference ?? null,
+            variantName: inq.variantName ?? null,
+            colorName: inq.colorName ?? null,
+            paymentMethod: inq.paymentMethod ?? null,
+            preferredDate: inq.preferredDate ?? null,
+            preferredLocation: inq.preferredLocation ?? null,
+            quotedPriceSnapshot: inq.quotedPriceSnapshot ?? null,
+            estimatedRollingSnapshot: inq.estimatedRollingSnapshot ?? null,
+            note: inq.note ?? null,
+            depositExpired: isDepositExpired(inq.createdAt, inq.status ?? 'NEW'),
+            createdAt: inq.createdAt,
+          }))
+        : [],
+      customersList: canCustomers
+        ? customersListRes.docs.map((u) => ({
+            id: u.id,
+            fullName: u.fullName,
+            email: u.email,
+            phone: u.phone ?? null,
+            status: u.status ?? 'ACTIVE',
+            createdAt: u.createdAt,
+          }))
+        : [],
+      vehiclesList: canVehicles
+        ? allVehicles.docs.map((v) => ({
+            id: v.id,
+            reference: v.reference,
+            licensePlate: v.licensePlate ?? null,
+            modelName: typeof v.model === 'object' && v.model ? v.model.name : 'Chưa cập nhật',
+            modelSlug: typeof v.model === 'object' && v.model ? v.model.slug : '',
+            intent: v.intent ?? 'BOTH',
+            operationStatus: v.operationStatus ?? 'READY',
+            status: v.status ?? 'ACTIVE',
+            pricePerDay: v.pricePerDay ?? null,
+            salePrice: v.salePrice ?? null,
+            depositAmount: v.depositAmount ?? null,
+            odometer: v.odometer ?? null,
+            isDemo: Boolean(v.isDemo),
+          }))
+        : [],
+      reviewsList: canCustomers
+        ? reviewsRes.docs.map((r) => ({
+            id: r.id,
+            rating: r.rating,
+            title: r.title ?? null,
+            comment: r.comment,
+            status: r.status ?? 'PUBLISHED',
+            customerName:
+              typeof r.customer === 'object' && r.customer ? r.customer.fullName : 'Khách hàng',
+            modelName: typeof r.model === 'object' && r.model ? r.model.name : 'Chưa cập nhật',
+            vehicleReference:
+              typeof r.vehicle === 'object' && r.vehicle ? r.vehicle.reference : null,
+            createdAt: r.createdAt,
+          }))
+        : [],
       fleetStats: {
-        byOperationStatus,
-        utilizationRate,
-        completedContractValue,
-        activeContractValue,
-        expiredDepositCount,
-        confirmedRevenue,
+        byOperationStatus: canVehicles ? byOperationStatus : {},
+        utilizationRate: canVehicles ? utilizationRate : 0,
+        completedContractValue: canReports || canBookings ? completedContractValue : 0,
+        activeContractValue: canReports || canBookings ? activeContractValue : 0,
+        expiredDepositCount: canBookings ? expiredDepositCount : 0,
+        confirmedRevenue: canReports ? confirmedRevenue : 0,
       },
-      timeSeries,
-      dataCompleteness,
+      timeSeries: canReports || canBookings ? timeSeries : [],
+      dataCompleteness: canModels ? dataCompleteness : [],
     })
   } catch (error) {
     return apiError(error)
@@ -423,10 +500,11 @@ export async function PATCH(request: Request) {
     assertOrigin(request)
     const auth = await requireAdmin({ message: 'Bạn không có quyền thực hiện thao tác này.' })
     if (!auth.ok) return auth.response
-    const { payload, user } = auth
+    const { payload, user, admin } = auth
     const data = await body(request, [
       'id',
       'status',
+      'expectedRevision',
       'entity',
       'handoverNote',
       'extraFee',
@@ -440,7 +518,11 @@ export async function PATCH(request: Request) {
     ])
     const entity = text(data.entity, 20)
     const status = text(data.status, 30)
+    const forbidModule = (msg: string) => fail(msg, 403, 'FORBIDDEN')
     if (entity === 'user') {
+      if (!adminHasPermission(admin, 'customers', 'update')) {
+        return forbidModule('Tài khoản chưa được cấp quyền cập nhật Khách hàng.')
+      }
       if (!['ACTIVE', 'DISABLED'].includes(status))
         return fail('Trạng thái tài khoản không hợp lệ.')
       const result = await payload.update({
@@ -453,6 +535,9 @@ export async function PATCH(request: Request) {
       return json({ id: result.id, status: result.status })
     }
     if (entity === 'review') {
+      if (!adminHasPermission(admin, 'customers', 'update')) {
+        return forbidModule('Tài khoản chưa được cấp quyền kiểm duyệt Đánh giá.')
+      }
       if (!['PUBLISHED', 'HIDDEN'].includes(status))
         return fail('Trạng thái đánh giá không hợp lệ.')
       const result = await payload.update({
@@ -465,6 +550,9 @@ export async function PATCH(request: Request) {
       return json({ id: result.id, status: result.status })
     }
     if (entity === 'vehicle') {
+      if (!adminHasPermission(admin, 'vehicles', 'update')) {
+        return forbidModule('Tài khoản chưa được cấp quyền cập nhật Phương tiện.')
+      }
       const vehicleId = text(data.id, 100)
       if (!vehicleId) return fail('Thiếu mã phương tiện cần cập nhật.')
       const patchData: Record<string, unknown> = {}
@@ -516,6 +604,9 @@ export async function PATCH(request: Request) {
       })
     }
     if (entity === 'inquiry') {
+      if (!adminHasPermission(admin, 'inquiries', 'update')) {
+        return forbidModule('Tài khoản chưa được cấp quyền cập nhật Yêu cầu mua xe.')
+      }
       if (!VALID_INQUIRY_STATUSES.includes(status as (typeof VALID_INQUIRY_STATUSES)[number]))
         return fail('Trạng thái yêu cầu không hợp lệ.')
       const adminNote = text(data.adminNote, 1000)
@@ -553,18 +644,38 @@ export async function PATCH(request: Request) {
     if (extraFee !== undefined && (!Number.isSafeInteger(extraFee) || extraFee < 0)) {
       return fail('Phụ phí phát sinh phải là số nguyên không âm.')
     }
-    const result = await payload.update({
-      collection: 'bookings',
-      id: text(data.id, 100),
-      user,
-      overrideAccess: false,
-      data: {
-        status: status as BookingStatus,
-        ...(handoverNote ? { handoverNote } : {}),
-        ...(extraFee !== undefined ? { extraFee } : {}),
-        ...(extraFeeNote ? { extraFeeNote } : {}),
-      },
-    })
+    if (!adminHasPermission(admin, 'bookings', 'update')) {
+      return forbidModule('Tài khoản chưa được cấp quyền cập nhật Đơn thuê xe.')
+    }
+    const expectedRevision =
+      data.expectedRevision !== undefined &&
+      data.expectedRevision !== null &&
+      data.expectedRevision !== ''
+        ? Number(data.expectedRevision)
+        : undefined
+    if (
+      expectedRevision !== undefined &&
+      (!Number.isSafeInteger(expectedRevision) || expectedRevision < 1)
+    ) {
+      return fail('Phiên bản đơn thuê đối chiếu không hợp lệ.')
+    }
+    const result = await withBookingWriteLock(() =>
+      payload.update({
+        collection: 'bookings',
+        id: text(data.id, 100),
+        user,
+        overrideAccess: false,
+        context: {
+          ...(expectedRevision !== undefined ? { expectedRevision } : {}),
+        },
+        data: {
+          status: status as BookingStatus,
+          ...(handoverNote ? { handoverNote } : {}),
+          ...(extraFee !== undefined ? { extraFee } : {}),
+          ...(extraFeeNote ? { extraFeeNote } : {}),
+        },
+      }),
+    )
     return json({ id: result.id, status: result.status })
   } catch (error) {
     return apiError(error)

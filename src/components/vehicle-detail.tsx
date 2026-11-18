@@ -1,8 +1,8 @@
 'use client'
 
 import Image from 'next/image'
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
-import { useSearchParams } from 'next/navigation'
+import dynamic from 'next/dynamic'
+import { startTransition, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import type { GalleryKind, ModelView, SiteContent } from '@/lib/catalogue'
 import type { FleetView, Quote, ReviewView } from '@/lib/domain-types'
 import { api, RequestError } from '@/lib/client-api'
@@ -23,7 +23,6 @@ import {
   type AddonDefinition,
 } from '@/lib/rental-rules'
 import { useAuth } from './auth-provider'
-import { AvailabilityCalendar } from './availability-calendar'
 import { FavoriteButton } from './favorite-button'
 import { categoryLabels } from './vehicle-card'
 import {
@@ -49,6 +48,14 @@ import {
 } from './ui'
 import { Icon } from './ui/icon'
 import { Dialog } from './ui/dialog'
+
+const AvailabilityCalendar = dynamic(
+  () => import('./availability-calendar').then((m) => m.AvailabilityCalendar),
+  {
+    ssr: false,
+    loading: () => <Skeleton className="h-80 w-full rounded-card" />,
+  },
+)
 
 type DetailTab =
   | 'overview'
@@ -120,15 +127,11 @@ export function VehicleDetail({
   address: string | null
   site?: SiteContent
 }) {
-  const params = useSearchParams()
-  const queryIntent = params.get('intent') === 'buy' ? 'buy' : 'rent'
-  const queryStartDate = params.get('startDate') ?? ''
-  const queryEndDate = params.get('endDate') ?? ''
-
   const [intent, setIntent] = useState<'rent' | 'buy'>('rent')
   const [galleryScope, setGalleryScope] = useState<'catalogue' | 'instance'>('catalogue')
   const [kind, setKind] = useState<GalleryKind | 'ALL'>('ALL')
   const [imageIndex, setImageIndex] = useState(0)
+  const [mainImageReady, setMainImageReady] = useState(false)
   const [galleryOpen, setGalleryOpen] = useState(false)
   const [zoomed, setZoomed] = useState(false)
   const [variantIndex, setVariantIndex] = useState(-1)
@@ -143,6 +146,7 @@ export function VehicleDetail({
 
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
+  const [today, setToday] = useState('')
   const [pickupTime, setPickupTime] = useState('08:00')
   const [returnTime, setReturnTime] = useState('20:00')
   const [deliveryRequested, setDeliveryRequested] = useState(false)
@@ -179,7 +183,7 @@ export function VehicleDetail({
   const [reviewSuccess, setReviewSuccess] = useState('')
 
   const touchStartX = useRef<number | null>(null)
-  const { user } = useAuth()
+  const { user, isCustomer, isAdmin } = useAuth()
 
   const catalogueQuery = new URLSearchParams({ intent })
   if (intent === 'rent' && startDate && endDate) {
@@ -190,20 +194,27 @@ export function VehicleDetail({
   categoryQuery.set('type', model.category)
 
   useEffect(() => {
-    setIntent(queryIntent)
-    setStartDate(queryStartDate)
-    setEndDate(queryEndDate)
+    if (typeof window === 'undefined') return
+    const sp = new URLSearchParams(window.location.search)
+    setIntent(sp.get('intent') === 'buy' ? 'buy' : 'rent')
+    setStartDate(sp.get('startDate') ?? '')
+    setEndDate(sp.get('endDate') ?? '')
     setQuote(null)
     setError('')
-  }, [model.id, queryIntent, queryStartDate, queryEndDate])
+  }, [model.id])
 
   useEffect(() => {
-    if (typeof window === 'undefined') return
+    setToday(businessToday())
+    const thumbTimer = window.setTimeout(() => setMainImageReady(true), 4000)
+    if (typeof window === 'undefined') {
+      return () => window.clearTimeout(thumbTimer)
+    }
     const hash = window.location.hash.replace('#', '')
     if (hash === 'specifications') setActiveTab('specs')
     else if (hash === 'actual-condition') setActiveTab('fleet')
     else if (hash === 'pricing-policy') setActiveTab('pricing')
     else if (hash === 'reviews') setActiveTab('reviews')
+    return () => window.clearTimeout(thumbTimer)
   }, [])
 
   useEffect(() => {
@@ -454,7 +465,7 @@ export function VehicleDetail({
 
   async function sendInquiry(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
-    if (!user) return
+    if (!isCustomer || !user) return
     const form = new FormData(e.currentTarget)
     setInquiryBusy(true)
     setInquiryError('')
@@ -646,7 +657,12 @@ export function VehicleDetail({
                     alt={currentImage.alt}
                     fill
                     sizes="(max-width: 1023px) 100vw, 66vw"
+                    loading="eager"
+                    fetchPriority="high"
+                    decoding="sync"
                     preload
+                    onLoad={() => setMainImageReady(true)}
+                    onError={() => setMainImageReady(true)}
                     className="object-cover"
                   />
                 ) : (
@@ -747,9 +763,11 @@ export function VehicleDetail({
                       variant={kind === k && !variantColor ? 'dark' : 'secondary'}
                       aria-pressed={kind === k && !variantColor}
                       onClick={() => {
-                        setKind(k)
-                        setImageIndex(0)
-                        setColorIndex(-1)
+                        startTransition(() => {
+                          setKind(k)
+                          setImageIndex(0)
+                          setColorIndex(-1)
+                        })
                       }}
                       className="min-h-control-sm px-3.5 py-2 text-caption"
                     >
@@ -800,13 +818,18 @@ export function VehicleDetail({
                           : 'border-transparent opacity-75 hover:opacity-100',
                       )}
                     >
-                      <Image
-                        src={item.image.url}
-                        alt={item.image.alt}
-                        fill
-                        sizes="96px"
-                        className="object-cover"
-                      />
+                      {(mainImageReady || idx === safeIndex) && (
+                        <Image
+                          src={item.image.url}
+                          alt={item.image.alt}
+                          fill
+                          loading="lazy"
+                          decoding="async"
+                          fetchPriority="low"
+                          sizes="96px"
+                          className="object-cover"
+                        />
+                      )}
                     </button>
                   ))}
                 </div>
@@ -934,7 +957,7 @@ export function VehicleDetail({
                     id={`tab-${tabKey}`}
                     aria-controls={activeTab === tabKey ? panelId : undefined}
                     selected={activeTab === tabKey}
-                    onClick={() => setActiveTab(tabKey)}
+                    onClick={() => startTransition(() => setActiveTab(tabKey))}
                     className={cn(
                       'shrink-0 whitespace-nowrap rounded-t-control px-3.5 py-3 text-caption sm:text-small font-semibold transition-all',
                       activeTab === tabKey
@@ -1874,8 +1897,9 @@ export function VehicleDetail({
                     label="Ngày nhận xe"
                     type="date"
                     value={startDate}
-                    min={businessToday()}
-                    max={addDays(businessToday(), 90)}
+                    min={today || undefined}
+                    max={today ? addDays(today, 90) : undefined}
+                    onFocus={() => setToday(businessToday())}
                     onChange={(e) => datesChanged(e.target.value, endDate)}
                     required
                   />
@@ -1884,8 +1908,9 @@ export function VehicleDetail({
                     label="Ngày trả xe"
                     type="date"
                     value={endDate}
-                    min={startDate ? addDays(startDate, 1) : businessToday()}
+                    min={startDate ? addDays(startDate, 1) : today || undefined}
                     max={startDate ? addDays(startDate, 30) : undefined}
+                    onFocus={() => setToday(businessToday())}
                     onChange={(e) => datesChanged(startDate, e.target.value)}
                     required
                   />
@@ -2188,7 +2213,7 @@ export function VehicleDetail({
           }}
           className="relative h-gallery-mobile overflow-hidden rounded-card bg-subtle focus:outline-none md:h-gallery"
         >
-          {currentImage && (
+          {galleryOpen && currentImage && (
             <Image
               src={currentImage.url}
               alt={currentImage.alt}
@@ -2243,7 +2268,17 @@ export function VehicleDetail({
               Đến tài khoản của tôi <Icon name="arrow-right" className="size-4" />
             </ButtonLink>
           </div>
-        ) : !user ? (
+        ) : isAdmin && user ? (
+          <div className="space-y-4">
+            <Notice tone="info">
+              Bạn đang đăng nhập bằng tài khoản quản trị ({user.email}). Vui lòng sử dụng tài khoản
+              khách hàng để gửi và theo dõi yêu cầu tư vấn mua xe.
+            </Notice>
+            <ButtonLink href="/dashboard/inquiries" variant="secondary" className="w-full">
+              Quản lý yêu cầu mua xe hệ thống
+            </ButtonLink>
+          </div>
+        ) : !isCustomer || !user ? (
           <div>
             <Text className="mb-5 text-muted">
               Đăng nhập để gửi và theo dõi yêu cầu tư vấn cho {model.name}.
@@ -2311,7 +2346,8 @@ export function VehicleDetail({
                   id="inquiry-date"
                   label="Ngày hẹn mong muốn"
                   type="date"
-                  min={businessToday()}
+                  min={today || undefined}
+                  onFocus={() => setToday(businessToday())}
                   value={preferredDate}
                   onChange={(e) => setPreferredDate(e.target.value)}
                 />

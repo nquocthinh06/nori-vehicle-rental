@@ -1,5 +1,6 @@
-import { requireAdmin } from '@/lib/admin-api'
+import { requireAdmin, resolveCustomerDisplayNames } from '@/lib/admin-api'
 import { apiError, assertOrigin, body, fail, json, text } from '@/lib/api-utils'
+import { withBookingWriteLock } from '@/lib/promo-service'
 import {
   businessToday,
   calculateNextContactSlot,
@@ -30,7 +31,7 @@ const VALID_CONSULT_FILTERS = [
 
 export async function GET(request: Request) {
   try {
-    const auth = await requireAdmin()
+    const auth = await requireAdmin({ permission: ['bookings', 'read'] })
     if (!auth.ok) return auth.response
     const { payload, user } = auth
 
@@ -134,6 +135,10 @@ export async function GET(request: Request) {
       fallbackHoursLabel: site.openingHours ?? null,
     }
     const today = businessToday()
+    const unresolvedCustomerIds = res.docs
+      .map((b) => (typeof b.customer === 'string' ? b.customer : ''))
+      .filter(Boolean)
+    const customerNameMap = await resolveCustomerDisplayNames(payload, unresolvedCustomerIds)
 
     const mapped = res.docs.map((b) => {
       const consultation = consultByBooking.get(String(b.id)) ?? null
@@ -152,10 +157,21 @@ export async function GET(request: Request) {
         bookingKey: b.bookingKey ?? b.id,
         revision: b.revision ?? 1,
         status: b.status ?? 'PENDING',
-        customerId: typeof b.customer === 'object' ? b.customer?.id : undefined,
-        customerName: typeof b.customer === 'object' ? b.customer?.fullName : 'Chưa cập nhật',
+        customerId:
+          typeof b.customer === 'object'
+            ? b.customer?.id
+            : b.customer
+              ? String(b.customer)
+              : undefined,
+        customerName:
+          typeof b.customer === 'object'
+            ? b.customer?.fullName
+            : (customerNameMap.get(String(b.customer ?? ''))?.fullName ?? 'Chưa cập nhật'),
         customerEmail:
-          b.customerEmail ?? (typeof b.customer === 'object' ? b.customer?.email : undefined),
+          b.customerEmail ??
+          (typeof b.customer === 'object'
+            ? b.customer?.email
+            : customerNameMap.get(String(b.customer ?? ''))?.email),
         vehicleId: typeof b.vehicle === 'object' ? b.vehicle?.id : String(b.vehicle),
         reference:
           b.vehicleReferenceSnapshot ?? (typeof b.vehicle === 'object' ? b.vehicle.reference : ''),
@@ -227,7 +243,7 @@ export async function GET(request: Request) {
         totalPrice: b.totalPrice ?? 0,
         depositSnapshot: b.depositSnapshot ?? 0,
         initialPaymentDue: b.initialPaymentDue ?? b.depositSnapshot ?? 0,
-        remainingAmount: b.remainingAmount ?? b.totalPrice ?? 0,
+        remainingAmount: b.totalPrice ?? 0,
         depositExpired: isDepositExpired(b.createdAt, b.status ?? 'PENDING'),
         createdAt: b.createdAt,
       }
@@ -281,13 +297,14 @@ export async function GET(request: Request) {
 export async function PATCH(request: Request) {
   try {
     assertOrigin(request)
-    const auth = await requireAdmin()
+    const auth = await requireAdmin({ permission: ['bookings', 'update'] })
     if (!auth.ok) return auth.response
     const { payload, user } = auth
 
     const data = await body(request, [
       'id',
       'status',
+      'expectedRevision',
       'handoverNote',
       'extraFee',
       'extraFeeNote',
@@ -297,6 +314,18 @@ export async function PATCH(request: Request) {
     ])
     const id = text(data.id, 100)
     const status = text(data.status, 30)
+    const expectedRevision =
+      data.expectedRevision !== undefined &&
+      data.expectedRevision !== null &&
+      data.expectedRevision !== ''
+        ? Number(data.expectedRevision)
+        : undefined
+    if (
+      expectedRevision !== undefined &&
+      (!Number.isSafeInteger(expectedRevision) || expectedRevision < 1)
+    ) {
+      return fail('Phiên bản đơn thuê đối chiếu không hợp lệ.')
+    }
     if (!id) return fail('Thiếu mã đơn thuê.')
     if (!VALID_BOOKING_STATUSES.includes(status as (typeof VALID_BOOKING_STATUSES)[number])) {
       return fail('Trạng thái đơn thuê không hợp lệ.')
@@ -325,22 +354,27 @@ export async function PATCH(request: Request) {
       return fail('ODO lúc nhận lại xe phải là số nguyên không âm.')
     }
 
-    const updated = await payload.update({
-      collection: 'bookings',
-      id,
-      user,
-      overrideAccess: false,
-      data: {
-        status: status as BookingStatus,
-        ...(handoverNote ? { handoverNote } : {}),
-        ...(extraFee !== undefined ? { extraFee } : {}),
-        ...(extraFeeNote ? { extraFeeNote } : {}),
-        ...(contractNumber ? { contractNumber } : {}),
-        ...(returnOdometer !== undefined ? { returnOdometer } : {}),
-        ...(returnCondition ? { returnCondition } : {}),
-      },
+    return await withBookingWriteLock(async () => {
+      const updated = await payload.update({
+        collection: 'bookings',
+        id,
+        user,
+        overrideAccess: false,
+        context: {
+          ...(expectedRevision !== undefined ? { expectedRevision } : {}),
+        },
+        data: {
+          status: status as BookingStatus,
+          ...(handoverNote ? { handoverNote } : {}),
+          ...(extraFee !== undefined ? { extraFee } : {}),
+          ...(extraFeeNote ? { extraFeeNote } : {}),
+          ...(contractNumber ? { contractNumber } : {}),
+          ...(returnOdometer !== undefined ? { returnOdometer } : {}),
+          ...(returnCondition ? { returnCondition } : {}),
+        },
+      })
+      return json({ id: updated.id, status: updated.status })
     })
-    return json({ id: updated.id, status: updated.status })
   } catch (error) {
     return apiError(error)
   }

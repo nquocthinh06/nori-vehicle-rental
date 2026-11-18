@@ -5,6 +5,9 @@ import path from 'node:path'
 import { businessToday, addDays } from '../../src/lib/rental-rules'
 
 function getDbPath(): string {
+  const envPath =
+    process.env.NORI_SQLITE_PATH?.trim() || process.env.DATABASE_URI?.replace(/^file:/, '').trim()
+  if (envPath) return path.resolve(envPath)
   const standaloneDb = path.resolve('.next/standalone/nori.db')
   if (fs.existsSync(standaloneDb)) return standaloneDb
   return path.resolve('nori.db')
@@ -197,7 +200,14 @@ test.describe('NORI Data Sync & Business Security Verification', () => {
     const db = new DatabaseSync(getDbPath())
     db.exec('PRAGMA foreign_keys = ON')
     db.prepare('DELETE FROM rental_days WHERE booking_key = ?').run(booking.bookingKey)
+    db.prepare('DELETE FROM bookings_status_history WHERE _parent_id = ?').run(booking.id)
     db.prepare('DELETE FROM bookings WHERE id = ?').run(booking.id)
+    db.prepare(
+      'DELETE FROM audit_logs_rels WHERE users_id IN (SELECT id FROM users WHERE email = ?)',
+    ).run(custEmail)
+    db.prepare(
+      'DELETE FROM users_sessions WHERE _parent_id IN (SELECT id FROM users WHERE email = ?)',
+    ).run(custEmail)
     db.prepare('DELETE FROM users WHERE email = ?').run(custEmail)
     db.close()
   })
@@ -263,7 +273,14 @@ test.describe('NORI Data Sync & Business Security Verification', () => {
     const db = new DatabaseSync(getDbPath())
     db.exec('PRAGMA foreign_keys = ON')
     db.prepare('DELETE FROM rental_days WHERE booking_key = ?').run(b1Data.bookingKey)
+    db.prepare('DELETE FROM bookings_status_history WHERE _parent_id = ?').run(b1Data.id)
     db.prepare('DELETE FROM bookings WHERE id = ?').run(b1Data.id)
+    db.prepare(
+      'DELETE FROM audit_logs_rels WHERE users_id IN (SELECT id FROM users WHERE email IN (?, ?))',
+    ).run(cust1, cust2)
+    db.prepare(
+      'DELETE FROM users_sessions WHERE _parent_id IN (SELECT id FROM users WHERE email IN (?, ?))',
+    ).run(cust1, cust2)
     db.prepare('DELETE FROM users WHERE email IN (?, ?)').run(cust1, cust2)
     db.close()
   })
@@ -378,7 +395,14 @@ test.describe('NORI Data Sync & Business Security Verification', () => {
     const db = new DatabaseSync(getDbPath())
     db.exec('PRAGMA foreign_keys = ON')
     db.prepare('DELETE FROM rental_days WHERE booking_key = ?').run(bookingA.bookingKey)
+    db.prepare('DELETE FROM bookings_status_history WHERE _parent_id = ?').run(bookingA.id)
     db.prepare('DELETE FROM bookings WHERE id = ?').run(bookingA.id)
+    db.prepare(
+      'DELETE FROM audit_logs_rels WHERE users_id IN (SELECT id FROM users WHERE email IN (?, ?))',
+    ).run(custA, custB)
+    db.prepare(
+      'DELETE FROM users_sessions WHERE _parent_id IN (SELECT id FROM users WHERE email IN (?, ?))',
+    ).run(custA, custB)
     db.prepare('DELETE FROM users WHERE email IN (?, ?)').run(custA, custB)
     db.close()
   })

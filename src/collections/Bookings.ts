@@ -1,7 +1,21 @@
 import { APIError, type CollectionConfig } from 'payload'
-import { adminField, customerOnly, ownRecords, serverField } from '@/access/nori'
-import { auditCollection } from '@/hooks/audit-nori'
 import {
+  adminField,
+  adminHasAnyPermission,
+  adminHasPermission,
+  customerOnly,
+  serverField,
+} from '@/access/nori'
+import { auditCollection } from '@/hooks/audit-nori'
+import { dispatchBookingConfirmationNotice } from '@/lib/notifications'
+import {
+  consumePromoSlotAtomically,
+  lookupAndEvaluatePromotion,
+  promoErrorHttpStatus,
+  releasePromoSlotAtomically,
+} from '@/lib/promo-service'
+import {
+  applyPromotionToQuote,
   BOOKING_CONFIRMED_LOCK_MESSAGE,
   bookingStatusLabels,
   businessToday,
@@ -11,7 +25,7 @@ import {
   canTransition,
   computeRentalDayDiff,
   formatDate,
-  formatMoney,
+  formatVnd,
   maskPhone,
   parseAddonKeys,
   relationId,
@@ -50,7 +64,33 @@ export const Bookings: CollectionConfig = {
       'status',
     ],
   },
-  access: { create: customerOnly, read: ownRecords, update: ownRecords, delete: () => false },
+  access: {
+    create: customerOnly,
+    read: ({ req }) => {
+      if (
+        adminHasAnyPermission(req.user, [
+          ['bookings', 'read'],
+          ['customers', 'read'],
+          ['payments', 'read'],
+          ['reports', 'read'],
+        ])
+      ) {
+        return true
+      }
+      if (req.user?.collection === 'users' && req.user.status === 'ACTIVE') {
+        return { customer: { equals: req.user.id } }
+      }
+      return false
+    },
+    update: ({ req }) => {
+      if (adminHasPermission(req.user, 'bookings', 'update')) return true
+      if (req.user?.collection === 'users' && req.user.status === 'ACTIVE') {
+        return { customer: { equals: req.user.id } }
+      }
+      return false
+    },
+    delete: () => false,
+  },
   hooks: {
     beforeChange: [
       async ({ data, operation, originalDoc, req }) => {
@@ -63,6 +103,32 @@ export const Bookings: CollectionConfig = {
           )
           if (dates.error || !dates.totalDays)
             throw new APIError(dates.error ?? 'Ngày thuê không hợp lệ.', 400)
+          if (
+            typeof data.pickupTime === 'string' &&
+            data.pickupTime.trim() &&
+            !validateTimeString(data.pickupTime.trim())
+          ) {
+            throw new APIError('Giờ nhận xe không hợp lệ (định dạng HH:MM).', 400)
+          }
+          if (
+            typeof data.returnTime === 'string' &&
+            data.returnTime.trim() &&
+            !validateTimeString(data.returnTime.trim())
+          ) {
+            throw new APIError('Giờ trả xe không hợp lệ (định dạng HH:MM).', 400)
+          }
+          const rawPhone =
+            typeof data.customerPhone === 'string' ? data.customerPhone.trim().slice(0, 16) : ''
+          if (rawPhone && !/^[0-9+\s()-]{8,16}$/.test(rawPhone)) {
+            throw new APIError('Số điện thoại liên hệ không hợp lệ.', 400)
+          }
+          const rawEmail =
+            typeof data.customerEmail === 'string'
+              ? data.customerEmail.trim().toLowerCase().slice(0, 254)
+              : ''
+          if (rawEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rawEmail)) {
+            throw new APIError('Địa chỉ email liên hệ không hợp lệ.', 400)
+          }
           const vehicleID = relationId(data.vehicle)
           if (!vehicleID) throw new APIError('Vui lòng chọn xe thực tế.', 400)
           const vehicle = await req.payload.findByID({
@@ -123,6 +189,20 @@ export const Bookings: CollectionConfig = {
               409,
             )
           }
+          let maxPending = 5
+          try {
+            const site = (await req.payload.findGlobal({
+              slug: 'nori-site',
+              overrideAccess: true,
+              req,
+            })) as { maxPendingBookings?: number | null }
+            const configured = Number(site?.maxPendingBookings)
+            if (Number.isInteger(configured) && configured >= 1 && configured <= 50) {
+              maxPending = configured
+            }
+          } catch {
+            // fallback default 5 when global read fails
+          }
           const userPendingCount = await req.payload.count({
             collection: 'bookings',
             overrideAccess: false,
@@ -130,9 +210,9 @@ export const Bookings: CollectionConfig = {
             req,
             where: { status: { equals: 'PENDING' } },
           })
-          if (userPendingCount.totalDocs >= 5) {
+          if (userPendingCount.totalDocs >= maxPending) {
             throw new APIError(
-              'Bạn đang có tối đa 5 đơn chờ xác nhận. Vui lòng hoàn tất hoặc hủy bớt trước khi đặt thêm.',
+              `Bạn đang có tối đa ${maxPending} đơn chờ xác nhận. Vui lòng hoàn tất hoặc hủy bớt trước khi đặt thêm.`,
               429,
             )
           }
@@ -181,50 +261,36 @@ export const Bookings: CollectionConfig = {
             vehicleDeposit: vehicle.depositAmount,
           })
           let appliedPromoCode: string | undefined
-          let promoDiscountAmount = 0
+          let promoEval = null
           const rawPromo =
             typeof data.promoCode === 'string' ? data.promoCode.trim().toUpperCase() : ''
           if (rawPromo) {
-            const promoRes = await req.payload.find({
-              collection: 'promotions',
-              overrideAccess: true,
+            const { promo, evaluation } = await lookupAndEvaluatePromotion(req.payload, {
+              code: rawPromo,
+              serviceType: 'RENT',
+              totalDays: quote.totalDays,
+              subtotalBeforePromo: quote.estimatedTotal,
               req,
-              depth: 0,
-              limit: 1,
-              where: { code: { equals: rawPromo } },
             })
-            const promo = promoRes.docs[0]
-            const today = businessToday()
-            if (
-              !promo ||
-              !promo.active ||
-              (promo.appliesTo !== 'ALL' && promo.appliesTo !== 'RENT') ||
-              (promo.validFrom && today < promo.validFrom) ||
-              (promo.validTo && today > promo.validTo) ||
-              (promo.minDays && quote.totalDays < promo.minDays) ||
-              (promo.usageLimit != null && (promo.usedCount ?? 0) >= promo.usageLimit)
-            ) {
-              throw new APIError('Mã khuyến mãi không hợp lệ hoặc chưa đủ điều kiện áp dụng.', 400)
+            if (!evaluation.valid || !promo) {
+              throw new APIError(evaluation.message, promoErrorHttpStatus(evaluation))
             }
-            const rawDiscount =
-              promo.discountType === 'PERCENT'
-                ? Math.round((quote.estimatedTotal * promo.discountValue) / 100)
-                : promo.discountValue
-            const cappedByMax =
-              promo.maxDiscount != null ? Math.min(rawDiscount, promo.maxDiscount) : rawDiscount
-            promoDiscountAmount = Math.max(0, Math.min(cappedByMax, quote.estimatedTotal))
+            await consumePromoSlotAtomically(req.payload, promo.id, req)
+            promoEval = evaluation
             appliedPromoCode = promo.code
-            await req.payload.update({
-              collection: 'promotions',
-              id: promo.id,
-              overrideAccess: true,
-              req,
-              context: { skipAudit: true },
-              data: { usedCount: (promo.usedCount ?? 0) + 1 },
-            })
           }
-          const finalTotal = Math.max(0, quote.estimatedTotal - promoDiscountAmount)
-          const finalRemaining = Math.max(0, finalTotal - quote.initialPaymentDue)
+          const finalQuote = applyPromotionToQuote(quote, promoEval)
+          const expectedTotalPrice = req.context?.expectedTotalPrice
+          if (
+            typeof expectedTotalPrice === 'number' &&
+            Number.isSafeInteger(expectedTotalPrice) &&
+            expectedTotalPrice !== finalQuote.estimatedTotal
+          ) {
+            throw new APIError(
+              `Chi phí thuê hoặc mức ưu đãi vừa được cập nhật (tổng mới: ${formatVnd(finalQuote.estimatedTotal)}). Vui lòng kiểm tra lại báo giá trước khi xác nhận.`,
+              409,
+            )
+          }
           const pickupLoc =
             typeof data.pickupLocation === 'string' && data.pickupLocation.trim()
               ? data.pickupLocation.trim().slice(0, 200)
@@ -233,10 +299,9 @@ export const Bookings: CollectionConfig = {
             typeof data.returnLocation === 'string' && data.returnLocation.trim()
               ? data.returnLocation.trim().slice(0, 200)
               : pickupLoc
-          const custEmail =
-            typeof data.customerEmail === 'string' && data.customerEmail.trim()
-              ? data.customerEmail.trim().toLowerCase().slice(0, 254)
-              : (req.user.email ?? undefined)
+          const custPhone =
+            rawPhone || (req.user.phone ? String(req.user.phone).trim().slice(0, 16) : undefined)
+          const custEmail = rawEmail || (req.user.email ?? undefined)
           return {
             ...data,
             customer: req.user.id,
@@ -247,22 +312,24 @@ export const Bookings: CollectionConfig = {
             returnTime: validateTimeString(data.returnTime) ? data.returnTime : '20:00',
             pickupLocation: pickupLoc,
             returnLocation: returnLoc,
+            customerPhone: custPhone,
             customerEmail: custEmail,
             deliveryRequested,
             addonServices: addonKeys.join(','),
-            totalDays: quote.totalDays,
-            dailyPriceSnapshot: quote.dailyPrice,
-            baseRentPrice: quote.basePrice,
-            weekendSurchargeTotal: quote.weekendSurchargeTotal + quote.holidaySurchargeTotal,
-            deliveryFeeSnapshot: quote.deliveryFee,
-            addonFeeTotal: quote.addonFee,
-            discountAmount: quote.discountAmount,
+            totalDays: finalQuote.totalDays,
+            dailyPriceSnapshot: finalQuote.dailyPrice,
+            baseRentPrice: finalQuote.basePrice,
+            weekendSurchargeTotal:
+              finalQuote.weekendSurchargeTotal + finalQuote.holidaySurchargeTotal,
+            deliveryFeeSnapshot: finalQuote.deliveryFee,
+            addonFeeTotal: finalQuote.addonFee,
+            discountAmount: finalQuote.discountAmount,
             promoCode: appliedPromoCode,
-            promoDiscountAmount,
-            totalPrice: finalTotal,
-            depositSnapshot: quote.depositAmount,
-            initialPaymentDue: quote.initialPaymentDue,
-            remainingAmount: finalRemaining,
+            promoDiscountAmount: finalQuote.promoDiscountAmount,
+            totalPrice: finalQuote.estimatedTotal,
+            depositSnapshot: finalQuote.depositAmount,
+            initialPaymentDue: finalQuote.initialPaymentDue,
+            remainingAmount: finalQuote.remainingAmount,
             vehicleNameSnapshot: model.name,
             vehicleReferenceSnapshot: vehicle.reference,
             modificationHistory: [],
@@ -631,78 +698,45 @@ export const Bookings: CollectionConfig = {
           })
 
           let appliedPromoCode: string | null = null
-          let promoDiscountAmount = 0
-          if (oldPromo && oldPromo !== nextRawPromo) {
-            const oldPromoRes = await req.payload.find({
-              collection: 'promotions',
-              overrideAccess: true,
-              req,
-              depth: 0,
-              limit: 1,
-              where: { code: { equals: oldPromo } },
-            })
-            const oldPromoDoc = oldPromoRes.docs[0]
-            if (oldPromoDoc) {
-              await req.payload.update({
-                collection: 'promotions',
-                id: oldPromoDoc.id,
-                overrideAccess: true,
-                req,
-                context: { skipAudit: true },
-                data: { usedCount: Math.max(0, (oldPromoDoc.usedCount ?? 1) - 1) },
-              })
-            }
-          }
+          let promoEval = null
+          const isSamePromo = nextRawPromo === oldPromo
           if (nextRawPromo) {
-            const promoRes = await req.payload.find({
-              collection: 'promotions',
-              overrideAccess: true,
+            const { promo, evaluation } = await lookupAndEvaluatePromotion(req.payload, {
+              code: nextRawPromo,
+              serviceType: 'RENT',
+              totalDays: quote.totalDays,
+              subtotalBeforePromo: quote.estimatedTotal,
+              alreadyHeldByCurrentBooking: isSamePromo,
               req,
-              depth: 0,
-              limit: 1,
-              where: { code: { equals: nextRawPromo } },
             })
-            const promo = promoRes.docs[0]
-            const today = businessToday()
-            const isSamePromo = nextRawPromo === oldPromo
-            if (
-              !promo ||
-              !promo.active ||
-              (promo.appliesTo !== 'ALL' && promo.appliesTo !== 'RENT') ||
-              (promo.validFrom && today < promo.validFrom) ||
-              (promo.validTo && today > promo.validTo) ||
-              (promo.minDays && quote.totalDays < promo.minDays) ||
-              (!isSamePromo &&
-                promo.usageLimit != null &&
-                (promo.usedCount ?? 0) >= promo.usageLimit)
-            ) {
-              throw new APIError(
-                'Mã khuyến mãi không hợp lệ hoặc không đủ điều kiện cho khoảng ngày thuê mới.',
-                400,
-              )
+            if (!evaluation.valid || !promo) {
+              throw new APIError(evaluation.message, promoErrorHttpStatus(evaluation))
             }
-            const rawDiscount =
-              promo.discountType === 'PERCENT'
-                ? Math.round((quote.estimatedTotal * promo.discountValue) / 100)
-                : promo.discountValue
-            const cappedByMax =
-              promo.maxDiscount != null ? Math.min(rawDiscount, promo.maxDiscount) : rawDiscount
-            promoDiscountAmount = Math.max(0, Math.min(cappedByMax, quote.estimatedTotal))
-            appliedPromoCode = promo.code
             if (!isSamePromo) {
-              await req.payload.update({
-                collection: 'promotions',
-                id: promo.id,
-                overrideAccess: true,
-                req,
-                context: { skipAudit: true },
-                data: { usedCount: (promo.usedCount ?? 0) + 1 },
-              })
+              await consumePromoSlotAtomically(req.payload, promo.id, req)
             }
+            promoEval = evaluation
+            appliedPromoCode = promo.code
+          }
+          if (oldPromo && !isSamePromo) {
+            await releasePromoSlotAtomically(req.payload, oldPromo, req)
           }
 
-          const finalTotal = Math.max(0, quote.estimatedTotal - promoDiscountAmount)
-          const finalRemaining = Math.max(0, finalTotal - quote.initialPaymentDue)
+          const finalQuote = applyPromotionToQuote(quote, promoEval)
+          const expectedTotalPrice = req.context?.expectedTotalPrice
+          if (
+            typeof expectedTotalPrice === 'number' &&
+            Number.isSafeInteger(expectedTotalPrice) &&
+            expectedTotalPrice !== finalQuote.estimatedTotal
+          ) {
+            throw new APIError(
+              `Chi phí thuê sau thay đổi vừa được cập nhật (tổng mới: ${formatVnd(finalQuote.estimatedTotal)}). Vui lòng kiểm tra lại báo giá trước khi lưu.`,
+              409,
+            )
+          }
+          const finalTotal = finalQuote.estimatedTotal
+          const finalRemaining = finalQuote.remainingAmount
+          const promoDiscountAmount = finalQuote.promoDiscountAmount
           const prevMods = Array.isArray(originalDoc.modificationHistory)
             ? originalDoc.modificationHistory
             : []
@@ -774,14 +808,42 @@ export const Bookings: CollectionConfig = {
         }
 
         // Branch 2: Customer Cancel or Admin Status / Operational Update
+        const freshDoc = await req.payload.findByID({
+          collection: 'bookings',
+          id: originalDoc.id,
+          req,
+          overrideAccess: true,
+          depth: 0,
+        })
+        const currentRevision = Number(freshDoc.revision ?? originalDoc.revision ?? 1)
+        if (
+          typeof req.context?.expectedRevision === 'number' &&
+          req.context.expectedRevision !== currentRevision
+        ) {
+          throw new APIError(
+            'Đơn thuê vừa được cập nhật ở phiên làm việc khác. Vui lòng tải lại dữ liệu mới nhất trước khi thao tác.',
+            409,
+          )
+        }
+
         const next =
           actor === 'customer' && req.context.noriCustomerCancel === true
             ? 'CANCELLED'
-            : (data.status ?? originalDoc.status)
+            : (data.status ?? freshDoc.status ?? originalDoc.status)
         if (
-          next !== originalDoc.status &&
+          actor === 'admin' &&
+          next === (freshDoc.status ?? originalDoc.status) &&
+          ['CONFIRMED', 'REJECTED', 'CANCELLED', 'COMPLETED'].includes(String(next))
+        ) {
+          throw new APIError(
+            `Đơn thuê đang ở trạng thái "${bookingStatusLabels[String(next)] ?? String(next)}". Vui lòng tải lại dữ liệu mới nhất.`,
+            409,
+          )
+        }
+        if (
+          next !== (freshDoc.status ?? originalDoc.status) &&
           !canTransition(
-            originalDoc.status as BookingStatus,
+            (freshDoc.status ?? originalDoc.status) as BookingStatus,
             next as BookingStatus,
             actor,
             originalDoc.startDate,
@@ -789,6 +851,27 @@ export const Bookings: CollectionConfig = {
           )
         )
           throw new APIError('Không thể chuyển trạng thái đơn thuê theo yêu cầu.', 409)
+
+        if (actor === 'customer' && next === 'CANCELLED') {
+          const confirmedPayCount = await req.payload.count({
+            collection: 'payments',
+            req,
+            overrideAccess: true,
+            where: {
+              and: [
+                { booking: { equals: originalDoc.id } },
+                { status: { equals: 'CONFIRMED' } },
+                { paymentType: { not_equals: 'REFUND' } },
+              ],
+            },
+          })
+          if (confirmedPayCount.totalDocs > 0) {
+            throw new APIError(
+              'Đơn thuê đã có giao dịch thanh toán được xác nhận; vui lòng liên hệ NORI để được hỗ trợ hủy và hoàn tiền.',
+              409,
+            )
+          }
+        }
 
         let expectedContactDate = originalDoc.expectedContactDate
         let workingHoursSnapshot = originalDoc.workingHoursSnapshot
@@ -875,7 +958,9 @@ export const Bookings: CollectionConfig = {
           totalPrice: originalDoc.totalPrice,
           depositSnapshot: originalDoc.depositSnapshot,
           initialPaymentDue: originalDoc.initialPaymentDue,
-          remainingAmount: originalDoc.remainingAmount,
+          remainingAmount: ['CANCELLED', 'REJECTED'].includes(String(next))
+            ? 0
+            : originalDoc.remainingAmount,
           vehicleNameSnapshot: originalDoc.vehicleNameSnapshot,
           vehicleReferenceSnapshot: originalDoc.vehicleReferenceSnapshot,
           modificationHistory: originalDoc.modificationHistory,
@@ -905,7 +990,7 @@ export const Bookings: CollectionConfig = {
                 entity: 'booking',
                 entityId: String(doc.id),
                 entityLabel: String(doc.bookingKey ?? doc.id),
-                summary: `Khách hàng chỉnh sửa đơn chờ duyệt ${doc.bookingKey}: ${formatMoney(latestMod?.previousTotalPrice)} → ${formatMoney(latestMod?.newTotalPrice)}`,
+                summary: `Khách hàng chỉnh sửa đơn chờ duyệt ${doc.bookingKey}: ${formatVnd(latestMod?.previousTotalPrice)} → ${formatVnd(latestMod?.newTotalPrice)}`,
                 fromStatus: 'PENDING',
                 toStatus: 'PENDING',
                 actorType: 'CUSTOMER',
@@ -997,38 +1082,33 @@ export const Bookings: CollectionConfig = {
             const custName = customerDoc?.fullName || rawEmail || 'Quý khách'
             const vehicleLabel = doc.vehicleNameSnapshot || 'Phương tiện NORI'
 
-            if (existingNotif.docs.length === 0) {
-              await req.payload.create({
-                collection: 'notifications',
-                req,
-                overrideAccess: true,
-                data: {
-                  eventKey: `BOOKING_CONFIRMED:${doc.id}`,
-                  customer: customerId,
-                  booking: doc.id,
-                  type: 'BOOKING_CONFIRMED',
-                  title: 'Đơn thuê của bạn đã được xác nhận!',
-                  message: isUrgent
-                    ? `Đơn thuê ${doc.bookingKey} (${vehicleLabel}) đã được xác nhận và gắn cờ ưu tiên hỗ trợ do lịch nhận xe gần (${formatDate(doc.startDate)}). Quý khách vui lòng chú ý điện thoại hoặc liên hệ Hotline NORI nếu cần hướng dẫn ngay.`
-                    : `Cảm ơn quý khách đã lựa chọn NORI. Đơn thuê ${doc.bookingKey} đã được xác nhận. Nhân viên NORI sẽ liên hệ tư vấn và hướng dẫn các bước tiếp theo vào ngày làm việc dự kiến ${formatDate(expectedDate)} (${hoursLabel}).`,
-                  bookingKey: String(doc.bookingKey ?? doc.id),
-                  vehicleName: vehicleLabel,
-                  startDate: doc.startDate,
-                  endDate: doc.endDate,
-                  pickupTime: doc.pickupTime ?? '08:00',
-                  returnTime: doc.returnTime ?? '20:00',
-                  expectedContactDate: expectedDate,
-                  workingHoursLabel: hoursLabel,
-                  customerPhoneMasked: maskPhone(rawPhone),
-                  hotline: site.phone ?? '',
-                  isUrgent,
-                  paymentConfirmed: confirmedPayments.totalDocs > 0,
-                  superseded: false,
-                  isRead: false,
-                  popupDismissed: false,
-                },
-              })
-            }
+            await dispatchBookingConfirmationNotice({
+              payload: req.payload,
+              req,
+              existingNotifCount: existingNotif.docs.length,
+              data: {
+                eventKey: `BOOKING_CONFIRMED:${doc.id}`,
+                customerId,
+                bookingId: doc.id,
+                title: 'Đơn thuê của bạn đã được xác nhận!',
+                message: isUrgent
+                  ? `Đơn thuê ${doc.bookingKey} (${vehicleLabel}) đã được xác nhận và gắn cờ ưu tiên hỗ trợ do lịch nhận xe gần (${formatDate(doc.startDate)}). Quý khách vui lòng chú ý điện thoại hoặc liên hệ Hotline NORI nếu cần hướng dẫn ngay.`
+                  : `Cảm ơn quý khách đã lựa chọn NORI. Đơn thuê ${doc.bookingKey} đã được xác nhận. Nhân viên NORI sẽ liên hệ tư vấn và hướng dẫn các bước tiếp theo vào ngày làm việc dự kiến ${formatDate(expectedDate)} (${hoursLabel}).`,
+                bookingKey: String(doc.bookingKey ?? doc.id),
+                vehicleName: vehicleLabel,
+                startDate: doc.startDate,
+                endDate: doc.endDate,
+                pickupTime: doc.pickupTime ?? '08:00',
+                returnTime: doc.returnTime ?? '20:00',
+                expectedContactDate: expectedDate,
+                workingHoursLabel: hoursLabel,
+                customerPhoneMasked: maskPhone(rawPhone),
+                customerEmail: rawEmail || undefined,
+                hotline: site.phone ?? '',
+                isUrgent,
+                paymentConfirmed: confirmedPayments.totalDocs > 0,
+              },
+            })
 
             if (existingConsult.docs.length === 0) {
               await req.payload.create({
@@ -1058,8 +1138,14 @@ export const Bookings: CollectionConfig = {
             }
           }
 
-          // Suppress misleading confirmation popup & cancel open consultation if booking is later cancelled/rejected (NT-18)
+          // Suppress misleading confirmation popup, cancel open consultation, and restore promo usage quota if booking is cancelled/rejected
           if (['CANCELLED', 'REJECTED'].includes(doc.status)) {
+            if (
+              !['CANCELLED', 'REJECTED', 'COMPLETED'].includes(String(previousDoc?.status ?? '')) &&
+              doc.promoCode
+            ) {
+              await releasePromoSlotAtomically(req.payload, doc.promoCode, req)
+            }
             const [notifsToSupersede, openConsults] = await Promise.all([
               req.payload.find({
                 collection: 'notifications',
@@ -1102,6 +1188,30 @@ export const Bookings: CollectionConfig = {
                 overrideAccess: true,
                 context: { skipAudit: true },
                 data: { status: 'CANCELLED' },
+              })
+            }
+            const pendingPayments = await req.payload.find({
+              collection: 'payments',
+              req,
+              overrideAccess: true,
+              depth: 0,
+              limit: 20,
+              where: {
+                and: [{ booking: { equals: doc.id } }, { status: { equals: 'PENDING' } }],
+              },
+            })
+            for (const p of pendingPayments.docs) {
+              await req.payload.update({
+                collection: 'payments',
+                id: p.id,
+                req,
+                overrideAccess: true,
+                data: {
+                  status: 'CANCELLED',
+                  note: p.note
+                    ? `${p.note} · Tự động hủy do đơn thuê chuyển trạng thái ${doc.status}`
+                    : `Tự động hủy do đơn thuê chuyển trạng thái ${doc.status}`,
+                },
               })
             }
           }

@@ -24,15 +24,31 @@ export async function POST(request: Request) {
   } catch {
     return fail('Yêu cầu không hợp lệ.')
   }
+  const postSlugsValid =
+    data.postSlugs === undefined ||
+    (Array.isArray(data.postSlugs) &&
+      data.postSlugs.length <= 20 &&
+      data.postSlugs.every(
+        (s: unknown) => typeof s === 'string' && s.length <= 200 && /^[a-z0-9_-]+$/i.test(s),
+      ))
+  const allPostsValid = data.allPosts === undefined || typeof data.allPosts === 'boolean'
+
   if (
     !Array.isArray(data.slugs) ||
     data.slugs.length > 20 ||
     data.slugs.some(
       (s: unknown) => typeof s !== 'string' || s.length > 200 || !/^[a-z0-9_-]+$/i.test(s),
     ) ||
-    typeof data.allDetails !== 'boolean'
+    typeof data.allDetails !== 'boolean' ||
+    !postSlugsValid ||
+    !allPostsValid
   )
     return fail('Khóa cache không hợp lệ.')
-  invalidateNoriCaches({ slugs: data.slugs, allDetails: data.allDetails })
+  invalidateNoriCaches({
+    slugs: data.slugs,
+    allDetails: data.allDetails,
+    postSlugs: data.postSlugs,
+    allPosts: data.allPosts,
+  })
   return json({ invalidated: true })
 }

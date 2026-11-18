@@ -34,6 +34,22 @@ function readAdminCredentials() {
   return { email, password }
 }
 
+function getDbPath(): string {
+  const envPath =
+    process.env.NORI_SQLITE_PATH?.trim() || process.env.DATABASE_URI?.replace(/^file:/, '').trim()
+  const resolved = envPath
+    ? path.resolve(envPath)
+    : fs.existsSync(path.resolve('.next/standalone/nori.db'))
+      ? path.resolve('.next/standalone/nori.db')
+      : path.resolve('nori.db')
+  if (resolved === path.resolve('nori.db') && process.env.NORI_ALLOW_LIVE_DB_TEST !== '1') {
+    throw new Error(
+      '[SAFEGUARD] Refusing E2E access to live ./nori.db without NORI_ALLOW_LIVE_DB_TEST=1.',
+    )
+  }
+  return resolved
+}
+
 function cleanupE2ERecords({
   customerEmails = [],
   resetVehicleReferences = [],
@@ -41,7 +57,7 @@ function cleanupE2ERecords({
   customerEmails?: string[]
   resetVehicleReferences?: string[]
 }) {
-  const db = new DatabaseSync('./nori.db')
+  const db = new DatabaseSync(getDbPath())
   try {
     db.exec('PRAGMA foreign_keys = ON')
     for (const email of customerEmails) {
@@ -137,6 +153,7 @@ function cleanupE2ERecords({
       db.prepare('DELETE FROM reviews_rels WHERE users_id = ?').run(user.id)
       db.prepare('DELETE FROM bookings_rels WHERE users_id = ?').run(user.id)
       db.prepare('DELETE FROM sales_inquiries_rels WHERE users_id = ?').run(user.id)
+      db.prepare('DELETE FROM audit_logs_rels WHERE users_id = ?').run(user.id)
       db.prepare('DELETE FROM users_sessions WHERE _parent_id = ?').run(user.id)
       db.prepare('DELETE FROM users_rels WHERE parent_id = ? OR users_id = ?').run(user.id, user.id)
       db.prepare('DELETE FROM payload_locked_documents_rels WHERE users_id = ?').run(user.id)
@@ -200,7 +217,7 @@ test('hero carousel switches on explicit user action', async ({ page }) => {
 })
 
 test('mega menu is keyboard operable and dismissible', async ({ page }) => {
-  await page.goto('/')
+  await page.goto('/', { waitUntil: 'networkidle' })
   const trigger = page.getByRole('button', { name: 'Thuê xe', exact: true })
   await trigger.focus()
   await page.keyboard.press('Enter')
@@ -637,7 +654,7 @@ test('admin dashboard lifecycle, handover note, customer notifications, password
   let adminContext: Awaited<ReturnType<typeof browser.newContext>> | null = null
   let priorViosOpStatus = 'READY'
   {
-    const prepDb = new DatabaseSync('./nori.db')
+    const prepDb = new DatabaseSync(getDbPath())
     try {
       const row = prepDb
         .prepare("SELECT operation_status FROM vehicles WHERE reference = 'NR-OT-VIOS01'")
@@ -875,7 +892,7 @@ test('admin dashboard lifecycle, handover note, customer notifications, password
       resetVehicleReferences: ['NR-OT-VIOS01'],
     })
     if (priorViosOpStatus !== 'READY') {
-      const restoreDb = new DatabaseSync('./nori.db')
+      const restoreDb = new DatabaseSync(getDbPath())
       try {
         restoreDb
           .prepare("UPDATE vehicles SET operation_status = ? WHERE reference = 'NR-OT-VIOS01'")

@@ -75,8 +75,13 @@ export async function POST(request: Request) {
   try {
     assertOrigin(request)
     assertRateLimit(request, 'reviews-create', 40, 60_000)
-    const user = await appAuth.currentUser()
-    if (!user) return fail('Vui lòng đăng nhập để gửi đánh giá.', 401, 'UNAUTHORIZED')
+    const auth = await appAuth.requireCustomer({
+      unauthMessage: 'Vui lòng đăng nhập để gửi đánh giá.',
+      adminForbiddenMessage:
+        'Bạn đang đăng nhập bằng tài khoản quản trị. Chỉ khách hàng đã hoàn thành chuyến thuê mới có thể gửi đánh giá.',
+    })
+    if (!auth.ok) return auth.response
+    const user = auth.user
     const data = await body(request, ['booking', 'model', 'rating', 'title', 'comment'])
     const bookingId = text(data.booking, 100)
     const rating = Number(data.rating)

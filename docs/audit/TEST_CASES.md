@@ -4,56 +4,6 @@
 
 ---
 
-## Bảng Ma Trận Nghiệm Thu Nhóm Nâng Cấp (`BK-*`, `NT-*`, `HR-*`, `MD-*`, `VH-*`)
-
-| Test Case ID   | Mô tả kịch bản kiểm thử                                                                                                                                                                                                                                         | Trạng thái | Bằng chứng thực thi                                                                         |
-| :------------- | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :--------: | :------------------------------------------------------------------------------------------ |
-| `BK-01..BK-09` | Hiển thị Xem chi tiết / Chỉnh sửa / Hủy đơn `PENDING`; tự điền dữ liệu cũ; sửa ngày/giờ, giao nhận tận nơi, điểm nhận/trả, dịch vụ phụ, SĐT/email, mã khuyến mãi hợp lệ; tự loại trừ ngày giữ chỗ cũ của chính đơn đang sửa; hiển thị bảng so sánh Trước / Sau. |   `PASS`   | `upgrade-workflows.spec.ts` Test #1 (`5.1s`) + `rental-rules.test.mjs` (`BK-RULES`)         |
-| `BK-10..BK-11` | Chặn chỉnh sửa sang khoảng ngày trùng đơn khách khác hoặc lịch bảo trì (`HTTP 409 CONFLICT`).                                                                                                                                                                   |   `PASS`   | `upgrade-workflows.spec.ts` Test #1 + `Bookings.ts` `beforeChange`                          |
-| `BK-12..BK-16` | Khóa nút chỉnh sửa và từ chối API `PUT /nori-api/bookings` trên mọi trạng thái khác `PENDING` (`CONFIRMED`, `ONGOING`, `COMPLETED`, `CANCELLED`).                                                                                                               |   `PASS`   | `upgrade-workflows.spec.ts` Test #1 + `rental-rules.test.mjs` (`BK-RULES`)                  |
-| `BK-17`        | Đơn `PENDING` nhưng đã phát sinh giao dịch đặt cọc/thanh toán chờ đối soát -> chặn tự sửa (`HTTP 409 CONFLICT`) và hướng dẫn liên hệ nhân viên.                                                                                                                 |   `PASS`   | `upgrade-workflows.spec.ts` Test #1 (`lockedByPaymentEdit = 409`)                           |
-| `BK-18`        | Khách đang mở biểu mẫu chỉnh sửa trong khi Admin đồng thời duyệt đơn -> lưu trả `HTTP 409 CONFLICT` (Optimistic Locking `revision`), hiển thị thông báo khóa và ẩn nút sửa.                                                                                     |   `PASS`   | `upgrade-workflows.spec.ts` Test #1 (`BOOKING_CONFIRMED_LOCK_MESSAGE`)                      |
-| `BK-19..BK-20` | Chặn khách A sửa đơn của khách B (`HTTP 403`) và chặn sửa `totalPrice` / `status` giả mạo qua DevTools (`HTTP 400`).                                                                                                                                            |   `PASS`   | `upgrade-workflows.spec.ts` Test #1 (`idorEdit = 403`, `forgedEdit = 400`)                  |
-| `BK-21..BK-24` | Giữ nguyên trạng thái `PENDING` sau khi khách sửa; đồng bộ sang Admin; lưu `modificationHistory` + `AuditLogs`; bảo toàn sau reload trang.                                                                                                                      |   `PASS`   | `upgrade-workflows.spec.ts` Test #1 (`reload` + `Lịch sử chỉnh sửa (1)`)                    |
-| `NT-01..NT-06` | Admin duyệt đơn sinh `Notifications` + `Consultations`; khách đang online nhận Popup xác nhận đúng 01 lần, đóng không lặp lại khi reload, mở xem lại qua Chuông thông báo trên Header.                                                                          |   `PASS`   | `upgrade-workflows.spec.ts` Test #2 (`8.0s`) + `nori.spec.ts` Test #58                      |
-| `NT-07..NT-08` | Idempotent `eventKey` không tạo trùng thông báo; cách ly tuyệt đối không lộ thông báo sang tài khoản khách khác.                                                                                                                                                |   `PASS`   | `upgrade-workflows.spec.ts` Test #2 (`notifCount = 1`, `otherData.items = 0`)               |
-| `NT-09..NT-13` | Tính ngày làm việc kế tiếp qua Thứ Sáu → Thứ Hai, ngày nghỉ lễ và giờ hành chính tùy chỉnh của Admin (`Asia/Ho_Chi_Minh`); tự phát hiện và cảnh báo `Đơn thuê gấp`.                                                                                             |   `PASS`   | `rental-rules.test.mjs` (`NT-RULES`) + `upgrade-workflows.spec.ts` Test #2 (`Đơn thuê gấp`) |
-| `NT-14..NT-18` | Nhân viên cập nhật trạng thái tư vấn (`PENDING_CONTACT` → `CONSULTED`) & nhật ký cuộc gọi độc lập với thanh toán/hợp đồng; rõ ràng lưu ý chưa thanh toán; hủy đơn trước khi đọc tự đánh dấu `superseded = true`.                                                |   `PASS`   | `upgrade-workflows.spec.ts` Test #2 (`activePopup = null` sau hủy)                          |
-| `HR-01..HR-13` | Hero Carousel 5 slide phương tiện sắc nét (`1280×826`), tự chuyển mượt, lặp cuối → đầu, Next/Prev, Pause/Resume, vuốt cảm ứng, giữ nguyên dữ liệu `<SearchBar />`, `visibilitychange` & `prefers-reduced-motion`.                                               |   `PASS`   | `upgrade-workflows.spec.ts` Test #3 (`3.1s`) + `nori.spec.ts` #30, #57                      |
-| `HR-09..HR-10` | Responsive `0` tràn ngang và đạt `0` vi phạm `axe-core` WCAG 2.2 AA (`target-size >= 28×28px`) trên 9 kích thước `320px` → `1920px`.                                                                                                                            |   `PASS`   | `upgrade-workflows.spec.ts` Test #3 + `mobile-pwa.spec.ts` #9, #15 + `nori.spec.ts` #49     |
-| `HR-14..HR-20` | Quản trị slide từ `/dashboard/content` (ảnh, thứ tự, ẩn/hiện, CTA hợp lệ), fallback ảnh lỗi và fallback khi tắt toàn bộ slide.                                                                                                                                  |   `PASS`   | `upgrade-workflows.spec.ts` Test #3 + `hero.tsx`                                            |
-| `MD-01..MD-15` | Tải 1 ảnh & đa ảnh (PNG/JPEG/WebP/AVIF), chọn ảnh chính, đổi thứ tự, phân loại góc chụp động; chặn tệp giả mạo magic-byte (`400`), quá dung lượng >8MB (`400`), khách/ẩn danh tải ảnh (`403`), và chặn xóa ảnh đang dùng (`409`).                               |   `PASS`   | `upgrade-workflows.spec.ts` Test #4 (`5.0s`)                                                |
-| `MD-16..MD-18` | Hiển thị đầy đủ bộ ảnh trên trang chi tiết, chuyển đổi nguồn ảnh Catalogue / Xe thực tế và zoom Lightbox bàn phím (`ArrowLeft`/`ArrowRight`/`Escape`).                                                                                                          |   `PASS`   | `nori.spec.ts` Test #38 + `upgrade-workflows.spec.ts` Test #4                               |
-| `VH-01..VH-18` | Không gian quản trị 10 tab thích ứng `CAR` / `MOTORBIKE` / `PICKUP` / `EV`; làm giàu dữ liệu xác thực `VinFast Evo Max`; ẩn bộ lọc `"Nội thất"` trên xe máy và ẩn thông số đốt trong trên xe điện; hiển thị đúng nhãn miễn trừ Catalogue.                       |   `PASS`   | `upgrade-workflows.spec.ts` Test #4 + `rental-rules.test.mjs` (`VH-RULES`)                  |
-| `VH-19..VH-20` | Admin đổi giá thuê xe -> trang chi tiết khách hàng cập nhật ngay lập tức (`revalidateTag`) trong khi đơn thuê đã `CONFIRMED` giữ nguyên giá snapshot ban đầu.                                                                                                   |   `PASS`   | `data-sync.spec.ts` Test #1 (`1.4s`) + `upgrade-workflows.spec.ts` Test #2                  |
-
----
-
-## Bảng Ma Trận Nghiệm Thu Nhóm Nâng Cấp (`BK-*`, `NT-*`, `HR-*`, `MD-*`, `VH-*`)
-
-| Test Case ID   | Mô tả kịch bản kiểm thử                                                                                                                                                                                                                                         | Trạng thái | Bằng chứng thực thi                                                                         |
-| :------------- | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :--------: | :------------------------------------------------------------------------------------------ |
-| `BK-01..BK-09` | Hiển thị Xem chi tiết / Chỉnh sửa / Hủy đơn `PENDING`; tự điền dữ liệu cũ; sửa ngày/giờ, giao nhận tận nơi, điểm nhận/trả, dịch vụ phụ, SĐT/email, mã khuyến mãi hợp lệ; tự loại trừ ngày giữ chỗ cũ của chính đơn đang sửa; hiển thị bảng so sánh Trước / Sau. |   `PASS`   | `upgrade-workflows.spec.ts` Test #1 (`5.1s`) + `rental-rules.test.mjs` (`BK-RULES`)         |
-| `BK-10..BK-11` | Chặn chỉnh sửa sang khoảng ngày trùng đơn khách khác hoặc lịch bảo trì (`HTTP 409 CONFLICT`).                                                                                                                                                                   |   `PASS`   | `upgrade-workflows.spec.ts` Test #1 + `Bookings.ts` `beforeChange`                          |
-| `BK-12..BK-16` | Khóa nút chỉnh sửa và từ chối API `PUT /nori-api/bookings` trên mọi trạng thái khác `PENDING` (`CONFIRMED`, `ONGOING`, `COMPLETED`, `CANCELLED`).                                                                                                               |   `PASS`   | `upgrade-workflows.spec.ts` Test #1 + `rental-rules.test.mjs` (`BK-RULES`)                  |
-| `BK-17`        | Đơn `PENDING` nhưng đã phát sinh giao dịch đặt cọc/thanh toán chờ đối soát -> chặn tự sửa (`HTTP 409 CONFLICT`) và hướng dẫn liên hệ nhân viên.                                                                                                                 |   `PASS`   | `upgrade-workflows.spec.ts` Test #1 (`lockedByPaymentEdit = 409`)                           |
-| `BK-18`        | Khách đang mở biểu mẫu chỉnh sửa trong khi Admin đồng thời duyệt đơn -> lưu trả `HTTP 409 CONFLICT` (Optimistic Locking `revision`), hiển thị thông báo khóa và ẩn nút sửa.                                                                                     |   `PASS`   | `upgrade-workflows.spec.ts` Test #1 (`BOOKING_CONFIRMED_LOCK_MESSAGE`)                      |
-| `BK-19..BK-20` | Chặn khách A sửa đơn của khách B (`HTTP 403`) và chặn sửa `totalPrice` / `status` giả mạo qua DevTools (`HTTP 400`).                                                                                                                                            |   `PASS`   | `upgrade-workflows.spec.ts` Test #1 (`idorEdit = 403`, `forgedEdit = 400`)                  |
-| `BK-21..BK-24` | Giữ nguyên trạng thái `PENDING` sau khi khách sửa; đồng bộ sang Admin; lưu `modificationHistory` + `AuditLogs`; bảo toàn sau reload trang.                                                                                                                      |   `PASS`   | `upgrade-workflows.spec.ts` Test #1 (`reload` + `Lịch sử chỉnh sửa (1)`)                    |
-| `NT-01..NT-06` | Admin duyệt đơn sinh `Notifications` + `Consultations`; khách đang online nhận Popup xác nhận đúng 01 lần, đóng không lặp lại khi reload, mở xem lại qua Chuông thông báo trên Header.                                                                          |   `PASS`   | `upgrade-workflows.spec.ts` Test #2 (`8.0s`) + `nori.spec.ts` Test #58                      |
-| `NT-07..NT-08` | Idempotent `eventKey` không tạo trùng thông báo; cách ly tuyệt đối không lộ thông báo sang tài khoản khách khác.                                                                                                                                                |   `PASS`   | `upgrade-workflows.spec.ts` Test #2 (`notifCount = 1`, `otherData.items = 0`)               |
-| `NT-09..NT-13` | Tính ngày làm việc kế tiếp qua Thứ Sáu → Thứ Hai, ngày nghỉ lễ và giờ hành chính tùy chỉnh của Admin (`Asia/Ho_Chi_Minh`); tự phát hiện và cảnh báo `Đơn thuê gấp`.                                                                                             |   `PASS`   | `rental-rules.test.mjs` (`NT-RULES`) + `upgrade-workflows.spec.ts` Test #2 (`Đơn thuê gấp`) |
-| `NT-14..NT-18` | Nhân viên cập nhật trạng thái tư vấn (`PENDING_CONTACT` → `CONSULTED`) & nhật ký cuộc gọi độc lập với thanh toán/hợp đồng; rõ ràng lưu ý chưa thanh toán; hủy đơn trước khi đọc tự đánh dấu `superseded = true`.                                                |   `PASS`   | `upgrade-workflows.spec.ts` Test #2 (`activePopup = null` sau hủy)                          |
-| `HR-01..HR-13` | Hero Carousel 5 slide phương tiện sắc nét (`1280×826`), tự chuyển mượt, lặp cuối → đầu, Next/Prev, Pause/Resume, vuốt cảm ứng, giữ nguyên dữ liệu `<SearchBar />`, `visibilitychange` & `prefers-reduced-motion`.                                               |   `PASS`   | `upgrade-workflows.spec.ts` Test #3 (`3.1s`) + `nori.spec.ts` #30, #57                      |
-| `HR-09..HR-10` | Responsive `0` tràn ngang và đạt `0` vi phạm `axe-core` WCAG 2.2 AA (`target-size >= 28×28px`) trên 9 kích thước `320px` → `1920px`.                                                                                                                            |   `PASS`   | `upgrade-workflows.spec.ts` Test #3 + `mobile-pwa.spec.ts` #9, #15 + `nori.spec.ts` #49     |
-| `HR-14..HR-20` | Quản trị slide từ `/dashboard/content` (ảnh, thứ tự, ẩn/hiện, CTA hợp lệ), fallback ảnh lỗi và fallback khi tắt toàn bộ slide.                                                                                                                                  |   `PASS`   | `upgrade-workflows.spec.ts` Test #3 + `hero.tsx`                                            |
-| `MD-01..MD-15` | Tải 1 ảnh & đa ảnh (PNG/JPEG/WebP/AVIF), chọn ảnh chính, đổi thứ tự, phân loại góc chụp động; chặn tệp giả mạo magic-byte (`400`), quá dung lượng >8MB (`400`), khách/ẩn danh tải ảnh (`403`), và chặn xóa ảnh đang dùng (`409`).                               |   `PASS`   | `upgrade-workflows.spec.ts` Test #4 (`5.0s`)                                                |
-| `MD-16..MD-18` | Hiển thị đầy đủ bộ ảnh trên trang chi tiết, chuyển đổi nguồn ảnh Catalogue / Xe thực tế và zoom Lightbox bàn phím (`ArrowLeft`/`ArrowRight`/`Escape`).                                                                                                          |   `PASS`   | `nori.spec.ts` Test #38 + `upgrade-workflows.spec.ts` Test #4                               |
-| `VH-01..VH-18` | Không gian quản trị 10 tab thích ứng `CAR` / `MOTORBIKE` / `PICKUP` / `EV`; làm giàu dữ liệu xác thực `VinFast Evo Max`; ẩn bộ lọc `"Nội thất"` trên xe máy và ẩn thông số đốt trong trên xe điện; hiển thị đúng nhãn miễn trừ Catalogue.                       |   `PASS`   | `upgrade-workflows.spec.ts` Test #4 + `rental-rules.test.mjs` (`VH-RULES`)                  |
-| `VH-19..VH-20` | Admin đổi giá thuê xe -> trang chi tiết khách hàng cập nhật ngay lập tức (`revalidateTag`) trong khi đơn thuê đã `CONFIRMED` giữ nguyên giá snapshot ban đầu.                                                                                                   |   `PASS`   | `data-sync.spec.ts` Test #1 (`1.4s`) + `upgrade-workflows.spec.ts` Test #2                  |
-
----
-
 ### `TC-AUTH-01` — Đăng ký chặn chèn `role` trái phép từ Client
 
 - **Module**: Đăng ký & Phân quyền
@@ -527,3 +477,80 @@
 - **Mức độ ưu tiên**: `P0`
 - **Bằng chứng**: Performance Timeline Measurement script (CLS = `0.0038`, LCP = `516ms`, INP = `40ms`).
 - **Source code**: [src/components/vehicle-detail.tsx](file:///f:/1.%20University/2.%20Đồ%20án/3.%20Bài%20tập/nori-vehicle-rental/nori-vehicle-rental/nori-vehicle-rental/src/components/vehicle-detail.tsx), [src/app/(frontend)/vehicles/[slug]/page.tsx](<file:///f:/1.%20University/2.%20Đồ%20án/3.%20Bài%20tập/nori-vehicle-rental/nori-vehicle-rental/nori-vehicle-rental/src/app/(frontend)/vehicles/[slug]/page.tsx>)
+
+---
+
+## Bổ sung Test Cases Đợt Kiểm thử Toàn diện (`2026-11-18` — `QA-*` & `TC-UNIT-SESSION`)
+
+### `QA-SEC-01` — Kiểm soát Phân quyền Granular `OPERATOR` trên UI `AdminShell` & Toàn bộ `/nori-api/dashboard/*`
+
+- **Module**: Phân quyền Quản trị (`RBAC`) & `AdminShell`
+- **Điều kiện trước**: Đăng nhập `SUPER_ADMIN`, tạo tài khoản `OPERATOR` chỉ có quyền `vehicles: ['read']`, `bookings: ['read']`.
+- **Các bước thực hiện**:
+  1. Đăng nhập `OPERATOR` qua `/login`, kiểm tra sidebar điều hướng tại `/dashboard`.
+  2. Truy cập trực tiếp `/dashboard/admins`.
+  3. Gọi 18 endpoint không thuộc quyền (`admins`, `reports`, `export?type=financial`, `export?type=customers`, `customers`, `inquiries`, `posts`, `promotions`, `vehicles?view=models`, `POST/PATCH/DELETE` phương tiện/dòng xe, `POST/DELETE /media`, `PATCH /nori-api/dashboard`).
+  4. Gọi `GET /nori-api/dashboard/vehicles`, `GET /dashboard/bookings`, `GET /dashboard/export?type=bookings`, `GET /nori-api/dashboard`.
+- **Kết quả mong đợi**: Sidebar chỉ hiển thị 3 mục hợp lệ, ẩn `/admin`; `/dashboard/admins` hiện thông báo từ chối quyền; 18 endpoint bị chặn trả `403`; `/dashboard` lọc rỗng `customersList`/`inquiries`/`dataCompleteness`.
+- **Trạng thái**: `PASS` ([qa-comprehensive-audit.spec.ts](file:///f:/1.%20University/2.%20Đồ%20án/3.%20Bài%20tập/nori-vehicle-rental/nori-vehicle-rental/nori-vehicle-rental/tests/e2e/qa-comprehensive-audit.spec.ts))
+
+### `QA-SEC-02` — Chặn Replay Token Admin Đã Đăng xuất, CSV Formula Injection & XSS
+
+- **Module**: Phiên đăng nhập Admin (`admins_sessions`), Xuất CSV & Chống XSS
+- **Các bước thực hiện**: Đăng nhập Admin → lấy Cookie → gọi `POST /nori-api/auth/logout` → replay Cookie cũ vào `/nori-api/dashboard/reports`, `/dashboard/admins`, `/dashboard/export`, `/nori-api/auth/me`. Tạo đơn có tên `=CMD|...` và ghi chú `@SUM(...)`, xuất CSV đơn thuê.
+- **Kết quả mong đợi**: Replay Cookie bị từ chối `403` và `/auth/me` trả `null`; CSV ép tiền tố `'` vô hiệu hóa công thức.
+- **Trạng thái**: `PASS` ([qa-comprehensive-audit.spec.ts](file:///f:/1.%20University/2.%20Đồ%20án/3.%20Bài%20tập/nori-vehicle-rental/nori-vehicle-rental/nori-vehicle-rental/tests/e2e/qa-comprehensive-audit.spec.ts))
+
+### `QA-CMS-01` — Quy trình Xuất bản → Gỡ xuất bản (Lưu nháp) → Tái xuất bản Bài viết
+
+- **Module**: CMS Tin tức & Sự kiện (`/dashboard/posts`, `/posts`, `/posts/[slug]`)
+- **Các bước thực hiện**: Tạo & xuất bản bài viết kèm ảnh banner → kiểm tra `200` trên `/posts/[slug]` → mở Chỉnh sửa và bấm `Lưu bản nháp` (`_status: 'draft'`) → kiểm tra ngay `/posts/[slug]` và `/posts` → xuất bản lại.
+- **Kết quả mong đợi**: Khi chuyển về bản nháp, bài viết bị gỡ khỏi `/posts` và `/posts/[slug]` trả `404`; xuất bản lại trả `200`.
+- **Trạng thái**: `PASS` ([qa-comprehensive-audit.spec.ts](file:///f:/1.%20University/2.%20Đồ%20án/3.%20Bài%20tập/nori-vehicle-rental/nori-vehicle-rental/nori-vehicle-rental/tests/e2e/qa-comprehensive-audit.spec.ts))
+
+### `QA-BIZ-01` — Giới hạn `NoriSite.maxPendingBookings` & Đua lệnh 8 người dùng đồng thời
+
+- **Module**: Ràng buộc nghiệp vụ Đặt xe & Khóa Giao dịch SQLite
+- **Các bước thực hiện**: Admin cấu hình `maxPendingBookings = 2` → khách tạo 2 đơn `PENDING` (`201`, `201`) → đơn thứ 3 trả `429`; khôi phục cấu hình → phóng 8 request `POST /nori-api/bookings` song song bằng `Promise.all` cùng 1 xe và khoảng ngày.
+- **Kết quả mong đợi**: Đúng `1` request trả `201`, `7` request trả `409`, `rental_days` giữ đúng số ngày của đơn thắng cuộc.
+- **Trạng thái**: `PASS` ([qa-comprehensive-audit.spec.ts](file:///f:/1.%20University/2.%20Đồ%20án/3.%20Bài%20tập/nori-vehicle-rental/nori-vehicle-rental/nori-vehicle-rental/tests/e2e/qa-comprehensive-audit.spec.ts))
+
+### `TC-UNIT-SESSION-01` — Kiểm tra `hasActiveSessionRecord`
+
+- **Module**: Quản lý Phiên ([session-cookie.ts](file:///f:/1.%20University/2.%20Đồ%20án/3.%20Bài%20tập/nori-vehicle-rental/nori-vehicle-rental/nori-vehicle-rental/src/lib/session-cookie.ts))
+- **Trạng thái**: `PASS` ([rental-rules.test.mjs](file:///f:/1.%20University/2.%20Đồ%20án/3.%20Bài%20tập/nori-vehicle-rental/nori-vehicle-rental/nori-vehicle-rental/tests/rental-rules.test.mjs)).
+
+### `QA-SEC-03` — Payload Native `/api/*` RBAC, Khóa `Folders`/`Tags`, Hành động `publish` & Live Revocation
+
+- **Module**: Payload Collection Access (`Admins`, `Users`, `Folders`, `Tags`, `MaintenanceSchedules`, `Vehicles`, `Posts`, `NoriSite`) & Action `publish`
+- **Các bước thực hiện**:
+  1. Guest gọi `/api/folders`, `/api/tags`, `/api/maintenance-schedules`, `/api/audit-logs`, `/api/admins`, `/nori-api/dashboard/export?type=customers`, `/api/vehicles?limit=5`.
+  2. Customer gọi `/api/folders`, `/api/tags`, `POST /api/folders`, `/api/maintenance-schedules` kèm JWT.
+  3. Tạo `OPERATOR` có `posts: ['read', 'create', 'update']`, `content: ['read', 'update']`, `reports: ['read']` (không có `publish`, `admins`, `customers`, `maintenance`). Thử đọc `/api/admins`, `/api/users`, `/nori-api/dashboard/export?type=customers`, lưu bài viết `draft`, thử xuất bản `published` bài viết & `NoriSite`, kiểm tra UI `/dashboard/posts`.
+  4. `SUPER_ADMIN` thu hồi toàn bộ quyền `posts` của Operator rồi Operator gọi lại API ngay bằng session đang mở.
+- **Kết quả mong đợi**: Guest/Customer bị `403`, không lộ `licensePlate` & export khách hàng; Operator chỉ thấy bản ghi của chính mình trên `/api/admins`, lưu được `draft` (`201`) nhưng bị `403` khi xuất bản và nút `Xuất bản` disabled; sau thu hồi lập tức bị `403` không cần đăng xuất.
+- **Trạng thái**: `PASS` ([qa-comprehensive-audit.spec.ts](file:///f:/1.%20University/2.%20Đồ%20án/3.%20Bài%20tập/nori-vehicle-rental/nori-vehicle-rental/nori-vehicle-rental/tests/e2e/qa-comprehensive-audit.spec.ts))
+
+### `QA-CONC-01` — Khóa lạc quan `expectedRevision`, Chặn hủy đơn đã thu tiền & Tự hủy phiếu `PENDING`
+
+- **Module**: Đồng bộ `Bookings` ↔ `Payments` ([Bookings.ts](file:///f:/1.%20University/2.%20Đồ%20án/3.%20Bài%20tập/nori-vehicle-rental/nori-vehicle-rental/nori-vehicle-rental/src/collections/Bookings.ts), [Payments.ts](file:///f:/1.%20University/2.%20Đồ%20án/3.%20Bài%20tập/nori-vehicle-rental/nori-vehicle-rental/nori-vehicle-rental/src/collections/Payments.ts))
+- **Các bước thực hiện**: Hai Admin gọi `PATCH /nori-api/dashboard/bookings` song song với cùng `expectedRevision`; hai request tạo payment giống hệt nhau song song; Khách hàng cố hủy đơn đã có thanh toán `CONFIRMED` (cả ở `CONFIRMED` lẫn `PENDING`); Admin từ chối đơn có sẵn phiếu `PENDING` rồi thử tạo tiếp thanh toán `CONFIRMED`.
+- **Kết quả mong đợi**: Duyệt song song trả `[200, 409]`; tạo payment song song trả `[201, 409]`; khách hủy đơn đã thu tiền bị chặn `409`; đơn `REJECTED` đưa `remaining_amount = 0`, tự chuyển phiếu `PENDING` sang `CANCELLED` và chặn thanh toán mới (`409`).
+- **Trạng thái**: `PASS` ([qa-comprehensive-audit.spec.ts](file:///f:/1.%20University/2.%20Đồ%20án/3.%20Bài%20tập/nori-vehicle-rental/nori-vehicle-rental/nori-vehicle-rental/tests/e2e/qa-comprehensive-audit.spec.ts))
+
+### `QA-CONC-02` — Chống lệch giá Checkout (`expectedTotalPrice`), Invalidation `/nori-api/fleet`, `/nori-api/health` & Security Headers
+
+- **Module**: Checkout, Public Cache & Monitoring
+- **Các bước thực hiện**: Kiểm tra `GET /nori-api/health` (`no-store`), kiểm tra headers bảo mật trang `/`, gọi `/nori-api/revalidate` thiếu HMAC (`401`), đặt xe gửi `expectedTotalPrice = 1` (`409`), Admin cập nhật giá xe và gọi ngay `/nori-api/fleet?modelSlug=...`.
+- **Kết quả mong đợi**: Giá thay đổi phản ánh tức thì trên `/nori-api/fleet`, healthcheck `200`, sai giá checkout trả `409`.
+- **Trạng thái**: `PASS` ([qa-comprehensive-audit.spec.ts](file:///f:/1.%20University/2.%20Đồ%20án/3.%20Bài%20tập/nori-vehicle-rental/nori-vehicle-rental/nori-vehicle-rental/tests/e2e/qa-comprehensive-audit.spec.ts))
+
+### `UNIT-RBAC-01..06` — Unit Tests Ma trận Quyền (`src/access/nori.ts`) & Notification Fallback (`src/lib/notifications.ts`)
+
+- **Module**: Access Helpers & Notification Dispatch Resilience
+- **Trạng thái**: `PASS` (`6/6` tests mới; `100.00%` line coverage trên `nori.ts` và `97.03%` trên `notifications.ts` trong [`tests/rbac-access.test.mjs`](file:///f:/1.%20University/2.%20Đồ%20án/3.%20Bài%20tập/nori-vehicle-rental/nori-vehicle-rental/nori-vehicle-rental/tests/rbac-access.test.mjs); tổng unit suite `247/247` PASS).
+
+### `UAT-01..07` — Real Browser User Acceptance Testing (Customer + Admin)
+
+- **Module**: Trải nghiệm End-to-End Thực tế ([`UAT_REPORT.md`](file:///f:/1.%20University/2.%20Đồ%20án/3.%20Bài%20tập/nori-vehicle-rental/nori-vehicle-rental/nori-vehicle-rental/docs/audit/UAT_REPORT.md))
+- **Trạng thái**: `PASS` (`7/7` walkthrough steps, `0` console error, `0` page error, `0` lỗi 5xx, `0` FK orphan).

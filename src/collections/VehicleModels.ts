@@ -1,5 +1,5 @@
 import type { CollectionConfig } from 'payload'
-import { isAdmin } from '@/access/nori'
+import { adminHasAnyPermission, adminPermission } from '@/access/nori'
 import { auditCollection } from '@/hooks/audit-nori'
 import { revalidateCatalogue, revalidateDeletedCatalogue } from '@/hooks/revalidate-nori'
 
@@ -26,10 +26,20 @@ export const VehicleModels: CollectionConfig = {
     defaultColumns: ['name', 'brand', 'category', 'subCategory', 'verificationStatus', 'visible'],
   },
   access: {
-    create: isAdmin,
-    read: ({ req }) => (req.user?.collection === 'admins' ? true : { visible: { equals: true } }),
-    update: isAdmin,
-    delete: isAdmin,
+    create: adminPermission('models', 'create'),
+    read: ({ req }) =>
+      adminHasAnyPermission(req.user, [
+        ['models', 'read'],
+        ['vehicles', 'read'],
+        ['bookings', 'read'],
+        ['inquiries', 'read'],
+        ['content', 'read'],
+        ['reports', 'read'],
+      ])
+        ? true
+        : { visible: { equals: true } },
+    update: adminPermission('models', 'update'),
+    delete: adminPermission('models', 'delete'),
   },
   hooks: {
     afterChange: [revalidateCatalogue, modelAudit.afterChange],

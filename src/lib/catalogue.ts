@@ -1,7 +1,7 @@
 import 'server-only'
 import { unstable_cache } from 'next/cache'
 import { getPayloadClient, findBySlug } from '@/lib/payload'
-import type { Media, Vehicle, VehicleModel } from '@/payload-types'
+import type { Media, Post, Promotion, Vehicle, VehicleModel } from '@/payload-types'
 
 export type Category = 'CAR' | 'MOTORBIKE' | 'PICKUP'
 export type GalleryKind = 'OVERVIEW' | 'EXTERIOR' | 'INTERIOR' | 'ENGINE' | 'FEATURE'
@@ -10,6 +10,11 @@ export type Photo = {
   alt: string
   width: number
   height: number
+  filename?: string | null
+  filesize?: number | null
+  mimeType?: string | null
+  focalX?: number | null
+  focalY?: number | null
   sourceUrl?: string | null
   sourceName?: string | null
   license?: string | null
@@ -31,6 +36,10 @@ export type HeroSlideView = {
   secondaryHref: string | null
   desktopImage: Photo | null
   mobileImage: Photo | null
+  focalX: number
+  focalY: number
+  mobileFocalX: number
+  mobileFocalY: number
   relatedCategory: Category | null
   credit: string | null
   sourceUrl: string | null
@@ -121,6 +130,11 @@ export type ModelView = {
   colorsSummary: string[]
 }
 
+export function clampFocalPercent(value: unknown, fallback = 50): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return fallback
+  return Math.min(100, Math.max(0, Math.round(value)))
+}
+
 export function photo(value: string | Media | null | undefined): Photo | null {
   if (!value || typeof value === 'string' || !value.url) return null
   return {
@@ -128,6 +142,11 @@ export function photo(value: string | Media | null | undefined): Photo | null {
     alt: value.alt ?? '',
     width: value.width ?? 1280,
     height: value.height ?? 826,
+    filename: value.filename ?? null,
+    filesize: typeof value.filesize === 'number' ? value.filesize : null,
+    mimeType: value.mimeType ?? null,
+    focalX: typeof value.focalX === 'number' ? value.focalX : null,
+    focalY: typeof value.focalY === 'number' ? value.focalY : null,
     sourceUrl: value.sourceUrl ?? null,
     sourceName: value.sourceName ?? null,
     license: value.license ?? null,
@@ -317,25 +336,44 @@ export const getSiteContent = unstable_cache(
     const hasConfiguredSlides = rawSlides.length > 0
     const activeSlides: HeroSlideView[] = rawSlides
       .filter((s) => s.active !== false)
-      .map((s, idx) => ({
-        id: s.id ?? `slide-${idx + 1}`,
-        titleFirst: s.titleFirst,
-        titleSecond: s.titleSecond ?? null,
-        eyebrow: s.eyebrow ?? null,
-        categoryBadge: s.categoryBadge ?? null,
-        description: s.description ?? null,
-        ctaText: s.ctaText,
-        ctaHref: s.ctaHref,
-        secondaryText: s.secondaryText ?? null,
-        secondaryHref: s.secondaryHref ?? null,
-        desktopImage: photo(s.desktopImage),
-        mobileImage: photo(s.mobileImage),
-        relatedCategory: (s.relatedCategory as Category | null) ?? null,
-        credit: s.credit ?? null,
-        sourceUrl: s.sourceUrl ?? null,
-        durationSeconds: typeof s.durationSeconds === 'number' ? s.durationSeconds : null,
-        order: typeof s.order === 'number' ? s.order : idx,
-      }))
+      .map((s, idx) => {
+        const slideRecord = s as unknown as Record<string, unknown>
+        const desktopImg = photo(s.desktopImage)
+        const mobileImg = photo(s.mobileImage)
+        const focalX = clampFocalPercent(slideRecord.focalX, desktopImg?.focalX ?? 50)
+        const focalY = clampFocalPercent(slideRecord.focalY, desktopImg?.focalY ?? 50)
+        const mobileFocalX = clampFocalPercent(
+          slideRecord.mobileFocalX,
+          mobileImg ? (mobileImg.focalX ?? 50) : focalX,
+        )
+        const mobileFocalY = clampFocalPercent(
+          slideRecord.mobileFocalY,
+          mobileImg ? (mobileImg.focalY ?? 50) : focalY,
+        )
+        return {
+          id: s.id ?? `slide-${idx + 1}`,
+          titleFirst: s.titleFirst,
+          titleSecond: s.titleSecond ?? null,
+          eyebrow: s.eyebrow ?? null,
+          categoryBadge: s.categoryBadge ?? null,
+          description: s.description ?? null,
+          ctaText: s.ctaText,
+          ctaHref: s.ctaHref,
+          secondaryText: s.secondaryText ?? null,
+          secondaryHref: s.secondaryHref ?? null,
+          desktopImage: desktopImg,
+          mobileImage: mobileImg,
+          focalX,
+          focalY,
+          mobileFocalX,
+          mobileFocalY,
+          relatedCategory: (s.relatedCategory as Category | null) ?? null,
+          credit: s.credit ?? null,
+          sourceUrl: s.sourceUrl ?? null,
+          durationSeconds: typeof s.durationSeconds === 'number' ? s.durationSeconds : null,
+          order: typeof s.order === 'number' ? s.order : idx,
+        }
+      })
       .sort((a, b) => a.order - b.order)
 
     return {
@@ -396,35 +434,142 @@ export const getSiteContent = unstable_cache(
       maintenanceBannerText: site.maintenanceBannerText ?? null,
     }
   },
-  ['nori-site-v5'],
+  ['nori-site-v6'],
   { tags: ['nori-site'] },
 )
 
+export type PostPromotionView = {
+  id: string
+  code: string
+  name: string
+  description: string | null
+  discountType: 'PERCENT' | 'FIXED'
+  discountValue: number
+  maxDiscount: number | null
+  minDays: number
+  appliesTo: 'ALL' | 'RENT' | 'SALE'
+  validFrom: string | null
+  validTo: string | null
+  usageLimit: number | null
+  usedCount: number
+  active: boolean
+}
+
+export type PostView = {
+  id: string
+  title: string
+  slug: string
+  category: 'NEWS' | 'GUIDE' | 'PROMOTION'
+  excerpt: string | null
+  content: string
+  cover: Photo | null
+  promotion: PostPromotionView | null
+  publishedAt: string
+  seoTitle: string | null
+  seoDescription: string | null
+}
+
+function projectPromotion(doc: Promotion | null | undefined): PostPromotionView | null {
+  if (!doc || typeof doc !== 'object') return null
+  return {
+    id: String(doc.id),
+    code: doc.code,
+    name: doc.name,
+    description: doc.description ?? null,
+    discountType: doc.discountType,
+    discountValue: doc.discountValue,
+    maxDiscount: doc.maxDiscount ?? null,
+    minDays: doc.minDays ?? 1,
+    appliesTo: (doc.appliesTo as 'ALL' | 'RENT' | 'SALE' | null) ?? 'RENT',
+    validFrom: doc.validFrom ?? null,
+    validTo: doc.validTo ?? null,
+    usageLimit: doc.usageLimit ?? null,
+    usedCount: doc.usedCount ?? 0,
+    active: Boolean(doc.active),
+  }
+}
+
+async function resolvePostPromotion(
+  payload: Awaited<ReturnType<typeof getPayloadClient>>,
+  post: Post,
+  promoCache?: Map<string, PostPromotionView | null>,
+): Promise<PostPromotionView | null> {
+  if (post.category !== 'PROMOTION') return null
+  const rawPromo = (post as unknown as { promotion?: string | Promotion | null }).promotion
+  if (!rawPromo) return null
+  if (typeof rawPromo === 'object') {
+    return projectPromotion(rawPromo)
+  }
+  const promoId = String(rawPromo)
+  if (promoCache?.has(promoId)) {
+    return promoCache.get(promoId) ?? null
+  }
+  try {
+    const doc = await payload.findByID({
+      collection: 'promotions',
+      id: promoId,
+      overrideAccess: true,
+      depth: 0,
+    })
+    const projected = projectPromotion(doc)
+    promoCache?.set(promoId, projected)
+    return projected
+  } catch {
+    promoCache?.set(promoId, null)
+    return null
+  }
+}
+
+async function mapPostView(
+  payload: Awaited<ReturnType<typeof getPayloadClient>>,
+  p: Post,
+  promoCache?: Map<string, PostPromotionView | null>,
+): Promise<PostView> {
+  return {
+    id: p.id,
+    title: p.title,
+    slug: p.slug ?? p.id,
+    category: p.category,
+    excerpt: p.excerpt ?? null,
+    content: p.content,
+    cover: photo(p.cover),
+    promotion: await resolvePostPromotion(payload, p, promoCache),
+    publishedAt: p.publishedAt ?? p.createdAt,
+    seoTitle: p.seoTitle ?? null,
+    seoDescription: p.seoDescription ?? null,
+  }
+}
+
 export const getPublishedPosts = unstable_cache(
-  async () => {
+  async (): Promise<PostView[]> => {
     const payload = await getPayloadClient()
     const res = await payload.find({
       collection: 'posts',
       overrideAccess: false,
+      draft: false,
       depth: 1,
-      limit: 20,
+      limit: 50,
+      where: { _status: { equals: 'published' } },
       sort: '-publishedAt',
     })
-    return res.docs.map((p) => ({
-      id: p.id,
-      title: p.title,
-      slug: p.slug ?? p.id,
-      category: p.category,
-      excerpt: p.excerpt ?? null,
-      content: p.content,
-      cover: photo(p.cover),
-      publishedAt: p.publishedAt ?? p.createdAt,
-      seoTitle: p.seoTitle ?? null,
-      seoDescription: p.seoDescription ?? null,
-    }))
+    const promoCache = new Map<string, PostPromotionView | null>()
+    return Promise.all(res.docs.map((p) => mapPostView(payload, p, promoCache)))
   },
-  ['nori-posts-v1'],
-  { tags: ['nori-site'] },
+  ['nori-posts-v2'],
+  { tags: ['nori-posts', 'nori-site'] },
 )
+
+export function getPublishedPostBySlug(slug: string): Promise<PostView | null> {
+  return unstable_cache(
+    async () => {
+      const post = await findBySlug('posts', slug, { draft: false, depth: 1 })
+      if (!post || post._status !== 'published') return null
+      const payload = await getPayloadClient()
+      return mapPostView(payload, post)
+    },
+    ['nori-post-v1', slug],
+    { tags: ['nori-posts', `nori-post-${slug}`, 'nori-site'] },
+  )()
+}
 
 export type SiteContent = Awaited<ReturnType<typeof getSiteContent>>

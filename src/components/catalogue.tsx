@@ -4,17 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import type { Category, ModelView } from '@/lib/catalogue'
 import { formatDate, subCategoryLabels } from '@/lib/rental-rules'
-import {
-  Button,
-  EmptyState,
-  Heading,
-  IconButton,
-  Input,
-  SearchableSelect,
-  Select,
-  Text,
-  cn,
-} from './ui'
+import { Button, EmptyState, Heading, IconButton, Input, Select, Text, cn } from './ui'
 import { Icon } from './ui/icon'
 import { VehicleCard, categoryIcons, categoryLabels } from './vehicle-card'
 
@@ -379,11 +369,16 @@ export function Catalogue({ models }: { models: ModelView[] }) {
                 }}
               >
                 <option value="">Tất cả thương hiệu</option>
-                {brands.map((b) => (
-                  <option key={b} value={b}>
-                    {b}
-                  </option>
-                ))}
+                {brands.map((b) => {
+                  const count = models.filter(
+                    (m) => (!category || m.category === category) && m.brand === b,
+                  ).length
+                  return (
+                    <option key={b} value={b}>
+                      {b} ({count})
+                    </option>
+                  )
+                })}
               </Select>
               <Select
                 id="filter-subcategory"

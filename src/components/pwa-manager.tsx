@@ -19,9 +19,19 @@ export function PwaManager() {
   const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null)
   const [iosGuideOpen, setIosGuideOpen] = useState(false)
   const [dismissed, setDismissed] = useState(true)
+  const [isStandalone, setIsStandalone] = useState(false)
+  const [isIosSafari, setIsIosSafari] = useState(false)
 
   useEffect(() => {
     setOffline(typeof navigator !== 'undefined' ? !navigator.onLine : false)
+    setIsStandalone(
+      window.matchMedia('(display-mode: standalone)').matches ||
+        (window.navigator as Navigator & { standalone?: boolean }).standalone === true,
+    )
+    setIsIosSafari(
+      /iPad|iPhone|iPod/.test(window.navigator.userAgent) &&
+        !/CriOS|FxiOS|EdgiOS/.test(window.navigator.userAgent),
+    )
     const onOnline = () => setOffline(false)
     const onOffline = () => setOffline(true)
     window.addEventListener('online', onOnline)
@@ -64,16 +74,6 @@ export function PwaManager() {
       window.removeEventListener('beforeinstallprompt', onBeforeInstall)
     }
   }, [])
-
-  const isStandalone =
-    typeof window !== 'undefined' &&
-    (window.matchMedia('(display-mode: standalone)').matches ||
-      (window.navigator as Navigator & { standalone?: boolean }).standalone === true)
-
-  const isIosSafari =
-    typeof window !== 'undefined' &&
-    /iPad|iPhone|iPod/.test(window.navigator.userAgent) &&
-    !/CriOS|FxiOS|EdgiOS/.test(window.navigator.userAgent)
 
   function dismissInstall() {
     setDismissed(true)

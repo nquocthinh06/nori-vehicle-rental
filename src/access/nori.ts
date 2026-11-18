@@ -72,6 +72,41 @@ export function adminHasPermission(
   return Boolean(perms[module]?.includes(action))
 }
 
+export function adminHasAnyPermission(
+  user: unknown,
+  checks: ReadonlyArray<readonly [AdminModule, AdminAction]>,
+): boolean {
+  return checks.some(([module, action]) => adminHasPermission(user, module, action))
+}
+
+export function adminPermission(module: AdminModule, action: AdminAction = 'read'): Access {
+  return ({ req }) => adminHasPermission(req.user, module, action)
+}
+
+export function adminMediaWriteAccess(req: { user?: unknown }): boolean {
+  return adminHasAnyPermission(req.user, [
+    ['vehicles', 'create'],
+    ['vehicles', 'update'],
+    ['models', 'create'],
+    ['models', 'update'],
+    ['posts', 'create'],
+    ['posts', 'update'],
+    ['content', 'update'],
+  ])
+}
+
+export function adminMediaDeleteAccess(req: { user?: unknown }): boolean {
+  return adminHasAnyPermission(req.user, [
+    ['vehicles', 'delete'],
+    ['vehicles', 'update'],
+    ['models', 'delete'],
+    ['models', 'update'],
+    ['posts', 'delete'],
+    ['posts', 'update'],
+    ['content', 'update'],
+  ])
+}
+
 export const isAdmin: Access = ({ req }) => req.user?.collection === 'admins'
 export const isSuperAdmin: Access = ({ req }) => adminRoleOf(req.user) === 'SUPER_ADMIN'
 export const adminField: FieldAccess = ({ req }) => req.user?.collection === 'admins'

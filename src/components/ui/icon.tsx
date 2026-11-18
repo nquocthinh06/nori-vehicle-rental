@@ -52,6 +52,7 @@ export type IconName =
   | 'edit'
   | 'lock'
   | 'bar-chart'
+  | 'image'
 
 const paths: Record<IconName, React.ReactNode> = {
   'arrow-right': (
@@ -283,6 +284,13 @@ const paths: Record<IconName, React.ReactNode> = {
   'bar-chart': (
     <>
       <path d="M18 20V10M12 20V4M6 20v-6" />
+    </>
+  ),
+  image: (
+    <>
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <circle cx="8.5" cy="9.5" r="1.5" />
+      <path d="m21 15-5-5L5 20" />
     </>
   ),
 }

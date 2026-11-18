@@ -1,8 +1,8 @@
 import Image from 'next/image'
 import type { Metadata } from 'next'
 import { getPublishedPosts, getSiteContent } from '@/lib/catalogue'
-import { formatDate } from '@/lib/rental-rules'
-import { Badge, ButtonLink, Container, Eyebrow, Heading, Text } from '@/components/ui'
+import { PostCard } from '@/components/post-card'
+import { ButtonLink, Container, Eyebrow, Heading, NoriLink, Text } from '@/components/ui'
 import { Icon } from '@/components/ui/icon'
 import { Benefits, CallToAction, HowItWorks } from '@/components/home/sections'
 
@@ -109,31 +109,21 @@ export default async function AboutPage() {
         <HowItWorks />
         {posts.length > 0 && (
           <section className="py-12">
-            <Eyebrow>TIN TỨC & CẨM NANG</Eyebrow>
-            <Heading className="mb-6">Bài viết mới từ NORI</Heading>
-            <div className="grid gap-5 md:grid-cols-3">
+            <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
+              <div>
+                <Eyebrow>TIN TỨC &amp; ƯU ĐÃI</Eyebrow>
+                <Heading>Bài viết mới từ NORI</Heading>
+              </div>
+              <NoriLink
+                href="/posts"
+                className="text-small font-semibold text-brand hover:underline"
+              >
+                Xem tất cả bài viết <Icon name="arrow-right" className="ml-1 inline size-4" />
+              </NoriLink>
+            </div>
+            <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
               {posts.slice(0, 6).map((post) => (
-                <article
-                  key={post.id}
-                  className="flex flex-col justify-between rounded-card border border-line bg-canvas p-5"
-                >
-                  <div>
-                    <Badge tone="brand" className="mb-3">
-                      {post.category === 'GUIDE'
-                        ? 'Cẩm nang'
-                        : post.category === 'PROMOTION'
-                          ? 'Ưu đãi'
-                          : 'Tin tức'}
-                    </Badge>
-                    <Heading as="h3" size="subtitle" className="mb-2">
-                      {post.title}
-                    </Heading>
-                    {post.excerpt && <Text className="text-small text-muted">{post.excerpt}</Text>}
-                  </div>
-                  <Text className="mt-4 text-caption text-muted">
-                    Xuất bản: {formatDate(post.publishedAt)}
-                  </Text>
-                </article>
+                <PostCard key={post.id} post={post} />
               ))}
             </div>
           </section>

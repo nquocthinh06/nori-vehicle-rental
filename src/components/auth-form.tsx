@@ -21,11 +21,12 @@ export function AuthForm({ mode }: { mode: 'login' | 'register' }) {
   const register = mode === 'register'
   const params = useSearchParams()
   const router = useRouter()
-  const { user, refresh } = useAuth()
+  const { user, isAdmin, refresh, logout } = useAuth()
   const [busy, setBusy] = useState(false)
   const [visible, setVisible] = useState(false)
   const [error, setError] = useState('')
   const [fields, setFields] = useState<Record<string, string>>({})
+
   const rawTarget = params.get('returnTo')
   const safeTarget =
     rawTarget &&
@@ -35,6 +36,11 @@ export function AuthForm({ mode }: { mode: 'login' | 'register' }) {
       ? rawTarget
       : null
   const returnTo = safeTarget ?? '/account'
+  const expired = params.get('expired') === '1'
+  const requestedCustomerMode = params.get('accountType')?.toUpperCase() === 'CUSTOMER'
+  const isCustomerWorkflowTarget = Boolean(
+    safeTarget && (safeTarget.startsWith('/checkout') || safeTarget.startsWith('/my-bookings')),
+  )
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -43,14 +49,30 @@ export function AuthForm({ mode }: { mode: 'login' | 'register' }) {
     setError('')
     setFields({})
     try {
+      const formPayload: Record<string, unknown> = Object.fromEntries(
+        [...data.entries()].filter(([key]) => key !== 'terms'),
+      )
+      if (!register && (requestedCustomerMode || isCustomerWorkflowTarget)) {
+        formPayload.accountType = 'CUSTOMER'
+      }
+
       const signedIn = await api<AppUser>(`/auth/${mode}`, {
         method: 'POST',
-        body: JSON.stringify(
-          Object.fromEntries([...data.entries()].filter(([key]) => key !== 'terms')),
-        ),
+        body: JSON.stringify(formPayload),
       })
-      await refresh()
-      const destination = !register && signedIn?.isAdmin ? (safeTarget ?? '/dashboard') : returnTo
+
+      // Verify that the session cookie (`app-session` / `payload-token`) actually works
+      // via `GET /nori-api/auth/me` before considering authentication complete.
+      const verifiedUser = await refresh()
+      if (!verifiedUser || verifiedUser.id !== signedIn.id) {
+        setError(
+          'Không thể xác minh phiên đăng nhập (cookie phiên làm việc bị chặn hoặc chưa được lưu). Vui lòng kiểm tra cài đặt trình duyệt và thử lại.',
+        )
+        return
+      }
+
+      const verifiedIsAdmin = Boolean(verifiedUser.isAdmin || verifiedUser.role === 'ADMIN')
+      const destination = !register && verifiedIsAdmin ? (safeTarget ?? '/dashboard') : returnTo
       router.push(destination)
       router.refresh()
     } catch (e) {
@@ -61,20 +83,56 @@ export function AuthForm({ mode }: { mode: 'login' | 'register' }) {
     }
   }
 
+  async function switchAdminToCustomerLogin() {
+    setBusy(true)
+    setError('')
+    try {
+      await logout()
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
   if (user) {
-    const alreadyTarget = user.isAdmin ? (safeTarget ?? '/dashboard') : returnTo
+    if (isAdmin && (requestedCustomerMode || isCustomerWorkflowTarget)) {
+      return (
+        <div className="space-y-5 py-8">
+          <Heading as="h1" size="section">
+            Chào {user.fullName}.
+          </Heading>
+          <Notice tone="info">
+            Bạn đang đăng nhập bằng tài khoản quản trị ({user.email}). Vui lòng sử dụng tài khoản
+            khách hàng để thực hiện đặt thuê.
+          </Notice>
+          {error && <Notice tone="error">{error}</Notice>}
+          <div className="grid gap-3">
+            <Button onClick={switchAdminToCustomerLogin} loading={busy} className="w-full">
+              Đăng xuất quản trị để đăng nhập Khách hàng
+              <Icon name="arrow-right" className="size-4" />
+            </Button>
+            <ButtonLink href="/dashboard" variant="secondary" className="w-full">
+              Đi tới Quản trị hệ thống
+            </ButtonLink>
+          </div>
+        </div>
+      )
+    }
+
+    const alreadyTarget = isAdmin ? (safeTarget ?? '/dashboard') : returnTo
     return (
       <div className="py-8">
         <Heading as="h1" size="section">
           Chào {user.fullName}.
         </Heading>
         <Text className="mb-7 mt-4 text-muted">
-          {user.isAdmin
+          {isAdmin
             ? `Bạn đang đăng nhập với quyền quản trị (${user.email}).`
             : 'Bạn đã đăng nhập tài khoản NORI.'}
         </Text>
         <ButtonLink href={alreadyTarget} className="w-full">
-          {user.isAdmin ? 'Đi tới Quản trị hệ thống' : 'Tiếp tục hành trình'}{' '}
+          {isAdmin ? 'Đi tới Quản trị hệ thống' : 'Tiếp tục hành trình'}{' '}
           <Icon name="arrow-right" className="size-4" />
         </ButtonLink>
       </div>
@@ -94,6 +152,12 @@ export function AuthForm({ mode }: { mode: 'login' | 'register' }) {
           ? 'Một tài khoản, chủ động mọi hành trình.'
           : 'Đăng nhập để đặt xe và theo dõi hành trình của bạn.'}
       </Text>
+      {expired && (
+        <Notice tone="info" className="mb-5">
+          Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại để tiếp tục — thông tin đặt thuê bạn đã
+          nhập vẫn được lưu giữ.
+        </Notice>
+      )}
       <form onSubmit={submit} className="space-y-5">
         {register && (
           <Input

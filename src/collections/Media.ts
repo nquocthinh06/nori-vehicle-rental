@@ -1,15 +1,16 @@
 import { APIError, type CollectionConfig } from 'payload'
 
 import { createFolderField, createTagField } from 'payload'
+import { adminMediaDeleteAccess, adminMediaWriteAccess } from '@/access/nori'
 import { revalidateMedia, revalidateDeletedMedia } from '@/hooks/revalidate-nori'
 
 export const Media: CollectionConfig = {
   slug: 'media',
   access: {
     read: () => true,
-    create: ({ req }) => req.user?.collection === 'admins',
-    update: ({ req }) => req.user?.collection === 'admins',
-    delete: ({ req }) => req.user?.collection === 'admins',
+    create: ({ req }) => adminMediaWriteAccess(req),
+    update: ({ req }) => adminMediaWriteAccess(req),
+    delete: ({ req }) => adminMediaDeleteAccess(req),
   },
   hooks: {
     beforeDelete: [
@@ -33,6 +34,7 @@ export const Media: CollectionConfig = {
           req.payload.find({
             collection: 'posts',
             overrideAccess: true,
+            draft: true,
             req,
             depth: 0,
             limit: 200,

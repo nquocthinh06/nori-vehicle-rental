@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
+import { DEFAULT_OPERATOR_PERMISSIONS, type AdminModule } from '@/access/nori'
 import { useAuth } from '@/components/auth-provider'
 import { api } from '@/lib/client-api'
 import {
@@ -25,6 +26,7 @@ type NavItem = {
   label: string
   icon: IconName
   group: string
+  module?: AdminModule
 }
 
 const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
@@ -35,32 +37,59 @@ const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
   {
     title: 'Phương tiện',
     items: [
-      { href: '/dashboard/vehicles', label: 'Kho xe thực tế', icon: 'car', group: 'Phương tiện' },
+      {
+        href: '/dashboard/vehicles',
+        label: 'Kho xe thực tế',
+        icon: 'car',
+        group: 'Phương tiện',
+        module: 'vehicles',
+      },
       {
         href: '/dashboard/models',
         label: 'Catalogue dòng xe',
         icon: 'sliders',
         group: 'Phương tiện',
+        module: 'models',
       },
       {
         href: '/dashboard/maintenance',
         label: 'Lịch bảo trì',
         icon: 'settings',
         group: 'Phương tiện',
+        module: 'maintenance',
       },
     ],
   },
   {
     title: 'Nghiệp vụ',
     items: [
-      { href: '/dashboard/bookings', label: 'Đơn thuê xe', icon: 'calendar', group: 'Nghiệp vụ' },
-      { href: '/dashboard/inquiries', label: 'Yêu cầu mua xe', icon: 'bag', group: 'Nghiệp vụ' },
-      { href: '/dashboard/promotions', label: 'Khuyến mãi', icon: 'sparkles', group: 'Nghiệp vụ' },
+      {
+        href: '/dashboard/bookings',
+        label: 'Đơn thuê xe',
+        icon: 'calendar',
+        group: 'Nghiệp vụ',
+        module: 'bookings',
+      },
+      {
+        href: '/dashboard/inquiries',
+        label: 'Yêu cầu mua xe',
+        icon: 'bag',
+        group: 'Nghiệp vụ',
+        module: 'inquiries',
+      },
+      {
+        href: '/dashboard/promotions',
+        label: 'Khuyến mãi',
+        icon: 'sparkles',
+        group: 'Nghiệp vụ',
+        module: 'promotions',
+      },
       {
         href: '/dashboard/payments',
         label: 'Thanh toán & Hoàn tiền',
         icon: 'wallet',
         group: 'Nghiệp vụ',
+        module: 'payments',
       },
     ],
   },
@@ -72,18 +101,21 @@ const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
         label: 'Khách hàng & Đánh giá',
         icon: 'user',
         group: 'Khách hàng & Nội dung',
+        module: 'customers',
       },
       {
         href: '/dashboard/content',
         label: 'CMS & Cài đặt website',
         icon: 'file',
         group: 'Khách hàng & Nội dung',
+        module: 'content',
       },
       {
         href: '/dashboard/posts',
         label: 'Tin tức & Bài viết',
         icon: 'edit',
         group: 'Khách hàng & Nội dung',
+        module: 'posts',
       },
     ],
   },
@@ -95,18 +127,35 @@ const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
         label: 'Thống kê & Báo cáo',
         icon: 'bar-chart',
         group: 'Hệ thống',
+        module: 'reports',
       },
       {
         href: '/dashboard/admins',
         label: 'Tài khoản & Bảo mật',
         icon: 'shield',
         group: 'Hệ thống',
+        module: 'admins',
       },
     ],
   },
 ]
 
 const ALL_NAV_ITEMS = NAV_GROUPS.flatMap((g) => g.items)
+
+function canReadAdminModule(
+  user: {
+    isAdmin?: boolean
+    adminRole?: 'SUPER_ADMIN' | 'OPERATOR'
+    permissions?: Record<string, string[]>
+  } | null,
+  module?: AdminModule,
+): boolean {
+  if (!user?.isAdmin) return false
+  if (!module) return true
+  if (user.adminRole !== 'OPERATOR') return true
+  const perms = user.permissions ?? DEFAULT_OPERATOR_PERMISSIONS
+  return Boolean(perms[module]?.includes('read'))
+}
 
 type NotificationSummary = {
   pendingBookings: number
@@ -287,11 +336,20 @@ export function AdminShell({ children }: { children: ReactNode }) {
       item.href === '/dashboard' ? pathname === '/dashboard' : pathname?.startsWith(item.href),
     ) ?? ALL_NAV_ITEMS[0]
 
+  const visibleNavGroups = NAV_GROUPS.map((group) => ({
+    ...group,
+    items: group.items.filter((item) => canReadAdminModule(user, item.module)),
+  })).filter((group) => group.items.length > 0)
+
+  const canAccessActiveRoute = canReadAdminModule(user, activeNav?.module)
+  const canBookings = canReadAdminModule(user, 'bookings')
+  const canInquiries = canReadAdminModule(user, 'inquiries')
+  const canVehicles = canReadAdminModule(user, 'vehicles')
+
   const totalAlerts =
-    (notif?.pendingBookings ?? 0) +
-    (notif?.expiredDeposits ?? 0) +
-    (notif?.newInquiries ?? 0) +
-    (notif?.maintenanceVehicles ?? 0)
+    (canBookings ? (notif?.pendingBookings ?? 0) + (notif?.expiredDeposits ?? 0) : 0) +
+    (canInquiries ? (notif?.newInquiries ?? 0) : 0) +
+    (canVehicles ? (notif?.maintenanceVehicles ?? 0) : 0)
 
   const initials = (user.fullName || user.email || 'AD')
     .split(/\s+/)
@@ -339,7 +397,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
         aria-label="Điều hướng quản trị NORI"
         className="flex-1 space-y-5 overflow-y-auto px-3 py-5"
       >
-        {NAV_GROUPS.map((group) => (
+        {visibleNavGroups.map((group) => (
           <div key={group.title}>
             {!collapsed && (
               <div className="mb-2 px-3 text-micro font-semibold uppercase tracking-widest text-on-night-muted/70">
@@ -386,16 +444,18 @@ export function AdminShell({ children }: { children: ReactNode }) {
           <Icon name="home" className="size-4 shrink-0" />
           {!collapsed && <span>Về website chính</span>}
         </NoriLink>
-        <NoriLink
-          href="/admin"
-          title={collapsed ? 'Payload CMS (/admin)' : undefined}
-          className={`flex min-h-touch items-center gap-3 rounded-control px-3 py-2 text-caption text-on-night-muted/80 hover:bg-night-soft hover:text-inverse ${
-            collapsed ? 'justify-center px-2' : ''
-          }`}
-        >
-          <Icon name="external" className="size-4 shrink-0" />
-          {!collapsed && <span>Payload CMS (/admin)</span>}
-        </NoriLink>
+        {user.adminRole !== 'OPERATOR' && (
+          <NoriLink
+            href="/admin"
+            title={collapsed ? 'Payload CMS (/admin)' : undefined}
+            className={`flex min-h-touch items-center gap-3 rounded-control px-3 py-2 text-caption text-on-night-muted/80 hover:bg-night-soft hover:text-inverse ${
+              collapsed ? 'justify-center px-2' : ''
+            }`}
+          >
+            <Icon name="external" className="size-4 shrink-0" />
+            {!collapsed && <span>Payload CMS (/admin)</span>}
+          </NoriLink>
+        )}
       </div>
     </div>
   )
@@ -494,40 +554,53 @@ export function AdminShell({ children }: { children: ReactNode }) {
                       Việc cần xử lý ngay
                     </Text>
                     <div className="space-y-2 text-small">
-                      <NoriLink
-                        href="/dashboard/bookings?status=PENDING"
-                        className="flex items-center justify-between rounded-control bg-subtle px-3 py-2 hover:bg-brand-soft"
-                      >
-                        <span>Đơn thuê chờ xác nhận</span>
-                        <Badge tone={notif?.pendingBookings ? 'warning' : 'muted'}>
-                          {notif?.pendingBookings ?? 0}
-                        </Badge>
-                      </NoriLink>
-                      <NoriLink
-                        href="/dashboard/bookings?status=DEPOSIT_PENDING"
-                        className="flex items-center justify-between rounded-control bg-subtle px-3 py-2 hover:bg-brand-soft"
-                      >
-                        <span>Đơn quá hạn đặt cọc (&gt;24h)</span>
-                        <Badge tone={notif?.expiredDeposits ? 'danger' : 'muted'}>
-                          {notif?.expiredDeposits ?? 0}
-                        </Badge>
-                      </NoriLink>
-                      <NoriLink
-                        href="/dashboard/inquiries?status=NEW"
-                        className="flex items-center justify-between rounded-control bg-subtle px-3 py-2 hover:bg-brand-soft"
-                      >
-                        <span>Yêu cầu mua xe mới</span>
-                        <Badge tone={notif?.newInquiries ? 'brand' : 'muted'}>
-                          {notif?.newInquiries ?? 0}
-                        </Badge>
-                      </NoriLink>
-                      <NoriLink
-                        href="/dashboard/vehicles?operationStatus=MAINTENANCE"
-                        className="flex items-center justify-between rounded-control bg-subtle px-3 py-2 hover:bg-brand-soft"
-                      >
-                        <span>Xe đang bảo dưỡng</span>
-                        <Badge tone="muted">{notif?.maintenanceVehicles ?? 0}</Badge>
-                      </NoriLink>
+                      {canBookings && (
+                        <>
+                          <NoriLink
+                            href="/dashboard/bookings?status=PENDING"
+                            className="flex items-center justify-between rounded-control bg-subtle px-3 py-2 hover:bg-brand-soft"
+                          >
+                            <span>Đơn thuê chờ xác nhận</span>
+                            <Badge tone={notif?.pendingBookings ? 'warning' : 'muted'}>
+                              {notif?.pendingBookings ?? 0}
+                            </Badge>
+                          </NoriLink>
+                          <NoriLink
+                            href="/dashboard/bookings?status=DEPOSIT_PENDING"
+                            className="flex items-center justify-between rounded-control bg-subtle px-3 py-2 hover:bg-brand-soft"
+                          >
+                            <span>Đơn quá hạn đặt cọc (&gt;24h)</span>
+                            <Badge tone={notif?.expiredDeposits ? 'danger' : 'muted'}>
+                              {notif?.expiredDeposits ?? 0}
+                            </Badge>
+                          </NoriLink>
+                        </>
+                      )}
+                      {canInquiries && (
+                        <NoriLink
+                          href="/dashboard/inquiries?status=NEW"
+                          className="flex items-center justify-between rounded-control bg-subtle px-3 py-2 hover:bg-brand-soft"
+                        >
+                          <span>Yêu cầu mua xe mới</span>
+                          <Badge tone={notif?.newInquiries ? 'brand' : 'muted'}>
+                            {notif?.newInquiries ?? 0}
+                          </Badge>
+                        </NoriLink>
+                      )}
+                      {canVehicles && (
+                        <NoriLink
+                          href="/dashboard/vehicles?operationStatus=MAINTENANCE"
+                          className="flex items-center justify-between rounded-control bg-subtle px-3 py-2 hover:bg-brand-soft"
+                        >
+                          <span>Xe đang bảo dưỡng</span>
+                          <Badge tone="muted">{notif?.maintenanceVehicles ?? 0}</Badge>
+                        </NoriLink>
+                      )}
+                      {!canBookings && !canInquiries && !canVehicles && (
+                        <Text className="text-caption text-muted">
+                          Không có cảnh báo thuộc phạm vi quyền hiện tại.
+                        </Text>
+                      )}
                     </div>
                   </div>
                 )}
@@ -602,7 +675,21 @@ export function AdminShell({ children }: { children: ReactNode }) {
             <Heading as="h1" size="title" className="mb-5 text-ink">
               {activeNav.label}
             </Heading>
-            {children}
+            {canAccessActiveRoute ? (
+              children
+            ) : (
+              <div className="rounded-card border border-line bg-canvas p-8">
+                <EmptyState
+                  icon="shield"
+                  title="Tài khoản chưa được cấp quyền truy cập phân hệ này"
+                  description="Vui lòng liên hệ Quản trị viên cấp cao (SUPER_ADMIN) nếu bạn cần quyền thao tác trên phân hệ này."
+                >
+                  <ButtonLink href="/dashboard" variant="secondary">
+                    Quay lại Tổng quan
+                  </ButtonLink>
+                </EmptyState>
+              </div>
+            )}
           </div>
         </main>
       </div>

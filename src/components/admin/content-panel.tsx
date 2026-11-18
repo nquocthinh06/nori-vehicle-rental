@@ -1,7 +1,10 @@
 'use client'
 
 import Image from 'next/image'
-import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { adminHasPermission } from '@/access/nori'
+import { useAuth } from '@/components/auth-provider'
 import { api } from '@/lib/client-api'
 import { formatDate, parseWorkingDays } from '@/lib/rental-rules'
 import {
@@ -11,41 +14,24 @@ import {
   Heading,
   Input,
   Notice,
-  Select,
   Skeleton,
   TabButton,
   Text,
   Textarea,
 } from '@/components/ui'
-import { Dialog } from '@/components/ui/dialog'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { Icon } from '@/components/ui/icon'
+import {
+  HeroCarouselEditor,
+  UNSAVED_WARNING_TEXT,
+  serializeSlide,
+  type AdminMediaSummary,
+  type HeroSlideForm,
+  type SlideSaveState,
+} from './hero-carousel-editor'
 import { useToast } from './toast'
 
-type HeroSlideForm = {
-  id?: string
-  titleFirst: string
-  titleSecond: string
-  eyebrow: string
-  categoryBadge: string
-  description: string
-  ctaText: string
-  ctaHref: string
-  secondaryText: string
-  secondaryHref: string
-  desktopImageId: string | null
-  desktopImage: { url: string; alt: string } | null
-  mobileImageId: string | null
-  mobileImage: { url: string; alt: string } | null
-  relatedCategory: string
-  relatedModelId: string | null
-  credit: string
-  sourceUrl: string
-  durationSeconds: number | null
-  order: number
-  active: boolean
-}
-
-type HeroImageItem = { imageId: string; credit: string; image: { url: string; alt: string } }
+type HeroImageItem = { imageId: string; credit: string; image: AdminMediaSummary }
 type HolidayItem = { date: string; name: string }
 type MenuLink = { label: string; href: string; visible: boolean }
 type FaqItem = { question: string; answer: string; order: number }
@@ -54,6 +40,9 @@ type ModelOption = { id: string; name: string; slug: string; category: string }
 
 type SiteContentForm = {
   _status: 'draft' | 'published'
+  hasPublishedVersion?: boolean
+  hasUnpublishedChanges?: boolean
+  publishedAt?: string | null
   siteName: string
   tagline: string
   seoTitle: string
@@ -62,7 +51,7 @@ type SiteContentForm = {
   heroSlides: HeroSlideForm[]
   heroImages: HeroImageItem[]
   storyImageId: string | null
-  storyImage: { url: string; alt: string } | null
+  storyImage: AdminMediaSummary | null
   homeIntroTitle: string
   homeIntroDescription: string
   showHeroSection: boolean
@@ -102,6 +91,8 @@ type SiteContentForm = {
   versions: VersionItem[]
 }
 
+type CmsTab = 'brand' | 'hero' | 'hours' | 'policies' | 'faqs' | 'settings'
+
 const WEEKDAY_ITEMS = [
   { day: 1, label: 'Thứ 2' },
   { day: 2, label: 'Thứ 3' },
@@ -112,25 +103,92 @@ const WEEKDAY_ITEMS = [
   { day: 0, label: 'Chủ nhật' },
 ]
 
+function serializeFormComparable(form: SiteContentForm): string {
+  return JSON.stringify({
+    siteName: form.siteName,
+    tagline: form.tagline,
+    seoTitle: form.seoTitle,
+    seoDescription: form.seoDescription,
+    heroAutoplaySeconds: form.heroAutoplaySeconds,
+    heroSlides: form.heroSlides.map(serializeSlide),
+    storyImageId: form.storyImageId,
+    homeIntroTitle: form.homeIntroTitle,
+    homeIntroDescription: form.homeIntroDescription,
+    showHeroSection: form.showHeroSection,
+    showBenefitsSection: form.showBenefitsSection,
+    showFeaturedSection: form.showFeaturedSection,
+    showHowItWorksSection: form.showHowItWorksSection,
+    showStorySection: form.showStorySection,
+    showCtaSection: form.showCtaSection,
+    headerMenu: form.headerMenu,
+    aboutSummary: form.aboutSummary,
+    address: form.address,
+    phone: form.phone,
+    email: form.email,
+    openingHours: form.openingHours,
+    businessTimezone: form.businessTimezone,
+    workingDays: form.workingDays,
+    workStartTime: form.workStartTime,
+    workEndTime: form.workEndTime,
+    lunchBreakStart: form.lunchBreakStart,
+    lunchBreakEnd: form.lunchBreakEnd,
+    holidays: form.holidays,
+    contactNote: form.contactNote,
+    rentalPolicySummary: form.rentalPolicySummary,
+    purchasePolicySummary: form.purchasePolicySummary,
+    ageRequirement: form.ageRequirement,
+    licenseRequirement: form.licenseRequirement,
+    cancellationPolicy: form.cancellationPolicy,
+    depositPolicy: form.depositPolicy,
+    privacyPolicy: form.privacyPolicy,
+    termsOfUse: form.termsOfUse,
+    faqs: form.faqs,
+    depositHoldHours: form.depositHoldHours,
+    maxPendingBookings: form.maxPendingBookings,
+    maintenanceBannerEnabled: form.maintenanceBannerEnabled,
+    maintenanceBannerText: form.maintenanceBannerText,
+  })
+}
+
+function cloneForm(data: SiteContentForm): SiteContentForm {
+  return JSON.parse(JSON.stringify(data)) as SiteContentForm
+}
+
 export function ContentPanel() {
-  const { toast } = useToast()
-  const [tab, setTab] = useState<'brand' | 'hero' | 'hours' | 'policies' | 'faqs' | 'settings'>(
-    'brand',
+  const router = useRouter()
+  const { user } = useAuth()
+  const canPublish = adminHasPermission(
+    user ? { ...user, collection: user.isAdmin ? 'admins' : 'users' } : null,
+    'content',
+    'publish',
   )
+  const { toast } = useToast()
+  const [tab, setTab] = useState<CmsTab>('brand')
   const [form, setForm] = useState<SiteContentForm | null>(null)
+  const [savedForm, setSavedForm] = useState<SiteContentForm | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState('')
+  const [publishSuccessMsg, setPublishSuccessMsg] = useState('')
   const [retry, setRetry] = useState(0)
-  const [previewSlide, setPreviewSlide] = useState<HeroSlideForm | null>(null)
+
+  const [slideSaveStates, setSlideSaveStates] = useState<Record<string, SlideSaveState>>({})
+  const [slideSaveErrors, setSlideSaveErrors] = useState<Record<string, string>>({})
+
+  const [pendingAction, setPendingAction] = useState<
+    { type: 'tab'; tab: CmsTab } | { type: 'route'; href: string } | null
+  >(null)
+  const bypassGuardRef = useRef(false)
 
   useEffect(() => {
     let active = true
     setLoading(true)
     api<SiteContentForm>('/dashboard/content')
       .then((res) => {
-        if (active) setForm(res)
+        if (!active) return
+        setForm(res)
+        setSavedForm(cloneForm(res))
       })
       .catch((e) => {
         if (active) setError((e as Error).message)
@@ -143,11 +201,84 @@ export function ContentPanel() {
     }
   }, [retry])
 
-  async function uploadSingleMedia(file: File, altText: string, mediaCategory = 'ILLUSTRATION') {
+  const hasUnsavedChanges = useMemo(() => {
+    if (!form || !savedForm) return false
+    return serializeFormComparable(form) !== serializeFormComparable(savedForm)
+  }, [form, savedForm])
+
+  // Browser reload / tab close guard when there are unsaved changes
+  useEffect(() => {
+    if (!hasUnsavedChanges) return
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault()
+      e.returnValue = ''
+    }
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload)
+  }, [hasUnsavedChanges])
+
+  // In-app route navigation guard when there are unsaved changes
+  useEffect(() => {
+    if (!hasUnsavedChanges) return
+    const handleLinkClick = (e: MouseEvent) => {
+      if (bypassGuardRef.current) return
+      if (
+        e.defaultPrevented ||
+        e.button !== 0 ||
+        e.metaKey ||
+        e.ctrlKey ||
+        e.shiftKey ||
+        e.altKey
+      ) {
+        return
+      }
+      const target = e.target as HTMLElement | null
+      const anchor = target?.closest('a[href]') as HTMLAnchorElement | null
+      if (!anchor) return
+      const href = anchor.getAttribute('href')
+      if (!href || href.startsWith('#') || anchor.target === '_blank') return
+      const url = new URL(href, window.location.href)
+      if (url.pathname === window.location.pathname && url.search === window.location.search) return
+      e.preventDefault()
+      e.stopPropagation()
+      setPendingAction({ type: 'route', href: url.pathname + url.search + url.hash })
+    }
+    document.addEventListener('click', handleLinkClick, true)
+    return () => document.removeEventListener('click', handleLinkClick, true)
+  }, [hasUnsavedChanges])
+
+  function requestTabChange(nextTab: CmsTab) {
+    if (nextTab === tab) return
+    if (hasUnsavedChanges) {
+      setPendingAction({ type: 'tab', tab: nextTab })
+      return
+    }
+    setTab(nextTab)
+  }
+
+  function confirmPendingLeave() {
+    if (!pendingAction) return
+    const action = pendingAction
+    setPendingAction(null)
+    if (action.type === 'tab') {
+      setTab(action.tab)
+      return
+    }
+    bypassGuardRef.current = true
+    router.push(action.href)
+  }
+
+  async function uploadSingleMedia(
+    file: File,
+    altText: string,
+    mediaCategory = 'ILLUSTRATION',
+    purpose?: 'hero-desktop' | 'hero-mobile',
+  ) {
     const fd = new FormData()
     fd.append('file', file)
     fd.append('alt', altText)
     fd.append('mediaCategory', mediaCategory)
+    if (purpose) fd.append('purpose', purpose)
     const res = await fetch('/nori-api/dashboard/media', { method: 'POST', body: fd })
     const json = await res.json()
     if (!res.ok || !json.success) throw new Error(json.error?.message || 'Chưa thể tải ảnh lên.')
@@ -155,6 +286,11 @@ export function ContentPanel() {
       id: json.data.id as string,
       url: (json.data.photo?.url || json.data.url) as string,
       alt: (json.data.alt || altText) as string,
+      width: (json.data.width ?? json.data.photo?.width) as number | undefined,
+      height: (json.data.height ?? json.data.photo?.height) as number | undefined,
+      filesize: (json.data.filesize ?? json.data.photo?.filesize ?? null) as number | null,
+      mimeType: (json.data.mimeType ?? json.data.photo?.mimeType ?? null) as string | null,
+      lowResolutionWarning: Boolean(json.data.lowResolutionWarning),
     }
   }
 
@@ -167,9 +303,16 @@ export function ContentPanel() {
       setForm({
         ...form,
         storyImageId: uploaded.id,
-        storyImage: { url: uploaded.url, alt: uploaded.alt },
+        storyImage: {
+          url: uploaded.url,
+          alt: uploaded.alt,
+          width: uploaded.width,
+          height: uploaded.height,
+          filesize: uploaded.filesize,
+          mimeType: uploaded.mimeType,
+        },
       })
-      toast('Đã tải ảnh câu chuyện lên thư viện.')
+      toast('Đã tải ảnh câu chuyện lên thư viện. Nhấn Lưu bản nháp hoặc Xuất bản để ghi nhận.')
     } catch (err) {
       toast((err as Error).message, 'error')
     } finally {
@@ -192,22 +335,44 @@ export function ContentPanel() {
         file,
         `${targetSlide?.titleFirst || 'Banner phương tiện NORI'} (${slot === 'desktop' ? 'Desktop' : 'Mobile'})`,
         'CATALOGUE_REFERENCE',
+        slot === 'desktop' ? 'hero-desktop' : 'hero-mobile',
       )
+      const mediaSummary: AdminMediaSummary = {
+        url: uploaded.url,
+        alt: uploaded.alt,
+        width: uploaded.width,
+        height: uploaded.height,
+        filesize: uploaded.filesize,
+        mimeType: uploaded.mimeType,
+      }
       const next = [...form.heroSlides]
       next[idx] =
         slot === 'desktop'
           ? {
               ...targetSlide,
               desktopImageId: uploaded.id,
-              desktopImage: { url: uploaded.url, alt: uploaded.alt },
+              desktopImage: mediaSummary,
             }
           : {
               ...targetSlide,
               mobileImageId: uploaded.id,
-              mobileImage: { url: uploaded.url, alt: uploaded.alt },
+              mobileImage: mediaSummary,
             }
+      const key = targetSlide.id || `idx-${idx}`
+      setSlideSaveStates((prev) => ({ ...prev, [key]: 'idle' }))
+      setSlideSaveErrors((prev) => ({ ...prev, [key]: '' }))
       setForm({ ...form, heroSlides: next })
-      toast(`Đã cập nhật ảnh ${slot === 'desktop' ? 'Desktop' : 'Mobile'} cho Slide #${idx + 1}.`)
+      setPublishSuccessMsg('')
+      if (uploaded.lowResolutionWarning) {
+        toast(
+          'Ảnh có độ phân giải thấp, có thể bị giảm chất lượng trên màn hình lớn. Nhấn "Lưu thay đổi" để lưu vào Slide.',
+          'info',
+        )
+      } else {
+        toast(
+          `Đã tải ảnh ${slot === 'desktop' ? 'Desktop' : 'Mobile'} lên thư viện. Nhấn "Lưu thay đổi" trên Slide #${idx + 1} để lưu.`,
+        )
+      }
     } catch (err) {
       toast((err as Error).message, 'error')
     } finally {
@@ -216,13 +381,32 @@ export function ContentPanel() {
     }
   }
 
+  const updateSlideAt = useCallback((idx: number, patch: Partial<HeroSlideForm>) => {
+    setForm((prev) => {
+      if (!prev) return prev
+      const target = prev.heroSlides[idx]
+      if (!target) return prev
+      const next = [...prev.heroSlides]
+      next[idx] = { ...target, ...patch }
+      const key = target.id || `idx-${idx}`
+      setSlideSaveStates((s) =>
+        s[key] === 'saved' || s[key] === 'error' ? { ...s, [key]: 'idle' } : s,
+      )
+      setSlideSaveErrors((e) => (e[key] ? { ...e, [key]: '' } : e))
+      return { ...prev, heroSlides: next }
+    })
+    setPublishSuccessMsg('')
+  }, [])
+
   function addSlide() {
     if (!form) return
+    setPublishSuccessMsg('')
     setForm({
       ...form,
       heroSlides: [
         ...form.heroSlides,
         {
+          id: `new-slide-${Date.now()}`,
           titleFirst: 'Hành trình mới.',
           titleSecond: 'Trải nghiệm cùng NORI.',
           eyebrow: 'THUÊ XE LINH HOẠT · THÔNG TIN MINH BẠCH',
@@ -236,6 +420,10 @@ export function ContentPanel() {
           desktopImage: null,
           mobileImageId: null,
           mobileImage: null,
+          focalX: 50,
+          focalY: 50,
+          mobileFocalX: 50,
+          mobileFocalY: 50,
           relatedCategory: '',
           relatedModelId: null,
           credit: '',
@@ -255,10 +443,151 @@ export function ContentPanel() {
     const next = [...form.heroSlides]
     const [moved] = next.splice(idx, 1)
     next.splice(targetIdx, 0, moved)
+    setPublishSuccessMsg('')
     setForm({
       ...form,
       heroSlides: next.map((s, i) => ({ ...s, order: i })),
     })
+  }
+
+  function removeSlide(idx: number) {
+    if (!form) return
+    setPublishSuccessMsg('')
+    setForm({
+      ...form,
+      heroSlides: form.heroSlides.filter((_, i) => i !== idx).map((s, i) => ({ ...s, order: i })),
+    })
+  }
+
+  function revertSlide(idx: number) {
+    if (!form || !savedForm) return
+    const target = form.heroSlides[idx]
+    if (!target) return
+    const savedMatch =
+      (target.id ? savedForm.heroSlides.find((s) => s.id === target.id) : undefined) ??
+      savedForm.heroSlides[idx]
+    const key = target.id || `idx-${idx}`
+    setSlideSaveStates((prev) => ({ ...prev, [key]: 'idle' }))
+    setSlideSaveErrors((prev) => ({ ...prev, [key]: '' }))
+    if (!savedMatch) {
+      removeSlide(idx)
+      toast('Đã hủy slide mới chưa lưu.')
+      return
+    }
+    const next = [...form.heroSlides]
+    next[idx] = JSON.parse(JSON.stringify(savedMatch)) as HeroSlideForm
+    setForm({ ...form, heroSlides: next })
+    toast(`Đã hoàn tác Slide #${idx + 1} về trạng thái đã lưu.`)
+  }
+
+  async function saveSingleSlide(idx: number) {
+    if (!form) return
+    const slide = form.heroSlides[idx]
+    if (!slide) return
+    const key = slide.id || `idx-${idx}`
+
+    if (!slide.titleFirst.trim()) {
+      const msg = `Slide #${idx + 1}: Tiêu đề dòng 1 là bắt buộc.`
+      setSlideSaveStates((prev) => ({ ...prev, [key]: 'error' }))
+      setSlideSaveErrors((prev) => ({ ...prev, [key]: msg }))
+      toast(msg, 'error')
+      return
+    }
+    if (slide.active && !slide.desktopImageId) {
+      const msg = `Slide #${idx + 1}: Ảnh nền Desktop là bắt buộc.`
+      setSlideSaveStates((prev) => ({ ...prev, [key]: 'error' }))
+      setSlideSaveErrors((prev) => ({ ...prev, [key]: msg }))
+      toast(msg, 'error')
+      return
+    }
+
+    setSlideSaveStates((prev) => ({ ...prev, [key]: 'saving' }))
+    setSlideSaveErrors((prev) => ({ ...prev, [key]: '' }))
+    setPublishSuccessMsg('')
+
+    try {
+      const res = await api<{
+        updated: boolean
+        _status: 'draft' | 'published'
+        savedIndex: number
+        savedSlide: HeroSlideForm | null
+        heroSlides: HeroSlideForm[]
+      }>('/dashboard/content', {
+        method: 'PATCH',
+        body: JSON.stringify({
+          action: 'save_slide',
+          slideIndex: idx,
+          slideId: slide.id?.startsWith('new-slide-') ? undefined : slide.id,
+          slide: {
+            id: slide.id?.startsWith('new-slide-') ? undefined : slide.id,
+            titleFirst: slide.titleFirst,
+            titleSecond: slide.titleSecond,
+            eyebrow: slide.eyebrow,
+            categoryBadge: slide.categoryBadge,
+            description: slide.description,
+            ctaText: slide.ctaText,
+            ctaHref: slide.ctaHref,
+            secondaryText: slide.secondaryText,
+            secondaryHref: slide.secondaryHref,
+            desktopImageId: slide.desktopImageId,
+            mobileImageId: slide.mobileImageId,
+            focalX: slide.focalX,
+            focalY: slide.focalY,
+            mobileFocalX: slide.mobileFocalX,
+            mobileFocalY: slide.mobileFocalY,
+            relatedCategory: slide.relatedCategory,
+            relatedModelId: slide.relatedModelId,
+            credit: slide.credit,
+            sourceUrl: slide.sourceUrl,
+            durationSeconds: slide.durationSeconds,
+            order: idx,
+            active: slide.active,
+          },
+        }),
+      })
+
+      if (!res.updated || !res.savedSlide) {
+        throw new Error('Máy chủ chưa xác nhận lưu Slide.')
+      }
+
+      const persistedSlide = res.savedSlide
+      setForm((prev) => {
+        if (!prev) return prev
+        const nextSlides = [...prev.heroSlides]
+        nextSlides[idx] = persistedSlide
+        return {
+          ...prev,
+          _status: 'draft',
+          hasUnpublishedChanges: true,
+          heroSlides: nextSlides,
+        }
+      })
+      setSavedForm((prev) => {
+        if (!prev) return prev
+        const nextSavedSlides = [...prev.heroSlides]
+        if (idx < nextSavedSlides.length) {
+          nextSavedSlides[idx] = JSON.parse(JSON.stringify(persistedSlide)) as HeroSlideForm
+        } else {
+          nextSavedSlides.push(JSON.parse(JSON.stringify(persistedSlide)) as HeroSlideForm)
+        }
+        return {
+          ...prev,
+          _status: 'draft',
+          hasUnpublishedChanges: true,
+          heroSlides: nextSavedSlides,
+        }
+      })
+      const persistedKey = persistedSlide.id || key
+      setSlideSaveStates((prev) => ({ ...prev, [key]: 'saved', [persistedKey]: 'saved' }))
+      toast(
+        `Đã lưu Slide #${idx + 1} vào bản nháp. Nhấn "Xuất bản lên website" để áp dụng công khai.`,
+      )
+    } catch (err) {
+      const msg = (err as Error).message || 'Không thể lưu thay đổi Slide.'
+      setSlideSaveStates((prev) => ({ ...prev, [key]: 'error' }))
+      setSlideSaveErrors((prev) => ({ ...prev, [key]: msg }))
+      toast(msg, 'error')
+    }
   }
 
   function toggleWorkingDay(dayNum: number) {
@@ -279,14 +608,45 @@ export function ContentPanel() {
     })
   }
 
+  function validateBeforePublish(currentForm: SiteContentForm): string | null {
+    for (let i = 0; i < currentForm.heroSlides.length; i++) {
+      const s = currentForm.heroSlides[i]
+      if (!s.titleFirst.trim()) return `Slide #${i + 1}: Vui lòng nhập Tiêu đề dòng 1.`
+      if (!s.ctaText.trim()) return `Slide #${i + 1}: Vui lòng nhập Nhãn nút CTA chính.`
+      if (!s.ctaHref.trim()) return `Slide #${i + 1}: Vui lòng nhập Đường dẫn CTA chính.`
+      if (s.active && !s.desktopImageId) {
+        return `Slide #${i + 1}: Ảnh nền Desktop là bắt buộc trước khi xuất bản.`
+      }
+    }
+    return null
+  }
+
   async function submitContent(targetStatus: 'draft' | 'published') {
     if (!form) return
+    if (targetStatus === 'published') {
+      const validationErr = validateBeforePublish(form)
+      if (validationErr) {
+        setError(validationErr)
+        toast(validationErr, 'error')
+        return
+      }
+    }
+
     setSaving(true)
     setError('')
+    setPublishSuccessMsg('')
     try {
-      await api('/dashboard/content', {
+      const res = await api<{
+        updated: boolean
+        _status: 'draft' | 'published'
+        published?: boolean
+        revalidated?: boolean
+        publishedAt?: string
+        heroSlides?: HeroSlideForm[]
+      }>('/dashboard/content', {
         method: 'PATCH',
         body: JSON.stringify({
+          action: targetStatus === 'published' ? 'publish' : 'save_draft',
           _status: targetStatus,
           siteName: form.siteName,
           tagline: form.tagline,
@@ -294,6 +654,7 @@ export function ContentPanel() {
           seoDescription: form.seoDescription,
           heroAutoplaySeconds: form.heroAutoplaySeconds,
           heroSlides: form.heroSlides.map((s, idx) => ({
+            id: s.id?.startsWith('new-slide-') ? undefined : s.id,
             titleFirst: s.titleFirst,
             titleSecond: s.titleSecond,
             eyebrow: s.eyebrow,
@@ -305,6 +666,10 @@ export function ContentPanel() {
             secondaryHref: s.secondaryHref,
             desktopImageId: s.desktopImageId,
             mobileImageId: s.mobileImageId,
+            focalX: s.focalX,
+            focalY: s.focalY,
+            mobileFocalX: s.mobileFocalX,
+            mobileFocalY: s.mobileFocalY,
             relatedCategory: s.relatedCategory,
             relatedModelId: s.relatedModelId,
             credit: s.credit,
@@ -352,14 +717,41 @@ export function ContentPanel() {
           maintenanceBannerText: form.maintenanceBannerText,
         }),
       })
-      toast(
-        targetStatus === 'published'
-          ? 'Đã xuất bản nội dung CMS và đồng bộ lên website công khai.'
-          : 'Đã lưu bản nháp CMS.',
-      )
+
+      if (targetStatus === 'published' && (!res.published || !res.revalidated)) {
+        throw new Error('Xuất bản chưa hoàn tất đồng bộ cache trang chủ. Vui lòng thử lại.')
+      }
+
+      const nextSlides = res.heroSlides ?? form.heroSlides
+      const syncedForm: SiteContentForm = {
+        ...form,
+        _status: targetStatus,
+        hasPublishedVersion: targetStatus === 'published' ? true : form.hasPublishedVersion,
+        hasUnpublishedChanges: targetStatus !== 'published',
+        publishedAt:
+          targetStatus === 'published'
+            ? (res.publishedAt ?? new Date().toISOString())
+            : form.publishedAt,
+        heroSlides: nextSlides,
+      }
+      setForm(syncedForm)
+      setSavedForm(cloneForm(syncedForm))
+      setSlideSaveStates({})
+      setSlideSaveErrors({})
+
+      if (targetStatus === 'published') {
+        const msg = 'Đã xuất bản. Nội dung mới đang được sử dụng trên website.'
+        setPublishSuccessMsg(msg)
+        toast(msg)
+        router.refresh()
+      } else {
+        toast('Đã lưu bản nháp CMS.')
+      }
       setRetry((r) => r + 1)
     } catch (err) {
-      setError((err as Error).message)
+      const msg = (err as Error).message || 'Không thể lưu cấu hình CMS.'
+      setError(msg)
+      toast(msg, 'error')
     } finally {
       setSaving(false)
     }
@@ -373,6 +765,7 @@ export function ContentPanel() {
         body: JSON.stringify({ restoreVersionId: versionId }),
       })
       toast('Đã khôi phục phiên bản nội dung trước đó.')
+      router.refresh()
       setRetry((r) => r + 1)
     } catch (err) {
       toast((err as Error).message, 'error')
@@ -381,22 +774,30 @@ export function ContentPanel() {
     }
   }
 
-  if (loading) return <Skeleton className="h-96" />
+  if (loading && !form) return <Skeleton className="h-96" />
   if (!form) return <Notice tone="error">{error || 'Chưa thể tải nội dung website.'}</Notice>
 
   const activeWorkingDays = new Set(parseWorkingDays(form.workingDays))
+  const hasDraftPendingPublish = Boolean(form.hasUnpublishedChanges || form._status === 'draft')
 
   return (
     <div className="space-y-6">
       {error && <Notice tone="error">{error}</Notice>}
+      {publishSuccessMsg && <Notice tone="success">{publishSuccessMsg}</Notice>}
 
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-card border border-line bg-canvas p-4">
-        <div className="flex items-center gap-2.5">
-          <Badge tone={form._status === 'published' ? 'brand' : 'warning'}>
-            {form._status === 'published' ? 'Đang xuất bản' : 'Có bản nháp chưa xuất bản'}
+        <div className="flex flex-wrap items-center gap-2.5">
+          <Badge tone={hasDraftPendingPublish ? 'warning' : 'brand'}>
+            {hasDraftPendingPublish ? 'Có bản nháp chưa xuất bản' : 'Đang xuất bản'}
           </Badge>
+          {hasUnsavedChanges ? (
+            <Badge tone="warning">● Có thay đổi chưa lưu</Badge>
+          ) : (
+            <Badge tone="brand">✓ Đã lưu</Badge>
+          )}
           <ButtonLink
             href="/"
+            prefetch={false}
             variant="ghost"
             className="min-h-control-sm px-3 py-1.5 text-caption"
           >
@@ -416,6 +817,12 @@ export function ContentPanel() {
             size="sm"
             variant="primary"
             loading={saving}
+            disabled={!canPublish}
+            title={
+              canPublish
+                ? undefined
+                : 'Tài khoản chưa được cấp quyền Xuất bản CMS; vui lòng Lưu bản nháp.'
+            }
             onClick={() => void submitContent('published')}
           >
             Xuất bản lên website
@@ -424,22 +831,22 @@ export function ContentPanel() {
       </div>
 
       <div role="tablist" className="flex flex-wrap gap-4 border-b border-line">
-        <TabButton selected={tab === 'brand'} onClick={() => setTab('brand')}>
+        <TabButton selected={tab === 'brand'} onClick={() => requestTabChange('brand')}>
           Thương hiệu & Trang chủ
         </TabButton>
-        <TabButton selected={tab === 'hero'} onClick={() => setTab('hero')}>
+        <TabButton selected={tab === 'hero'} onClick={() => requestTabChange('hero')}>
           Hero Carousel ({form.heroSlides.length})
         </TabButton>
-        <TabButton selected={tab === 'hours'} onClick={() => setTab('hours')}>
+        <TabButton selected={tab === 'hours'} onClick={() => requestTabChange('hours')}>
           Giờ làm việc & Nghỉ lễ
         </TabButton>
-        <TabButton selected={tab === 'policies'} onClick={() => setTab('policies')}>
+        <TabButton selected={tab === 'policies'} onClick={() => requestTabChange('policies')}>
           Liên hệ & Chính sách
         </TabButton>
-        <TabButton selected={tab === 'faqs'} onClick={() => setTab('faqs')}>
+        <TabButton selected={tab === 'faqs'} onClick={() => requestTabChange('faqs')}>
           FAQ ({form.faqs.length})
         </TabButton>
-        <TabButton selected={tab === 'settings'} onClick={() => setTab('settings')}>
+        <TabButton selected={tab === 'settings'} onClick={() => requestTabChange('settings')}>
           Cài đặt & Phiên bản
         </TabButton>
       </div>
@@ -541,361 +948,26 @@ export function ContentPanel() {
         </div>
       )}
 
-      {/* Section 15: Hero Carousel Admin Management */}
       {tab === 'hero' && (
-        <div className="space-y-6">
-          <section className="space-y-4 rounded-card border border-line bg-canvas p-5">
-            <div className="flex flex-wrap items-end justify-between gap-4">
-              <div>
-                <Heading as="h2" size="subtitle">
-                  Quản lý Slide Hero Carousel Trang chủ
-                </Heading>
-                <Text className="text-caption text-muted">
-                  Quản lý hình ảnh phương tiện Desktop/Mobile, tiêu đề, CTA, thứ tự, thời gian hiển
-                  thị và bật/tắt từng slide trực tiếp từ CMS.
-                </Text>
-              </div>
-              <div className="flex flex-wrap items-end gap-3">
-                <Input
-                  id="hero-autoplay-sec"
-                  label="Tự động chuyển sau (giây)"
-                  type="number"
-                  min={3}
-                  max={20}
-                  value={form.heroAutoplaySeconds}
-                  onChange={(e) =>
-                    setForm({
-                      ...form,
-                      heroAutoplaySeconds: Math.min(20, Math.max(3, Number(e.target.value) || 6)),
-                    })
-                  }
-                  wrapperClassName="w-48"
-                />
-                <Button size="sm" onClick={addSlide} disabled={form.heroSlides.length >= 12}>
-                  <Icon name="plus" className="size-4" />
-                  Thêm Slide mới
-                </Button>
-              </div>
-            </div>
-
-            {form.heroSlides.length === 0 ? (
-              <Notice>
-                Chưa có slide tùy chỉnh trong Database (website đang hiển thị 5 slide phương tiện
-                chuẩn mặc định). Nhấn <strong>Thêm Slide mới</strong> để tùy biến hoàn toàn từ
-                Admin.
-              </Notice>
-            ) : (
-              <div className="space-y-5">
-                {form.heroSlides.map((slide, idx) => (
-                  <article
-                    key={slide.id ?? idx}
-                    className="space-y-4 rounded-card border border-line bg-subtle/40 p-4"
-                  >
-                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line pb-3">
-                      <div className="flex items-center gap-2.5">
-                        <Badge tone={slide.active ? 'brand' : 'muted'}>
-                          Slide #{idx + 1} · {slide.active ? 'Đang hiển thị' : 'Đang ẩn'}
-                        </Badge>
-                        <Text className="font-semibold text-ink">
-                          {slide.categoryBadge || slide.titleFirst}
-                        </Text>
-                      </div>
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        <label className="mr-2 inline-flex items-center gap-1.5 text-caption font-medium">
-                          <input
-                            type="checkbox"
-                            checked={slide.active}
-                            onChange={(e) => {
-                              const next = [...form.heroSlides]
-                              next[idx] = { ...slide, active: e.target.checked }
-                              setForm({ ...form, heroSlides: next })
-                            }}
-                            className="size-4"
-                          />
-                          Bật hiển thị
-                        </label>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          disabled={idx === 0}
-                          onClick={() => moveSlide(idx, -1)}
-                        >
-                          Lên
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          disabled={idx === form.heroSlides.length - 1}
-                          onClick={() => moveSlide(idx, 1)}
-                        >
-                          Xuống
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          onClick={() => setPreviewSlide(slide)}
-                        >
-                          Xem trước
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="danger"
-                          onClick={() =>
-                            setForm({
-                              ...form,
-                              heroSlides: form.heroSlides.filter((_, i) => i !== idx),
-                            })
-                          }
-                        >
-                          Xóa
-                        </Button>
-                      </div>
-                    </div>
-
-                    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                      <Input
-                        id={`slide-first-${idx}`}
-                        label="Tiêu đề dòng 1 *"
-                        value={slide.titleFirst}
-                        onChange={(e) => {
-                          const next = [...form.heroSlides]
-                          next[idx] = { ...slide, titleFirst: e.target.value }
-                          setForm({ ...form, heroSlides: next })
-                        }}
-                      />
-                      <Input
-                        id={`slide-second-${idx}`}
-                        label="Tiêu đề dòng 2 (nhấn mạnh)"
-                        value={slide.titleSecond}
-                        onChange={(e) => {
-                          const next = [...form.heroSlides]
-                          next[idx] = { ...slide, titleSecond: e.target.value }
-                          setForm({ ...form, heroSlides: next })
-                        }}
-                      />
-                      <Input
-                        id={`slide-badge-${idx}`}
-                        label="Nhãn danh mục"
-                        value={slide.categoryBadge}
-                        onChange={(e) => {
-                          const next = [...form.heroSlides]
-                          next[idx] = { ...slide, categoryBadge: e.target.value }
-                          setForm({ ...form, heroSlides: next })
-                        }}
-                      />
-                      <Input
-                        id={`slide-eyebrow-${idx}`}
-                        label="Eyebrow phụ đề"
-                        value={slide.eyebrow}
-                        onChange={(e) => {
-                          const next = [...form.heroSlides]
-                          next[idx] = { ...slide, eyebrow: e.target.value }
-                          setForm({ ...form, heroSlides: next })
-                        }}
-                      />
-                    </div>
-
-                    <Textarea
-                      id={`slide-desc-${idx}`}
-                      label="Mô tả ngắn"
-                      rows={2}
-                      value={slide.description}
-                      onChange={(e) => {
-                        const next = [...form.heroSlides]
-                        next[idx] = { ...slide, description: e.target.value }
-                        setForm({ ...form, heroSlides: next })
-                      }}
-                    />
-
-                    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                      <Input
-                        id={`slide-cta-text-${idx}`}
-                        label="Nhãn CTA chính"
-                        value={slide.ctaText}
-                        onChange={(e) => {
-                          const next = [...form.heroSlides]
-                          next[idx] = { ...slide, ctaText: e.target.value }
-                          setForm({ ...form, heroSlides: next })
-                        }}
-                      />
-                      <Input
-                        id={`slide-cta-href-${idx}`}
-                        label="Đường dẫn CTA chính"
-                        value={slide.ctaHref}
-                        onChange={(e) => {
-                          const next = [...form.heroSlides]
-                          next[idx] = { ...slide, ctaHref: e.target.value }
-                          setForm({ ...form, heroSlides: next })
-                        }}
-                      />
-                      <Select
-                        id={`slide-rel-cat-${idx}`}
-                        label="Danh mục liên quan"
-                        value={slide.relatedCategory}
-                        onChange={(e) => {
-                          const cat = e.target.value
-                          const next = [...form.heroSlides]
-                          next[idx] = {
-                            ...slide,
-                            relatedCategory: cat,
-                            ...(cat && slide.ctaHref === '/vehicles'
-                              ? { ctaHref: `/vehicles?type=${cat}` }
-                              : {}),
-                          }
-                          setForm({ ...form, heroSlides: next })
-                        }}
-                      >
-                        <option value="">Tất cả phương tiện</option>
-                        <option value="CAR">Ô tô</option>
-                        <option value="MOTORBIKE">Xe máy</option>
-                        <option value="PICKUP">Bán tải</option>
-                      </Select>
-                      <Select
-                        id={`slide-rel-model-${idx}`}
-                        label="Hoặc dòng xe liên quan"
-                        value={slide.relatedModelId ?? ''}
-                        onChange={(e) => {
-                          const mId = e.target.value || null
-                          const matched = form.availableModels.find((m) => m.id === mId)
-                          const next = [...form.heroSlides]
-                          next[idx] = {
-                            ...slide,
-                            relatedModelId: mId,
-                            ...(matched ? { ctaHref: `/vehicles/${matched.slug}` } : {}),
-                          }
-                          setForm({ ...form, heroSlides: next })
-                        }}
-                      >
-                        <option value="">Không chọn cụ thể</option>
-                        {form.availableModels.map((m) => (
-                          <option key={m.id} value={m.id}>
-                            {m.name}
-                          </option>
-                        ))}
-                      </Select>
-                    </div>
-
-                    <div className="grid gap-4 sm:grid-cols-3">
-                      <Input
-                        id={`slide-dur-${idx}`}
-                        label="Thời gian hiển thị riêng (giây)"
-                        type="number"
-                        min={3}
-                        max={30}
-                        placeholder={`Mặc định (${form.heroAutoplaySeconds}s)`}
-                        value={slide.durationSeconds ?? ''}
-                        onChange={(e) => {
-                          const next = [...form.heroSlides]
-                          next[idx] = {
-                            ...slide,
-                            durationSeconds: e.target.value ? Number(e.target.value) : null,
-                          }
-                          setForm({ ...form, heroSlides: next })
-                        }}
-                      />
-                      <Input
-                        id={`slide-credit-${idx}`}
-                        label="Nguồn ảnh / Tác giả"
-                        value={slide.credit}
-                        onChange={(e) => {
-                          const next = [...form.heroSlides]
-                          next[idx] = { ...slide, credit: e.target.value }
-                          setForm({ ...form, heroSlides: next })
-                        }}
-                      />
-                      <Input
-                        id={`slide-source-url-${idx}`}
-                        label="URL nguồn tham chiếu"
-                        value={slide.sourceUrl}
-                        onChange={(e) => {
-                          const next = [...form.heroSlides]
-                          next[idx] = { ...slide, sourceUrl: e.target.value }
-                          setForm({ ...form, heroSlides: next })
-                        }}
-                      />
-                    </div>
-
-                    {/* Desktop & Mobile Image Uploads */}
-                    <div className="grid gap-4 sm:grid-cols-2">
-                      <div className="flex items-center justify-between gap-3 rounded-control border border-line bg-canvas p-3">
-                        <div className="flex items-center gap-3">
-                          {slide.desktopImage ? (
-                            <Image
-                              src={slide.desktopImage.url}
-                              alt={slide.desktopImage.alt}
-                              width={96}
-                              height={60}
-                              className="h-14 w-24 rounded-sm object-cover"
-                            />
-                          ) : (
-                            <div className="flex h-14 w-24 items-center justify-center rounded-sm bg-subtle text-micro text-muted">
-                              Chưa chọn
-                            </div>
-                          )}
-                          <div>
-                            <Text className="text-caption font-semibold">Ảnh Desktop</Text>
-                            <Text className="text-micro text-muted">Tỷ lệ ngang 16:9</Text>
-                          </div>
-                        </div>
-                        <label className="inline-flex min-h-control-sm cursor-pointer items-center gap-1.5 rounded-control border border-line bg-subtle px-3 py-1.5 text-caption font-semibold hover:border-brand">
-                          <Icon name="upload" className="size-3.5" />
-                          Tải ảnh Desktop
-                          <input
-                            type="file"
-                            accept="image/jpeg,image/png,image/webp,image/avif"
-                            className="sr-only"
-                            disabled={uploading}
-                            onChange={(e) => void uploadSlideImage(e, idx, 'desktop')}
-                          />
-                        </label>
-                      </div>
-
-                      <div className="flex items-center justify-between gap-3 rounded-control border border-line bg-canvas p-3">
-                        <div className="flex items-center gap-3">
-                          {slide.mobileImage ? (
-                            <Image
-                              src={slide.mobileImage.url}
-                              alt={slide.mobileImage.alt}
-                              width={64}
-                              height={60}
-                              className="h-14 w-16 rounded-sm object-cover"
-                            />
-                          ) : (
-                            <div className="flex h-14 w-16 items-center justify-center rounded-sm bg-subtle text-micro text-muted">
-                              Tự động
-                            </div>
-                          )}
-                          <div>
-                            <Text className="text-caption font-semibold">
-                              Ảnh Mobile (tùy chọn)
-                            </Text>
-                            <Text className="text-micro text-muted">
-                              Dùng ảnh Desktop nếu để trống
-                            </Text>
-                          </div>
-                        </div>
-                        <label className="inline-flex min-h-control-sm cursor-pointer items-center gap-1.5 rounded-control border border-line bg-subtle px-3 py-1.5 text-caption font-semibold hover:border-brand">
-                          <Icon name="upload" className="size-3.5" />
-                          Tải ảnh Mobile
-                          <input
-                            type="file"
-                            accept="image/jpeg,image/png,image/webp,image/avif"
-                            className="sr-only"
-                            disabled={uploading}
-                            onChange={(e) => void uploadSlideImage(e, idx, 'mobile')}
-                          />
-                        </label>
-                      </div>
-                    </div>
-                  </article>
-                ))}
-              </div>
-            )}
-          </section>
-        </div>
+        <HeroCarouselEditor
+          slides={form.heroSlides}
+          savedSlides={savedForm?.heroSlides ?? []}
+          autoplaySeconds={form.heroAutoplaySeconds}
+          availableModels={form.availableModels}
+          uploading={uploading}
+          slideSaveStates={slideSaveStates}
+          slideSaveErrors={slideSaveErrors}
+          onAutoplayChange={(seconds) => setForm({ ...form, heroAutoplaySeconds: seconds })}
+          onAddSlide={addSlide}
+          onMoveSlide={moveSlide}
+          onRemoveSlide={removeSlide}
+          onUpdateSlide={updateSlideAt}
+          onUploadSlideImage={uploadSlideImage}
+          onSaveSlide={saveSingleSlide}
+          onRevertSlide={revertSlide}
+        />
       )}
 
-      {/* Section 8: Business Hours & Holidays Configuration */}
       {tab === 'hours' && (
         <div className="space-y-6">
           <section className="space-y-4 rounded-card border border-line bg-canvas p-5">
@@ -972,7 +1044,7 @@ export function ContentPanel() {
               />
             </div>
 
-            <div className="border-t border-line pt-4 space-y-3">
+            <div className="space-y-3 border-t border-line pt-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
                   <Text className="text-small font-semibold text-ink">
@@ -1322,46 +1394,15 @@ export function ContentPanel() {
         </div>
       )}
 
-      {/* Slide Live Preview Modal */}
-      <Dialog
-        open={Boolean(previewSlide)}
-        onClose={() => setPreviewSlide(null)}
-        title="Xem trước hiển thị Slide Hero"
-        wide
-      >
-        {previewSlide && (
-          <div className="relative overflow-hidden rounded-card bg-night p-8 text-inverse">
-            {previewSlide.desktopImage && (
-              <Image
-                src={previewSlide.desktopImage.url}
-                alt={previewSlide.desktopImage.alt}
-                fill
-                sizes="80vw"
-                className="object-cover opacity-45"
-              />
-            )}
-            <div className="relative z-10 max-w-xl space-y-3">
-              {previewSlide.categoryBadge && (
-                <Badge tone="brand">{previewSlide.categoryBadge}</Badge>
-              )}
-              <Text className="text-micro uppercase tracking-widest text-inverse/80">
-                {previewSlide.eyebrow}
-              </Text>
-              <Heading as="h3" size="title" className="text-inverse">
-                {previewSlide.titleFirst}{' '}
-                <span className="text-brand-bright">{previewSlide.titleSecond}</span>
-              </Heading>
-              <Text className="text-small text-inverse/90">{previewSlide.description}</Text>
-              <div className="pt-2">
-                <span className="inline-flex items-center gap-2 rounded-control bg-brand px-4 py-2 text-small font-semibold text-inverse">
-                  {previewSlide.ctaText}
-                  <Icon name="arrow-up-right" className="size-4" />
-                </span>
-              </div>
-            </div>
-          </div>
-        )}
-      </Dialog>
+      <ConfirmDialog
+        open={pendingAction !== null}
+        title="Xác nhận rời khỏi nội dung đang chỉnh sửa"
+        description={UNSAVED_WARNING_TEXT}
+        confirmLabel="Tiếp tục rời khỏi"
+        cancelLabel="Ở lại chỉnh sửa"
+        onClose={() => setPendingAction(null)}
+        onConfirm={confirmPendingLeave}
+      />
     </div>
   )
 }

@@ -2,6 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   addDays,
+  applyPromotionToQuote,
   BOOKING_CONFIRMED_LOCK_MESSAGE,
   businessToday,
   calculateAddonFee,
@@ -15,23 +16,36 @@ import {
   countHolidayDays,
   countWeekendDays,
   dateNumber,
+  evaluatePromotion,
   formatDate,
   formatMoney,
+  formatVnd,
   getBookingActionMatrix,
   getDynamicFeaturePresets,
   getDynamicSpecTemplates,
   getPhotoTypeOptions,
+  getPromotionRuntimeStatus,
   isDepositExpired,
   isSpecApplicable,
   maskPhone,
   overlaps,
   parseAddonKeys,
   parseWorkingDays,
+  PROMO_REMOVED_MESSAGE,
   rentalDays,
   subCategoriesByCategory,
+  validatePromotionInput,
   validateRentalDates,
   validateTimeString,
 } from '../src/lib/rental-rules.ts'
+import {
+  ADMIN_COOKIE_NAME,
+  ADMIN_SESSION_MAX_AGE,
+  CUSTOMER_COOKIE_NAME,
+  CUSTOMER_SESSION_MAX_AGE,
+  hasActiveSessionRecord,
+  resolveRequestCookieConfig,
+} from '../src/lib/session-cookie.ts'
 
 const today = '2026-11-16'
 test('timezone: Vietnam midnight is not the UTC date', () =>
@@ -624,6 +638,466 @@ test('VH-RULES: subCategoriesByCategory & getDynamicFeaturePresets isolate CAR, 
   const bikeFeatures = getDynamicFeaturePresets('MOTORBIKE')
   assert.equal(
     bikeFeatures.comfortTech.some((f) => /Cửa sổ trời/i.test(f.name)),
+    false,
+  )
+})
+
+// === QA REGRESSION UNIT TESTS: Promotions, Pricing, Rounding & Deposit Separation ===
+const baseSamplePromo = {
+  code: 'NORIQA10',
+  name: 'Ưu đãi QA 10%',
+  discountType: 'PERCENT',
+  discountValue: 10,
+  maxDiscount: 300_000,
+  minDays: 3,
+  appliesTo: 'RENT',
+  validFrom: '2026-11-18',
+  validTo: '2026-11-30',
+  usageLimit: 5,
+  usedCount: 2,
+  active: true,
+}
+
+test('PROMO-01: formatVnd formats zero as 0 ₫ while formatMoney keeps Chưa cập nhật for unset catalogue prices', () => {
+  assert.match(formatVnd(0), /^0\s*₫$/)
+  assert.match(formatVnd(30_000), /30\.000\s*₫/)
+  assert.equal(formatVnd(null), 'Chưa cập nhật')
+  assert.equal(formatVnd(undefined), 'Chưa cập nhật')
+  assert.equal(formatVnd(12.5), 'Chưa cập nhật')
+  assert.equal(formatMoney(0), 'Chưa cập nhật')
+})
+
+test('PROMO-02: evaluatePromotion returns distinct message when promo code does not exist', () => {
+  const res = evaluatePromotion(null, {
+    code: 'KHONGTONTAI',
+    serviceType: 'RENT',
+    totalDays: 3,
+    subtotalBeforePromo: 2_000_000,
+    today: '2026-11-18',
+  })
+  assert.equal(res.valid, false)
+  assert.equal(res.status, 'NOT_FOUND')
+  assert.equal(res.discountAmount, 0)
+  assert.match(res.message, /không tồn tại/i)
+})
+
+test('PROMO-03: evaluatePromotion returns distinct message when promotion is disabled (inactive)', () => {
+  const res = evaluatePromotion(
+    { ...baseSamplePromo, active: false },
+    {
+      code: 'NORIQA10',
+      serviceType: 'RENT',
+      totalDays: 4,
+      subtotalBeforePromo: 3_000_000,
+      today: '2026-11-18',
+    },
+  )
+  assert.equal(res.valid, false)
+  assert.equal(res.status, 'INACTIVE')
+  assert.match(res.message, /tạm ngưng|vô hiệu/i)
+})
+
+test('PROMO-04: evaluatePromotion rejects wrong service scope (SALE promo on RENT booking)', () => {
+  const res = evaluatePromotion(
+    { ...baseSamplePromo, appliesTo: 'SALE' },
+    {
+      code: 'NORIQA10',
+      serviceType: 'RENT',
+      totalDays: 4,
+      subtotalBeforePromo: 3_000_000,
+      today: '2026-11-18',
+    },
+  )
+  assert.equal(res.valid, false)
+  assert.equal(res.status, 'INVALID_SCOPE')
+  assert.match(res.message, /không áp dụng cho dịch vụ này/i)
+})
+
+test('PROMO-05: evaluatePromotion checks start date and end date in Asia/Ho_Chi_Minh', () => {
+  const notStarted = evaluatePromotion(
+    { ...baseSamplePromo, validFrom: '2026-11-19', validTo: '2026-11-30' },
+    {
+      code: 'NORIQA10',
+      serviceType: 'RENT',
+      totalDays: 10,
+      subtotalBeforePromo: 5_000_000,
+      today: businessToday(new Date('2026-11-18T06:00:00Z')), // 13:00 on 2026-11-18 in VN
+    },
+  )
+  assert.equal(notStarted.valid, false)
+  assert.equal(notStarted.status, 'NOT_STARTED')
+  assert.match(notStarted.message, /chưa bắt đầu/i)
+  assert.match(notStarted.message, /19\/11\/2026/)
+
+  const startedAtVnMidnight = evaluatePromotion(
+    { ...baseSamplePromo, validFrom: '2026-11-19', validTo: '2026-11-30' },
+    {
+      code: 'NORIQA10',
+      serviceType: 'RENT',
+      totalDays: 10,
+      subtotalBeforePromo: 5_000_000,
+      today: businessToday(new Date('2026-11-18T17:00:01Z')), // 00:00:01 on 2026-11-19 in VN
+    },
+  )
+  assert.equal(startedAtVnMidnight.valid, true)
+
+  const expired = evaluatePromotion(
+    { ...baseSamplePromo, validFrom: '2026-11-01', validTo: '2026-11-17' },
+    {
+      code: 'NORIQA10',
+      serviceType: 'RENT',
+      totalDays: 5,
+      subtotalBeforePromo: 4_000_000,
+      today: '2026-11-18',
+    },
+  )
+  assert.equal(expired.valid, false)
+  assert.equal(expired.status, 'EXPIRED')
+  assert.match(expired.message, /đã kết thúc/i)
+})
+
+test('PROMO-06: evaluatePromotion enforces usageLimit unless alreadyHeldByCurrentBooking is true', () => {
+  const exhaustedPromo = { ...baseSamplePromo, usageLimit: 1, usedCount: 1 }
+  const newCustomer = evaluatePromotion(exhaustedPromo, {
+    code: 'NORIQA10',
+    serviceType: 'RENT',
+    totalDays: 5,
+    subtotalBeforePromo: 2_500_000,
+    today: '2026-11-18',
+    alreadyHeldByCurrentBooking: false,
+  })
+  assert.equal(newCustomer.valid, false)
+  assert.equal(newCustomer.status, 'USAGE_LIMIT_REACHED')
+  assert.match(newCustomer.message, /hết lượt sử dụng/i)
+
+  const sameBookingEdit = evaluatePromotion(exhaustedPromo, {
+    code: 'NORIQA10',
+    serviceType: 'RENT',
+    totalDays: 5,
+    subtotalBeforePromo: 2_500_000,
+    today: '2026-11-18',
+    alreadyHeldByCurrentBooking: true,
+  })
+  assert.equal(sameBookingEdit.valid, true)
+  assert.equal(sameBookingEdit.status, 'APPLIED')
+})
+
+test('PROMO-07: evaluatePromotion enforces minDays with explicit required day count', () => {
+  const shortTrip = evaluatePromotion(
+    { ...baseSamplePromo, minDays: 10 },
+    {
+      code: 'NORIQA10',
+      serviceType: 'RENT',
+      totalDays: 4,
+      subtotalBeforePromo: 3_200_000,
+      today: '2026-11-18',
+    },
+  )
+  assert.equal(shortTrip.valid, false)
+  assert.equal(shortTrip.status, 'MIN_DAYS_NOT_MET')
+  assert.match(shortTrip.message, /tối thiểu 10 ngày/i)
+})
+
+test('PROMO-08: evaluatePromotion calculates PERCENT, maxDiscount cap, FIXED cap and integer VND rounding', () => {
+  // 10% of 5,000,000 = 500,000 -> capped at maxDiscount 300,000
+  const cappedPct = evaluatePromotion(baseSamplePromo, {
+    code: 'NORIQA10',
+    serviceType: 'RENT',
+    totalDays: 5,
+    subtotalBeforePromo: 5_000_000,
+    today: '2026-11-18',
+  })
+  assert.equal(cappedPct.valid, true)
+  assert.equal(cappedPct.discountAmount, 300_000)
+  assert.equal(cappedPct.finalTotal, 4_700_000)
+  assert.match(cappedPct.message, /áp dụng thành công/i)
+
+  // Rounding test: 15% of 1,333,335 = 200,000.25 -> rounds to 200,000 integer
+  const roundedPct = evaluatePromotion(
+    { ...baseSamplePromo, discountValue: 15, maxDiscount: null },
+    {
+      code: 'NORIQA10',
+      serviceType: 'RENT',
+      totalDays: 3,
+      subtotalBeforePromo: 1_333_335,
+      today: '2026-11-18',
+    },
+  )
+  assert.equal(Number.isSafeInteger(roundedPct.discountAmount), true)
+  assert.equal(roundedPct.discountAmount, 200_000)
+  assert.equal(roundedPct.finalTotal, 1_133_335)
+
+  // FIXED promo exceeding subtotal caps at subtotal (finalTotal = 0, never negative)
+  const hugeFixed = evaluatePromotion(
+    { ...baseSamplePromo, discountType: 'FIXED', discountValue: 5_000_000, maxDiscount: null },
+    {
+      code: 'NORIQA10',
+      serviceType: 'RENT',
+      totalDays: 3,
+      subtotalBeforePromo: 1_200_000,
+      today: '2026-11-18',
+    },
+  )
+  assert.equal(hugeFixed.valid, true)
+  assert.equal(hugeFixed.discountAmount, 1_200_000)
+  assert.equal(hugeFixed.finalTotal, 0)
+})
+
+test('PROMO-09: applyPromotionToQuote combines long-term discount + promo and NEVER subtracts depositAmount from remainingAmount', () => {
+  // 7-day rental: 1,000,000/day = 7,000,000 base - 5% weekly (350,000) = 6,650,000; deposit = 20,000,000
+  const baseQuote = calculateRentalQuote({
+    startDate: '2026-11-16',
+    endDate: '2026-11-23',
+    dailyPrice: 1_000_000,
+    vehicleDeposit: 20_000_000,
+  })
+  assert.equal(baseQuote.estimatedTotal, 6_650_000)
+  assert.equal(baseQuote.depositAmount, 20_000_000)
+
+  const promoEval = evaluatePromotion(
+    { ...baseSamplePromo, discountType: 'PERCENT', discountValue: 10, maxDiscount: 1_000_000 },
+    {
+      code: 'NORIQA10',
+      serviceType: 'RENT',
+      totalDays: baseQuote.totalDays,
+      subtotalBeforePromo: baseQuote.estimatedTotal,
+      today: '2026-11-18',
+    },
+  )
+  assert.equal(promoEval.discountAmount, 665_000) // 10% of 6,650,000
+
+  const merged = applyPromotionToQuote(baseQuote, promoEval)
+  assert.equal(merged.estimatedTotal, 5_985_000)
+  assert.equal(merged.depositAmount, 20_000_000)
+  assert.equal(merged.initialPaymentDue, 20_000_000)
+  // CRITICAL: remainingAmount MUST equal final rental fee (5,985,000), NOT Math.max(0, 5,985,000 - 20,000,000) = 0!
+  assert.equal(merged.remainingAmount, 5_985_000)
+  assert.equal(PROMO_REMOVED_MESSAGE, 'Đã bỏ mã khuyến mãi.')
+})
+
+test('PROMO-10: getPromotionRuntimeStatus distinguishes active switch from 5 runtime states and computes remainingUses', () => {
+  assert.deepEqual(getPromotionRuntimeStatus({ ...baseSamplePromo, active: false }, '2026-11-20'), {
+    status: 'DISABLED',
+    label: 'Vô hiệu hóa',
+    tone: 'muted',
+    remainingUses: 3,
+  })
+  assert.deepEqual(
+    getPromotionRuntimeStatus(
+      { ...baseSamplePromo, validFrom: '2026-11-19', validTo: '2026-11-30' },
+      '2026-11-18',
+    ),
+    {
+      status: 'UPCOMING',
+      label: 'Chưa bắt đầu',
+      tone: 'warning',
+      remainingUses: 3,
+    },
+  )
+  assert.deepEqual(
+    getPromotionRuntimeStatus(
+      { ...baseSamplePromo, validFrom: '2026-11-01', validTo: '2026-11-17' },
+      '2026-11-18',
+    ),
+    {
+      status: 'EXPIRED',
+      label: 'Hết hạn',
+      tone: 'danger',
+      remainingUses: 3,
+    },
+  )
+  assert.deepEqual(
+    getPromotionRuntimeStatus({ ...baseSamplePromo, usageLimit: 5, usedCount: 5 }, '2026-11-20'),
+    {
+      status: 'EXHAUSTED',
+      label: 'Hết lượt',
+      tone: 'warning',
+      remainingUses: 0,
+    },
+  )
+  assert.deepEqual(
+    getPromotionRuntimeStatus({ ...baseSamplePromo, usageLimit: null }, '2026-11-20'),
+    {
+      status: 'ACTIVE_LIVE',
+      label: 'Đang diễn ra',
+      tone: 'brand',
+      remainingUses: null,
+    },
+  )
+})
+
+test('PROMO-11: validatePromotionInput blocks >100% discount, negative values, reversed dates, and usageLimit < usedCount', () => {
+  assert.ok(
+    validatePromotionInput({
+      code: 'OVER100',
+      name: 'Quá 100%',
+      discountType: 'PERCENT',
+      discountValue: 120,
+    }).error,
+  )
+  assert.ok(
+    validatePromotionInput({
+      code: 'NEGVAL',
+      name: 'Âm tiền',
+      discountType: 'FIXED',
+      discountValue: -10_000,
+    }).error,
+  )
+  assert.ok(
+    validatePromotionInput({
+      code: 'BADDATE',
+      name: 'Sai ngày',
+      discountType: 'FIXED',
+      discountValue: 50_000,
+      validFrom: '2026-11-25',
+      validTo: '2026-11-20',
+    }).error,
+  )
+  assert.ok(
+    validatePromotionInput(
+      {
+        code: 'LIMITLOW',
+        name: 'Giảm lượt thấp hơn đã dùng',
+        discountType: 'PERCENT',
+        discountValue: 10,
+        usageLimit: 2,
+      },
+      5,
+    ).error,
+  )
+  assert.ok(
+    validatePromotionInput({
+      code: 'BAD CODE!',
+      name: 'Ký tự lạ',
+      discountType: 'PERCENT',
+      discountValue: 10,
+    }).error,
+  )
+  const valid = validatePromotionInput({
+    code: '  nori2026  ',
+    name: ' Khuyến mãi chuẩn ',
+    discountType: 'PERCENT',
+    discountValue: 100,
+    maxDiscount: 500_000,
+    minDays: 2,
+    appliesTo: 'RENT',
+    validFrom: '2026-11-18',
+    validTo: '2026-12-31',
+    usageLimit: 20,
+    active: true,
+  })
+  assert.equal(valid.error, undefined)
+  assert.equal(valid.normalized?.code, 'NORI2026')
+  assert.equal(valid.normalized?.discountValue, 100)
+})
+
+test('session-cookie: cookie names and TTL constants separate CUSTOMER vs ADMIN', () => {
+  assert.equal(CUSTOMER_COOKIE_NAME, 'app-session')
+  assert.equal(ADMIN_COOKIE_NAME, 'payload-token')
+  assert.equal(CUSTOMER_SESSION_MAX_AGE, 604_800)
+  assert.equal(ADMIN_SESSION_MAX_AGE, 86_400)
+  assert.ok(CUSTOMER_SESSION_MAX_AGE > 7200)
+})
+
+test('session-cookie: HTTP localhost, 127.0.0.1, and LAN IP never set Secure even if site env is HTTPS', () => {
+  for (const requestUrl of [
+    'http://localhost:3000/nori-api/auth/login',
+    'http://127.0.0.1:3000/nori-api/auth/login',
+    'http://192.168.1.55:3000/nori-api/auth/login',
+  ]) {
+    const opts = resolveRequestCookieConfig({
+      requestUrl,
+      forwardedProto: null,
+      originHeader: new URL(requestUrl).origin,
+      figmaPublicUrl: null,
+      maxAge: CUSTOMER_SESSION_MAX_AGE,
+    })
+    assert.deepEqual(opts, {
+      httpOnly: true,
+      secure: false,
+      sameSite: 'lax',
+      path: '/',
+      maxAge: CUSTOMER_SESSION_MAX_AGE,
+    })
+  }
+})
+
+test('session-cookie: HTTPS direct and X-Forwarded-Proto https behind reverse proxy set Secure + SameSite=lax', () => {
+  const directHttps = resolveRequestCookieConfig({
+    requestUrl: 'https://nori.vn/nori-api/auth/login',
+    forwardedProto: null,
+    figmaPublicUrl: null,
+    maxAge: CUSTOMER_SESSION_MAX_AGE,
+  })
+  assert.deepEqual(directHttps, {
+    httpOnly: true,
+    secure: true,
+    sameSite: 'lax',
+    path: '/',
+    maxAge: CUSTOMER_SESSION_MAX_AGE,
+  })
+
+  const proxyHttps = resolveRequestCookieConfig({
+    requestUrl: 'http://0.0.0.0:3000/nori-api/auth/login',
+    forwardedProto: 'https, http',
+    originHeader: 'https://nori.vn',
+    figmaPublicUrl: null,
+    maxAge: CUSTOMER_SESSION_MAX_AGE,
+  })
+  assert.deepEqual(proxyHttps, {
+    httpOnly: true,
+    secure: true,
+    sameSite: 'lax',
+    path: '/',
+    maxAge: CUSTOMER_SESSION_MAX_AGE,
+  })
+})
+
+test('session-cookie: cross-origin Figma Make HTTPS preview uses SameSite=none + Secure, while plain HTTP stays Lax', () => {
+  const httpsPreview = resolveRequestCookieConfig({
+    requestUrl: 'http://0.0.0.0:3000/nori-api/auth/login',
+    forwardedProto: 'https',
+    figmaPublicUrl: 'https://preview-sandbox.figma.site',
+    maxAge: CUSTOMER_SESSION_MAX_AGE,
+  })
+  assert.equal(httpsPreview.secure, true)
+  assert.equal(httpsPreview.sameSite, 'none')
+
+  const httpWithPreviewEnv = resolveRequestCookieConfig({
+    requestUrl: 'http://localhost:3000/nori-api/auth/login',
+    forwardedProto: 'http',
+    figmaPublicUrl: 'https://preview-sandbox.figma.site',
+    maxAge: CUSTOMER_SESSION_MAX_AGE,
+  })
+  assert.equal(httpWithPreviewEnv.secure, false)
+  assert.equal(httpWithPreviewEnv.sameSite, 'lax')
+})
+
+test('session-cookie: hasActiveSessionRecord accepts live sid, rejects revoked or expired sessions', () => {
+  const future = new Date(Date.now() + 60 * 60 * 1000).toISOString()
+  const past = new Date(Date.now() - 60 * 1000).toISOString()
+
+  assert.equal(hasActiveSessionRecord(null), false)
+  assert.equal(hasActiveSessionRecord({ id: 'u1' }), true)
+  assert.equal(
+    hasActiveSessionRecord({
+      _sid: 'sid-1',
+      sessions: [{ id: 'sid-1', expiresAt: future }],
+    }),
+    true,
+  )
+  assert.equal(
+    hasActiveSessionRecord({
+      _sid: 'sid-revoked',
+      sessions: [{ id: 'sid-1', expiresAt: future }],
+    }),
+    false,
+  )
+  assert.equal(
+    hasActiveSessionRecord({
+      _sid: 'sid-expired',
+      sessions: [{ id: 'sid-expired', expiresAt: past }],
+    }),
     false,
   )
 })

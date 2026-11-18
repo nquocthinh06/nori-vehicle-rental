@@ -1,6 +1,6 @@
 import type { CollectionConfig } from 'payload'
 import { APIError } from 'payload'
-import { adminField, ownAccount } from '@/access/nori'
+import { adminField, adminHasPermission } from '@/access/nori'
 import { auditCollection } from '@/hooks/audit-nori'
 
 const userAudit = auditCollection({
@@ -15,7 +15,7 @@ const userAudit = auditCollection({
 export const Users: CollectionConfig = {
   slug: 'users',
   labels: { singular: 'Khách hàng', plural: 'Khách hàng' },
-  auth: { tokenExpiration: 7200, maxLoginAttempts: 8, lockTime: 600_000 },
+  auth: { tokenExpiration: 604_800, maxLoginAttempts: 8, lockTime: 600_000 },
   admin: {
     useAsTitle: 'fullName',
     group: 'NORI · Khách hàng',
@@ -24,8 +24,20 @@ export const Users: CollectionConfig = {
   access: {
     admin: () => false,
     create: () => true,
-    read: ownAccount,
-    update: ownAccount,
+    read: ({ req }) => {
+      if (adminHasPermission(req.user, 'customers', 'read')) return true
+      if (req.user?.collection === 'users' && req.user.status === 'ACTIVE') {
+        return { id: { equals: req.user.id } }
+      }
+      return false
+    },
+    update: ({ req }) => {
+      if (adminHasPermission(req.user, 'customers', 'update')) return true
+      if (req.user?.collection === 'users' && req.user.status === 'ACTIVE') {
+        return { id: { equals: req.user.id } }
+      }
+      return false
+    },
     delete: () => false,
   },
   hooks: {

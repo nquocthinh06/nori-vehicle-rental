@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675" viewBox="0 0 1200 675" fill="none">
+  <defs>
+    <linearGradient id="nori-bg" x1="0" y1="0" x2="1200" y2="675" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#142b28" />
+      <stop offset="55%" stop-color="#087568" />
+      <stop offset="100%" stop-color="#056355" />
+    </linearGradient>
+    <radialGradient id="nori-glow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(960 150) rotate(135) scale(520 340)">
+      <stop offset="0%" stop-color="#b6e5bf" stop-opacity="0.28" />
+      <stop offset="100%" stop-color="#b6e5bf" stop-opacity="0" />
+    </radialGradient>
+  </defs>
+  <rect width="1200" height="675" fill="url(#nori-bg)" />
+  <rect width="1200" height="675" fill="url(#nori-glow)" />
+  <path d="M0 520 Q360 440 720 510 T1200 470 L1200 675 L0 675 Z" fill="#ffffff" fill-opacity="0.06" />
+  <path d="M0 575 Q420 505 840 565 T1200 540 L1200 675 L0 675 Z" fill="#ffffff" fill-opacity="0.05" />
+  <g transform="translate(520 232)">
+    <rect width="160" height="160" rx="36" fill="#eaf4f0" fill-opacity="0.96" />
+    <path d="m30 118 20-75h20l25 50 12-50h20l-20 75H87L62 68 50 118z" fill="#192a2c" />
+    <circle cx="128" cy="120" r="12" fill="#087568" />
+  </g>
+  <text x="600" y="452" text-anchor="middle" fill="#eaf4f0" font-family="Arial, sans-serif" font-size="22" font-weight="600" letter-spacing="6">
+    YOUR WAY. EVERY DAY.
+  </text>
+</svg>

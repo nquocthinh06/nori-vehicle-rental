@@ -10,6 +10,7 @@ import {
   consultationStatusLabels,
   formatDate,
   formatMoney,
+  formatVnd,
   type BookingStatus,
   type ConsultationStatus,
 } from '@/lib/rental-rules'
@@ -178,6 +179,9 @@ export function BookingsPanel() {
         body: JSON.stringify({
           id: transition.booking.id,
           status: transition.to,
+          ...(typeof transition.booking.revision === 'number'
+            ? { expectedRevision: transition.booking.revision }
+            : {}),
           ...(handoverNote.trim() ? { handoverNote: handoverNote.trim() } : {}),
           ...(extraFee.trim() ? { extraFee: Number(extraFee.trim()) } : {}),
           ...(extraFeeNote.trim() ? { extraFeeNote: extraFeeNote.trim() } : {}),
@@ -351,7 +355,7 @@ export function BookingsPanel() {
                   </div>
                   <div className="text-right">
                     <Text className="text-subtitle font-bold text-ink">
-                      {formatMoney(b.totalPrice)}
+                      {formatVnd(b.totalPrice)}
                     </Text>
                     <Text className="text-caption text-muted">
                       Cọc: {formatMoney(b.depositSnapshot)}
@@ -464,22 +468,22 @@ export function BookingsPanel() {
             <div className="rounded-control border border-line p-4">
               <Text className="mb-2 font-semibold text-ink">Chi tiết chi phí & Đặt cọc</Text>
               <div className="grid gap-2 sm:grid-cols-3">
-                <p>Tiền thuê cơ bản: {formatMoney(detail.baseRentPrice)}</p>
-                <p>Phụ phí cuối tuần/lễ: {formatMoney(detail.weekendSurchargeTotal)}</p>
-                <p>Phí giao nhận: {formatMoney(detail.deliveryFeeSnapshot)}</p>
-                <p>Dịch vụ bổ sung: {formatMoney(detail.addonFeeTotal)}</p>
-                <p>Chiết khấu dài ngày: {formatMoney(detail.discountAmount)}</p>
+                <p>Tiền thuê cơ bản: {formatVnd(detail.baseRentPrice)}</p>
+                <p>Phụ phí cuối tuần/lễ: {formatVnd(detail.weekendSurchargeTotal)}</p>
+                <p>Phí giao nhận: {formatVnd(detail.deliveryFeeSnapshot)}</p>
+                <p>Dịch vụ bổ sung: {formatVnd(detail.addonFeeTotal)}</p>
+                <p>Chiết khấu dài ngày: {formatVnd(detail.discountAmount)}</p>
                 {(detail.promoDiscountAmount ?? 0) > 0 && (
-                  <p>
-                    Mã KM ({detail.promoCode}): -{formatMoney(detail.promoDiscountAmount)}
+                  <p className="text-brand">
+                    Mã KM ({detail.promoCode}): -{formatVnd(detail.promoDiscountAmount)}
                   </p>
                 )}
-                <p>Phụ phí phát sinh: {formatMoney(detail.extraFee)}</p>
+                <p>Phụ phí phát sinh: {formatVnd(detail.extraFee ?? 0)}</p>
                 <p className="font-semibold text-ink">
-                  Tổng dự kiến: {formatMoney(detail.totalPrice)}
+                  Tổng tiền thuê dự kiến: {formatVnd(detail.totalPrice)}
                 </p>
-                <p>Tiền đặt cọc đảm bảo: {formatMoney(detail.depositSnapshot)}</p>
-                <p>Còn lại dự kiến: {formatMoney(detail.remainingAmount)}</p>
+                <p>Tiền đặt cọc đảm bảo (tách riêng): {formatMoney(detail.depositSnapshot)}</p>
+                <p>Tiền thuê còn lại dự kiến: {formatVnd(detail.remainingAmount)}</p>
               </div>
               {detail.extraFeeNote && (
                 <Text className="mt-2 text-caption text-muted">

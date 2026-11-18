@@ -306,6 +306,14 @@ export function SiteHeader() {
           >
             <Container className="flex flex-wrap items-center justify-center gap-10 text-small font-semibold">
               <NoriLink
+                href="/posts"
+                onClick={() => setOpen(null)}
+                className="flex items-center gap-2 text-ink hover:text-brand transition-colors"
+              >
+                <Icon name="sparkles" className="size-4 text-brand" />
+                Tin tức &amp; Ưu đãi
+              </NoriLink>
+              <NoriLink
                 href="/about"
                 onClick={() => setOpen(null)}
                 className="flex items-center gap-2 text-ink hover:text-brand transition-colors"
@@ -399,6 +407,15 @@ export function SiteHeader() {
               >
                 <Icon name="calendar" className="size-5 text-muted" />
                 Tra cứu đơn thuê
+              </NoriLink>
+
+              <NoriLink
+                href="/posts"
+                onClick={() => setMobile(false)}
+                className="flex min-h-control items-center gap-3.5 rounded-control px-3.5 py-2.5 text-body font-medium hover:bg-subtle"
+              >
+                <Icon name="sparkles" className="size-5 text-muted" />
+                Tin tức &amp; Ưu đãi
               </NoriLink>
 
               <NoriLink

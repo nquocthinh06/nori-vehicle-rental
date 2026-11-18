@@ -1,13 +1,15 @@
 'use client'
 
-import { useEffect, useState, type FormEvent } from 'react'
-import { useSearchParams } from 'next/navigation'
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import type { BookingView, FleetView, Quote } from '@/lib/domain-types'
-import { api } from '@/lib/client-api'
+import { api, RequestError } from '@/lib/client-api'
 import {
+  PROMO_REMOVED_MESSAGE,
   RENTAL_ADDONS,
   formatDate,
   formatMoney,
+  formatVnd,
   parseAddonKeys,
   validateRentalDates,
   type AddonDefinition,
@@ -32,6 +34,11 @@ import { Icon } from './ui/icon'
 
 const timeSlots = ['07:00', '08:00', '09:00', '10:00', '12:00', '14:00', '16:00', '18:00', '20:00']
 
+type PromoFeedback = {
+  tone: 'success' | 'error' | 'info'
+  message: string
+}
+
 export function CheckoutPanel({ address }: { address: string | null }) {
   const params = useSearchParams()
   const id = params.get('vehicle')
@@ -42,16 +49,20 @@ export function CheckoutPanel({ address }: { address: string | null }) {
   const initialDelivery = ['1', 'true'].includes(params.get('delivery') ?? '')
   const initialAddons = parseAddonKeys(params.get('addons'))
 
-  const { user, loading: authLoading } = useAuth()
+  const router = useRouter()
+  const { user, isCustomer, isAdmin, loading: authLoading, refresh, logout } = useAuth()
   const [vehicle, setVehicle] = useState<FleetView | null>(null)
   const [quote, setQuote] = useState<Quote | null>(null)
+  const [loadedQuoteKey, setLoadedQuoteKey] = useState('')
   const [loading, setLoading] = useState(true)
   const [quoteBusy, setQuoteBusy] = useState(false)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const [switchingRole, setSwitchingRole] = useState(false)
   const [agreed, setAgreed] = useState(false)
   const [created, setCreated] = useState<BookingView | null>(null)
   const [retry, setRetry] = useState(0)
+  const [draftRestoredTick, setDraftRestoredTick] = useState(0)
 
   const [pickupTime, setPickupTime] = useState(
     timeSlots.includes(initialPickupTime) ? initialPickupTime : '08:00',
@@ -65,18 +76,58 @@ export function CheckoutPanel({ address }: { address: string | null }) {
   const [customerPhone, setCustomerPhone] = useState('')
   const [driverLicenseNumber, setDriverLicenseNumber] = useState('')
   const [note, setNote] = useState('')
-  const [promoCode, setPromoCode] = useState('')
-  const [appliedPromo, setAppliedPromo] = useState('')
 
-  const draftKey =
-    id && startDate && endDate
-      ? `nori_checkout_draft:${user?.id ?? 'anon'}:${id}:${startDate}:${endDate}`
+  // Explicit 3-state promo model: draft input vs validating vs Backend-confirmed code
+  const [promoDraft, setPromoDraft] = useState('')
+  const [checkingPromoCode, setCheckingPromoCode] = useState('')
+  const [confirmedPromoCode, setConfirmedPromoCode] = useState('')
+  const [promoFeedback, setPromoFeedback] = useState<PromoFeedback | null>(null)
+
+  const quoteSeqRef = useRef(0)
+  const quoteAbortRef = useRef<AbortController | null>(null)
+  const submittingRef = useRef(false)
+  const hydratedDraftKeyRef = useRef('')
+  const hadCustomerSessionRef = useRef(false)
+
+  const anonDraftKey =
+    id && startDate && endDate ? `nori_checkout_draft:anon:${id}:${startDate}:${endDate}` : ''
+  const customerDraftKey =
+    id && startDate && endDate && isCustomer && user
+      ? `nori_checkout_draft:user:${user.id}:${id}:${startDate}:${endDate}`
+      : ''
+  const activeDraftKey = isCustomer
+    ? customerDraftKey
+    : !user && !hadCustomerSessionRef.current
+      ? anonDraftKey
       : ''
 
+  const addonKeyString = [...addonKeys].sort().join(',')
+  const activeQuoteTargetKey = id
+    ? `${id}|${startDate}|${endDate}|${deliveryRequested ? '1' : '0'}|${addonKeyString}|${confirmedPromoCode}`
+    : ''
+
+  // Always verify live backend session when entering Checkout
   useEffect(() => {
-    if (!draftKey || typeof window === 'undefined') return
+    void refresh()
+  }, [refresh])
+
+  useEffect(() => {
+    if (authLoading || !activeDraftKey || typeof window === 'undefined') return
+    if (isCustomer) {
+      hadCustomerSessionRef.current = true
+    }
     try {
-      const raw = window.sessionStorage.getItem(draftKey)
+      let raw = window.sessionStorage.getItem(activeDraftKey)
+      // Migrate pre-login anonymous journey choices once to the authenticated customer's key
+      if (!raw && isCustomer && anonDraftKey) {
+        const anonRaw = window.sessionStorage.getItem(anonDraftKey)
+        if (anonRaw) {
+          raw = anonRaw
+          window.sessionStorage.setItem(activeDraftKey, anonRaw)
+          window.sessionStorage.removeItem(anonDraftKey)
+        }
+      }
+      hydratedDraftKeyRef.current = activeDraftKey
       if (!raw) return
       const draft = JSON.parse(raw) as {
         pickupTime?: string
@@ -84,7 +135,10 @@ export function CheckoutPanel({ address }: { address: string | null }) {
         pickupLocation?: string
         deliveryRequested?: boolean
         addonKeys?: string[]
+        customerPhone?: string
+        driverLicenseNumber?: string
         note?: string
+        confirmedPromoCode?: string
       }
       if (draft.pickupTime && timeSlots.includes(draft.pickupTime)) setPickupTime(draft.pickupTime)
       if (draft.returnTime && timeSlots.includes(draft.returnTime)) setReturnTime(draft.returnTime)
@@ -93,43 +147,82 @@ export function CheckoutPanel({ address }: { address: string | null }) {
       if (typeof draft.deliveryRequested === 'boolean')
         setDeliveryRequested(draft.deliveryRequested)
       if (Array.isArray(draft.addonKeys)) setAddonKeys(parseAddonKeys(draft.addonKeys.join(',')))
-      if (typeof draft.note === 'string') setNote(draft.note)
+      if (isCustomer) {
+        if (typeof draft.customerPhone === 'string' && draft.customerPhone)
+          setCustomerPhone(draft.customerPhone)
+        if (typeof draft.driverLicenseNumber === 'string' && draft.driverLicenseNumber)
+          setDriverLicenseNumber(draft.driverLicenseNumber)
+        if (typeof draft.note === 'string') setNote(draft.note)
+      }
+      if (typeof draft.confirmedPromoCode === 'string' && draft.confirmedPromoCode.trim()) {
+        const restored = draft.confirmedPromoCode.trim().toUpperCase()
+        setPromoDraft(restored)
+        setConfirmedPromoCode(restored)
+        setDraftRestoredTick((n) => n + 1)
+      }
     } catch {
-      // ignore storage errors
+      hydratedDraftKeyRef.current = activeDraftKey
     }
-  }, [draftKey])
+  }, [authLoading, activeDraftKey, anonDraftKey, isCustomer])
 
   useEffect(() => {
-    if (!draftKey || typeof window === 'undefined' || created) return
+    if (
+      authLoading ||
+      !activeDraftKey ||
+      hydratedDraftKeyRef.current !== activeDraftKey ||
+      typeof window === 'undefined' ||
+      created
+    ) {
+      return
+    }
     try {
       window.sessionStorage.setItem(
-        draftKey,
-        JSON.stringify({
-          pickupTime,
-          returnTime,
-          pickupLocation,
-          deliveryRequested,
-          addonKeys,
-          note,
-        }),
+        activeDraftKey,
+        JSON.stringify(
+          isCustomer
+            ? {
+                pickupTime,
+                returnTime,
+                pickupLocation,
+                deliveryRequested,
+                addonKeys,
+                customerPhone,
+                driverLicenseNumber,
+                note,
+                confirmedPromoCode,
+              }
+            : {
+                pickupTime,
+                returnTime,
+                pickupLocation,
+                deliveryRequested,
+                addonKeys,
+                confirmedPromoCode,
+              },
+        ),
       )
     } catch {
       // ignore storage errors
     }
   }, [
-    draftKey,
+    authLoading,
+    activeDraftKey,
+    isCustomer,
     created,
     pickupTime,
     returnTime,
     pickupLocation,
     deliveryRequested,
     addonKeys,
+    customerPhone,
+    driverLicenseNumber,
     note,
+    confirmedPromoCode,
   ])
 
   useEffect(() => {
-    if (user?.phone && !customerPhone) setCustomerPhone(user.phone)
-  }, [user?.phone, customerPhone])
+    if (isCustomer && user?.phone && !customerPhone) setCustomerPhone(user.phone)
+  }, [isCustomer, user?.phone, customerPhone])
 
   useEffect(() => {
     if (!id) {
@@ -155,7 +248,7 @@ export function CheckoutPanel({ address }: { address: string | null }) {
         )
       })
       .catch((e) => {
-        if (active) setError(e.message)
+        if (active) setError((e as Error).message)
       })
       .finally(() => {
         if (active) setLoading(false)
@@ -165,41 +258,158 @@ export function CheckoutPanel({ address }: { address: string | null }) {
     }
   }, [id, startDate, endDate, retry, address])
 
-  useEffect(() => {
-    if (!id || !vehicle) return
-    const validation = validateRentalDates(startDate, endDate)
-    if (validation.error) return
-    let active = true
-    setQuoteBusy(true)
-    api<Quote>(
-      `/availability?${new URLSearchParams({
-        vehicle: id,
-        startDate,
-        endDate,
-        ...(deliveryRequested ? { delivery: '1' } : {}),
-        ...(addonKeys.length ? { addons: addonKeys.join(',') } : {}),
-        ...(appliedPromo ? { promoCode: appliedPromo } : {}),
-      })}`,
-    )
-      .then((result) => {
-        if (!active) return
+  const requestQuote = useCallback(
+    async (
+      promoToEvaluate: string,
+      options?: { explicitPromoAction?: boolean; preserveSubmitError?: boolean },
+    ) => {
+      if (!id || !vehicle) return
+      const validation = validateRentalDates(startDate, endDate)
+      if (validation.error) return
+
+      quoteAbortRef.current?.abort()
+      const controller = new AbortController()
+      quoteAbortRef.current = controller
+      const seq = ++quoteSeqRef.current
+
+      const normalizedCandidate = promoToEvaluate.trim().toUpperCase()
+      setQuoteBusy(true)
+      if (options?.explicitPromoAction && normalizedCandidate) {
+        setCheckingPromoCode(normalizedCandidate)
+      }
+
+      try {
+        const sp = new URLSearchParams({
+          vehicle: id,
+          startDate,
+          endDate,
+          ...(deliveryRequested ? { delivery: '1' } : {}),
+          ...(addonKeys.length ? { addons: addonKeys.join(',') } : {}),
+          ...(normalizedCandidate ? { promoCode: normalizedCandidate } : {}),
+        })
+        const result = await api<Quote>(`/availability?${sp.toString()}`, {
+          signal: controller.signal,
+        })
+        if (seq !== quoteSeqRef.current || controller.signal.aborted) return
+
         setQuote(result)
         if (!result.available) {
           setError('Xe đã có lịch trong khoảng ngày này. Vui lòng chọn ngày hoặc xe khác.')
-        } else {
+        } else if (!options?.preserveSubmitError) {
           setError('')
         }
-      })
-      .catch((e) => {
-        if (active) setError(e.message)
-      })
-      .finally(() => {
-        if (active) setQuoteBusy(false)
-      })
+
+        if (normalizedCandidate) {
+          if (result.promoCode && !result.promoError) {
+            const validCode = result.promoCode.trim().toUpperCase()
+            setConfirmedPromoCode(validCode)
+            setPromoFeedback({
+              tone: 'success',
+              message: result.promoMessage || 'Mã đã được áp dụng thành công.',
+            })
+            setLoadedQuoteKey(
+              `${id}|${startDate}|${endDate}|${deliveryRequested ? '1' : '0'}|${[...addonKeys].sort().join(',')}|${validCode}`,
+            )
+          } else {
+            // Promo rejected by Backend: result is already calculated without promo discount
+            setConfirmedPromoCode('')
+            setPromoFeedback({
+              tone: 'error',
+              message: result.promoError || 'Mã khuyến mãi không đủ điều kiện áp dụng.',
+            })
+            setLoadedQuoteKey(
+              `${id}|${startDate}|${endDate}|${deliveryRequested ? '1' : '0'}|${[...addonKeys].sort().join(',')}|`,
+            )
+          }
+        } else {
+          setConfirmedPromoCode('')
+          setLoadedQuoteKey(
+            `${id}|${startDate}|${endDate}|${deliveryRequested ? '1' : '0'}|${[...addonKeys].sort().join(',')}|`,
+          )
+        }
+      } catch (e) {
+        if (
+          seq !== quoteSeqRef.current ||
+          controller.signal.aborted ||
+          (e instanceof Error && e.name === 'AbortError')
+        ) {
+          return
+        }
+        setLoadedQuoteKey('')
+        setError((e as Error).message)
+      } finally {
+        if (seq === quoteSeqRef.current) {
+          setQuoteBusy(false)
+          setCheckingPromoCode('')
+        }
+      }
+    },
+    [id, vehicle, startDate, endDate, deliveryRequested, addonKeys],
+  )
+
+  // Recalculate quote automatically whenever vehicle, dates, delivery, addons, draft restore, or retry change
+  useEffect(() => {
+    if (!id || !vehicle || authLoading) return
+    void requestQuote(confirmedPromoCode)
     return () => {
-      active = false
+      quoteAbortRef.current?.abort()
     }
-  }, [id, vehicle, startDate, endDate, deliveryRequested, addonKeys, appliedPromo, retry])
+    // Intentionally excludes confirmedPromoCode from direct loop on same value; triggered via explicit actions, draft restore, or schedule changes
+  }, [
+    id,
+    vehicle,
+    startDate,
+    endDate,
+    deliveryRequested,
+    addonKeyString,
+    retry,
+    authLoading,
+    draftRestoredTick,
+  ])
+
+  function handlePromoInputChange(rawValue: string) {
+    const nextUpper = rawValue.toUpperCase()
+    setPromoDraft(nextUpper)
+
+    const trimmed = nextUpper.trim()
+    if (confirmedPromoCode && trimmed !== confirmedPromoCode) {
+      // Customer edited or cleared the input after applying a promo -> immediately clear applied state & recalculate clean quote
+      setConfirmedPromoCode('')
+      setPromoFeedback(trimmed === '' ? { tone: 'info', message: PROMO_REMOVED_MESSAGE } : null)
+      void requestQuote('')
+      return
+    }
+
+    if (!confirmedPromoCode && promoFeedback) {
+      setPromoFeedback(null)
+    }
+  }
+
+  function handleApplyPromo() {
+    const candidate = promoDraft.trim().toUpperCase()
+    if (!candidate) {
+      if (confirmedPromoCode) {
+        handleRemovePromo()
+      } else {
+        setPromoFeedback({
+          tone: 'error',
+          message: 'Vui lòng nhập mã khuyến mãi trước khi nhấn Áp dụng.',
+        })
+      }
+      return
+    }
+    setPromoFeedback(null)
+    void requestQuote(candidate, { explicitPromoAction: true })
+  }
+
+  function handleRemovePromo() {
+    quoteAbortRef.current?.abort()
+    setPromoDraft('')
+    setCheckingPromoCode('')
+    setConfirmedPromoCode('')
+    setPromoFeedback({ tone: 'info', message: PROMO_REMOVED_MESSAGE })
+    void requestQuote('')
+  }
 
   function toggleAddon(addonId: AddonDefinition['id']) {
     setAddonKeys((prev) =>
@@ -207,9 +417,80 @@ export function CheckoutPanel({ address }: { address: string | null }) {
     )
   }
 
+  const trimmedDraft = promoDraft.trim().toUpperCase()
+  const hasUnappliedDraftPromo =
+    Boolean(trimmedDraft) &&
+    trimmedDraft !== confirmedPromoCode &&
+    !checkingPromoCode &&
+    promoFeedback?.tone !== 'error'
+  const isQuoteFresh = Boolean(
+    quote && loadedQuoteKey === activeQuoteTargetKey && !quoteBusy && !checkingPromoCode,
+  )
+
+  const returnTo = id
+    ? `/checkout?${new URLSearchParams({
+        vehicle: id,
+        startDate,
+        endDate,
+        pickupTime,
+        returnTime,
+        ...(deliveryRequested ? { delivery: '1' } : {}),
+        ...(addonKeys.length ? { addons: addonKeys.join(',') } : {}),
+      })}`
+    : '/vehicles'
+
+  async function switchAdminToCustomer() {
+    setSwitchingRole(true)
+    setError('')
+    try {
+      await logout()
+      router.push(`/login?accountType=customer&returnTo=${encodeURIComponent(returnTo)}`)
+      router.refresh()
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setSwitchingRole(false)
+    }
+  }
+
   async function confirm(e: FormEvent) {
     e.preventDefault()
-    if (!user || !quote?.available || !agreed || !vehicle) return
+    if (submittingRef.current || busy) return
+    if (!isCustomer || !user || !quote?.available || !agreed || !vehicle || !isQuoteFresh) return
+
+    const cleanPhone = customerPhone.trim()
+    if (!cleanPhone || !/^[0-9+\s()-]{8,16}$/.test(cleanPhone)) {
+      setError('Vui lòng nhập số điện thoại liên hệ hợp lệ (từ 8 đến 16 chữ số).')
+      return
+    }
+
+    // Only submit a promoCode if it is currently Backend-confirmed AND matches the active input
+    const promoToSubmit =
+      confirmedPromoCode && trimmedDraft === confirmedPromoCode ? confirmedPromoCode : undefined
+
+    // Snapshot customer draft right before submit so nothing is lost if session timed out
+    if (customerDraftKey && typeof window !== 'undefined') {
+      try {
+        window.sessionStorage.setItem(
+          customerDraftKey,
+          JSON.stringify({
+            pickupTime,
+            returnTime,
+            pickupLocation,
+            deliveryRequested,
+            addonKeys,
+            customerPhone: cleanPhone,
+            driverLicenseNumber: driverLicenseNumber.trim(),
+            note: note.trim(),
+            confirmedPromoCode: promoToSubmit ?? '',
+          }),
+        )
+      } catch {
+        // ignore storage errors
+      }
+    }
+
+    submittingRef.current = true
     setBusy(true)
     setError('')
     try {
@@ -224,23 +505,40 @@ export function CheckoutPanel({ address }: { address: string | null }) {
           pickupLocation: pickupLocation.trim() || undefined,
           deliveryRequested,
           addonServices: addonKeys,
-          customerPhone: customerPhone.trim() || undefined,
+          customerPhone: cleanPhone,
           driverLicenseNumber: driverLicenseNumber.trim() || undefined,
           note: note.trim() || undefined,
-          promoCode: appliedPromo || undefined,
+          promoCode: promoToSubmit,
+          expectedTotalPrice: quote.estimatedTotal,
         }),
       })
       setCreated(booking)
-      if (draftKey && typeof window !== 'undefined') {
+      if (typeof window !== 'undefined') {
         try {
-          window.sessionStorage.removeItem(draftKey)
+          if (customerDraftKey) window.sessionStorage.removeItem(customerDraftKey)
+          if (anonDraftKey) window.sessionStorage.removeItem(anonDraftKey)
         } catch {
           // ignore
         }
       }
     } catch (e) {
-      setError((e as Error).message)
+      if (e instanceof RequestError && e.status === 401) {
+        await refresh()
+        router.push(`/login?expired=1&returnTo=${encodeURIComponent(returnTo)}`)
+        return
+      }
+      if (e instanceof RequestError && e.status === 403) {
+        await refresh()
+        setError(e.message)
+        return
+      }
+      const msg = (e as Error).message
+      setError(msg)
+      // Refresh authoritative quote immediately if promo status, availability, or price changed on Backend
+      // while keeping the submission error visible to the customer.
+      void requestQuote(promoToSubmit ?? '', { preserveSubmitError: true })
     } finally {
+      submittingRef.current = false
       setBusy(false)
     }
   }
@@ -294,10 +592,16 @@ export function CheckoutPanel({ address }: { address: string | null }) {
               Điểm giao nhận: {created.pickupLocation}
             </Text>
           )}
+          {created.promoCode && (created.promoDiscountAmount ?? 0) > 0 && (
+            <div className="flex flex-wrap items-baseline justify-between gap-3 text-caption text-brand">
+              <span>Mã khuyến mãi ({created.promoCode})</span>
+              <span className="font-semibold">-{formatVnd(created.promoDiscountAmount)}</span>
+            </div>
+          )}
           <div className="flex flex-wrap items-baseline justify-between gap-3 border-t border-line pt-3">
             <Text className="text-small text-muted">Tổng tiền thuê dự kiến</Text>
             <Text className="text-subtitle font-semibold text-brand">
-              {formatMoney(created.totalPrice)}
+              {formatVnd(created.totalPrice)}
             </Text>
           </div>
           {created.depositSnapshot > 0 && (
@@ -329,16 +633,6 @@ export function CheckoutPanel({ address }: { address: string | null }) {
         </div>
       </div>
     )
-
-  const returnTo = `/checkout?${new URLSearchParams({
-    vehicle: id,
-    startDate,
-    endDate,
-    pickupTime,
-    returnTime,
-    ...(deliveryRequested ? { delivery: '1' } : {}),
-    ...(addonKeys.length ? { addons: addonKeys.join(',') } : {}),
-  })}`
 
   return (
     <form onSubmit={confirm} className="grid items-start gap-7 lg:grid-cols-3">
@@ -466,7 +760,7 @@ export function CheckoutPanel({ address }: { address: string | null }) {
             </span>
             Thông tin người thuê & đối chiếu giấy tờ
           </Heading>
-          {user ? (
+          {isCustomer && user ? (
             <div className="mt-5 space-y-4">
               <div className="rounded-control bg-subtle p-4 text-small">
                 <Text className="font-semibold">{user.fullName}</Text>
@@ -502,6 +796,21 @@ export function CheckoutPanel({ address }: { address: string | null }) {
                 onChange={(e) => setNote(e.target.value)}
                 placeholder="Yêu cầu giờ giao xe, ghế trẻ em, hóa đơn hoặc câu hỏi khác…"
               />
+            </div>
+          ) : isAdmin && user ? (
+            <div className="mt-5 space-y-4">
+              <Notice tone="info">
+                Bạn đang đăng nhập bằng tài khoản quản trị ({user.email}). Vui lòng sử dụng tài
+                khoản khách hàng để thực hiện đặt thuê.
+              </Notice>
+              <div className="flex flex-wrap gap-3">
+                <Button onClick={switchAdminToCustomer} loading={switchingRole}>
+                  Đăng nhập bằng tài khoản khách hàng <Icon name="arrow-right" className="size-4" />
+                </Button>
+                <ButtonLink href="/dashboard" variant="secondary">
+                  Về Quản trị hệ thống
+                </ButtonLink>
+              </div>
             </div>
           ) : (
             <div className="mt-5">
@@ -550,69 +859,122 @@ export function CheckoutPanel({ address }: { address: string | null }) {
           </div>
           <div className="flex justify-between gap-3">
             <Text className="text-muted">Tiền thuê cơ bản</Text>
-            <Text>{formatMoney(quote.basePrice)}</Text>
+            <Text>{formatVnd(quote.basePrice)}</Text>
           </div>
           {quote.weekendSurchargeTotal > 0 && (
             <div className="flex justify-between gap-3">
               <Text className="text-muted">Phụ phí cuối tuần ({quote.weekendDays} ngày)</Text>
-              <Text>+{formatMoney(quote.weekendSurchargeTotal)}</Text>
+              <Text>+{formatVnd(quote.weekendSurchargeTotal)}</Text>
             </div>
           )}
           {(quote.holidaySurchargeTotal ?? 0) > 0 && (
             <div className="flex justify-between gap-3">
               <Text className="text-muted">Phụ phí ngày lễ ({quote.holidayDays} ngày)</Text>
-              <Text>+{formatMoney(quote.holidaySurchargeTotal)}</Text>
+              <Text>+{formatVnd(quote.holidaySurchargeTotal)}</Text>
             </div>
           )}
           {quote.deliveryFee > 0 && (
             <div className="flex justify-between gap-3">
               <Text className="text-muted">Phí giao nhận tận nơi</Text>
-              <Text>+{formatMoney(quote.deliveryFee)}</Text>
+              <Text>+{formatVnd(quote.deliveryFee)}</Text>
             </div>
           )}
           {quote.addonFee > 0 && (
             <div className="flex justify-between gap-3">
               <Text className="text-muted">Dịch vụ bổ sung</Text>
-              <Text>+{formatMoney(quote.addonFee)}</Text>
+              <Text>+{formatVnd(quote.addonFee)}</Text>
             </div>
           )}
           {quote.discountAmount > 0 && (
             <div className="flex justify-between gap-3 text-brand">
               <Text>Ưu đãi thuê dài ngày ({Math.round(quote.discountRate * 100)}%)</Text>
-              <Text>-{formatMoney(quote.discountAmount)}</Text>
+              <Text>-{formatVnd(quote.discountAmount)}</Text>
             </div>
           )}
-          {(quote.promoDiscountAmount ?? 0) > 0 && (
+          {confirmedPromoCode && (quote.promoDiscountAmount ?? 0) > 0 && (
             <div className="flex justify-between gap-3 text-brand">
-              <Text>Mã khuyến mãi ({quote.promoName || appliedPromo})</Text>
-              <Text>-{formatMoney(quote.promoDiscountAmount)}</Text>
+              <Text>Mã khuyến mãi ({quote.promoName || confirmedPromoCode})</Text>
+              <Text>-{formatVnd(quote.promoDiscountAmount)}</Text>
             </div>
           )}
         </div>
 
-        <div className="mb-4 flex items-end gap-2">
-          <Input
-            id="checkout-promo"
-            label="Mã khuyến mãi (nếu có)"
-            placeholder="Nhập mã..."
-            wrapperClassName="flex-1"
-            value={promoCode}
-            onChange={(e) => setPromoCode(e.target.value.toUpperCase())}
-            error={quote.promoError ?? undefined}
-          />
-          <Button
-            size="sm"
-            variant="secondary"
-            onClick={() => setAppliedPromo(promoCode.trim().toUpperCase())}
-          >
-            Áp dụng
-          </Button>
+        <div className="mb-4 space-y-2">
+          <div className="flex items-end gap-2">
+            <Input
+              id="checkout-promo"
+              label="Mã khuyến mãi (nếu có)"
+              placeholder="Nhập mã ưu đãi..."
+              wrapperClassName="flex-1"
+              value={promoDraft}
+              onChange={(e) => handlePromoInputChange(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault()
+                  handleApplyPromo()
+                }
+              }}
+              error={promoFeedback?.tone === 'error' ? promoFeedback.message : undefined}
+            />
+            <Button
+              size="sm"
+              variant="secondary"
+              loading={Boolean(checkingPromoCode)}
+              disabled={
+                Boolean(checkingPromoCode) ||
+                !trimmedDraft ||
+                (Boolean(confirmedPromoCode) && trimmedDraft === confirmedPromoCode)
+              }
+              onClick={handleApplyPromo}
+            >
+              {confirmedPromoCode && trimmedDraft === confirmedPromoCode ? 'Đã áp dụng' : 'Áp dụng'}
+            </Button>
+          </div>
+
+          {(confirmedPromoCode || trimmedDraft || promoFeedback?.tone === 'error') && (
+            <div className="flex items-center justify-between gap-2">
+              {confirmedPromoCode ? (
+                <Badge tone="brand">Đang áp dụng: {confirmedPromoCode}</Badge>
+              ) : checkingPromoCode ? (
+                <Text as="span" className="text-micro text-muted">
+                  Đang kiểm tra mã {checkingPromoCode}…
+                </Text>
+              ) : (
+                <span />
+              )}
+              <button
+                type="button"
+                onClick={handleRemovePromo}
+                className="text-caption font-semibold text-danger hover:underline"
+              >
+                Bỏ mã khuyến mãi
+              </button>
+            </div>
+          )}
+
+          {promoFeedback && promoFeedback.tone !== 'error' && (
+            <Text
+              role="status"
+              className={`text-caption font-medium ${
+                promoFeedback.tone === 'success' ? 'text-brand' : 'text-muted'
+              }`}
+            >
+              {promoFeedback.message}
+            </Text>
+          )}
+
+          {hasUnappliedDraftPromo && (
+            <Text className="text-micro text-warning">
+              Mã đang nhập chưa được kiểm tra. Nhấn &ldquo;Áp dụng&rdquo; để tính giảm giá hoặc
+              &ldquo;Bỏ mã khuyến mãi&rdquo; nếu không sử dụng.
+            </Text>
+          )}
         </div>
 
         <div className="flex flex-wrap items-end justify-between gap-3">
           <Text className="font-semibold">Tổng tiền thuê dự kiến</Text>
           <Text className="text-title font-semibold text-brand">
-            {quoteBusy ? 'Đang tính…' : formatMoney(quote.estimatedTotal)}
+            {!isQuoteFresh ? 'Đang tính…' : formatVnd(quote.estimatedTotal)}
           </Text>
         </div>
 
@@ -663,7 +1025,7 @@ export function CheckoutPanel({ address }: { address: string | null }) {
         <Button
           type="submit"
           loading={busy}
-          disabled={!user || !agreed || !quote.available || quoteBusy}
+          disabled={!isCustomer || !agreed || !quote.available || !isQuoteFresh || busy}
           className="mt-4 w-full"
         >
           Xác nhận đặt thuê <Icon name="arrow-right" className="size-4" />

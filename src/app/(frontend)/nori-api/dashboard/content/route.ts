@@ -1,7 +1,202 @@
+import { adminHasPermission } from '@/access/nori'
 import { requireAdmin } from '@/lib/admin-api'
 import { apiError, assertOrigin, body, fail, json, text } from '@/lib/api-utils'
-import { photo } from '@/lib/catalogue'
+import { clampFocalPercent, photo } from '@/lib/catalogue'
+import { invalidateNoriCaches } from '@/lib/public-cache'
 import { validateTimeString } from '@/lib/rental-rules'
+
+function extractRelationId(value: unknown): string | null {
+  if (!value) return null
+  if (typeof value === 'string') return value
+  if (typeof value === 'object' && 'id' in value) {
+    const id = (value as { id?: unknown }).id
+    return typeof id === 'string' ? id : id != null ? String(id) : null
+  }
+  return null
+}
+
+function isSafeHref(href: string): boolean {
+  const trimmed = href.trim()
+  if (!trimmed) return false
+  if (trimmed.startsWith('/')) return !trimmed.startsWith('//')
+  return /^https?:\/\//i.test(trimmed)
+}
+
+function mapHeroSlidesForAdmin(rawSlides: unknown) {
+  if (!Array.isArray(rawSlides)) return []
+  return rawSlides.map((raw, idx) => {
+    const s = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>
+    const dImg = photo(s.desktopImage as never)
+    const mImg = photo(s.mobileImage as never)
+    const desktopImageId = extractRelationId(s.desktopImage)
+    const mobileImageId = extractRelationId(s.mobileImage)
+    const relatedModelId = extractRelationId(s.relatedModel)
+    const focalX = clampFocalPercent(s.focalX, dImg?.focalX ?? 50)
+    const focalY = clampFocalPercent(s.focalY, dImg?.focalY ?? 50)
+    const mobileFocalX = clampFocalPercent(s.mobileFocalX, mImg ? (mImg.focalX ?? 50) : focalX)
+    const mobileFocalY = clampFocalPercent(s.mobileFocalY, mImg ? (mImg.focalY ?? 50) : focalY)
+
+    return {
+      id: typeof s.id === 'string' && s.id ? s.id : `slide-${idx}`,
+      titleFirst: typeof s.titleFirst === 'string' ? s.titleFirst : '',
+      titleSecond: typeof s.titleSecond === 'string' ? s.titleSecond : '',
+      eyebrow: typeof s.eyebrow === 'string' ? s.eyebrow : '',
+      categoryBadge: typeof s.categoryBadge === 'string' ? s.categoryBadge : '',
+      description: typeof s.description === 'string' ? s.description : '',
+      ctaText: typeof s.ctaText === 'string' && s.ctaText ? s.ctaText : 'Khám phá ngay',
+      ctaHref: typeof s.ctaHref === 'string' && s.ctaHref ? s.ctaHref : '/vehicles',
+      secondaryText: typeof s.secondaryText === 'string' ? s.secondaryText : '',
+      secondaryHref: typeof s.secondaryHref === 'string' ? s.secondaryHref : '',
+      desktopImageId,
+      desktopImage: dImg,
+      mobileImageId,
+      mobileImage: mImg,
+      focalX,
+      focalY,
+      mobileFocalX,
+      mobileFocalY,
+      relatedCategory: typeof s.relatedCategory === 'string' ? s.relatedCategory : '',
+      relatedModelId,
+      credit: typeof s.credit === 'string' ? s.credit : '',
+      sourceUrl: typeof s.sourceUrl === 'string' ? s.sourceUrl : '',
+      durationSeconds: typeof s.durationSeconds === 'number' ? s.durationSeconds : null,
+      order: typeof s.order === 'number' ? s.order : idx,
+      active: s.active !== false,
+    }
+  })
+}
+
+function stableHeroComparisonKey(slides: ReturnType<typeof mapHeroSlidesForAdmin>): string {
+  return JSON.stringify(
+    slides.map((s) => ({
+      titleFirst: s.titleFirst,
+      titleSecond: s.titleSecond,
+      eyebrow: s.eyebrow,
+      categoryBadge: s.categoryBadge,
+      description: s.description,
+      ctaText: s.ctaText,
+      ctaHref: s.ctaHref,
+      secondaryText: s.secondaryText,
+      secondaryHref: s.secondaryHref,
+      desktopImageId: s.desktopImageId,
+      mobileImageId: s.mobileImageId,
+      focalX: s.focalX,
+      focalY: s.focalY,
+      mobileFocalX: s.mobileFocalX,
+      mobileFocalY: s.mobileFocalY,
+      relatedCategory: s.relatedCategory,
+      relatedModelId: s.relatedModelId,
+      credit: s.credit,
+      sourceUrl: s.sourceUrl,
+      durationSeconds: s.durationSeconds,
+      order: s.order,
+      active: s.active,
+    })),
+  )
+}
+
+function validateAndNormalizeSlide(
+  raw: Record<string, unknown>,
+  idx: number,
+  options: { requireDesktopImage: boolean },
+) {
+  const slideLabel = `Slide #${idx + 1}`
+  const titleFirst = text(raw.titleFirst, 120)
+  if (!titleFirst) {
+    return { ok: false as const, error: `${slideLabel}: Tiêu đề dòng 1 là bắt buộc.` }
+  }
+  const ctaText = text(raw.ctaText, 60)
+  if (!ctaText) {
+    return { ok: false as const, error: `${slideLabel}: Nhãn nút CTA chính là bắt buộc.` }
+  }
+  const ctaHref = text(raw.ctaHref, 200)
+  if (!ctaHref || !isSafeHref(ctaHref)) {
+    return {
+      ok: false as const,
+      error: `${slideLabel}: Đường dẫn CTA phải bắt đầu bằng "/" hoặc "https://".`,
+    }
+  }
+  const secondaryHref = text(raw.secondaryHref, 200)
+  if (secondaryHref && !isSafeHref(secondaryHref)) {
+    return {
+      ok: false as const,
+      error: `${slideLabel}: Đường dẫn nút phụ phải bắt đầu bằng "/" hoặc "https://".`,
+    }
+  }
+  const desktopImageId = text(raw.desktopImageId, 100) || null
+  const mobileImageId = text(raw.mobileImageId, 100) || null
+  const active = raw.active !== false
+
+  if (options.requireDesktopImage && active && !desktopImageId) {
+    return {
+      ok: false as const,
+      error: `${slideLabel}: Ảnh nền Desktop là bắt buộc khi slide đang bật hiển thị.`,
+    }
+  }
+
+  const cat = text(raw.relatedCategory, 20)
+  const dur =
+    raw.durationSeconds !== undefined && raw.durationSeconds !== null && raw.durationSeconds !== ''
+      ? Math.min(30, Math.max(3, Math.round(Number(raw.durationSeconds) || 6)))
+      : null
+
+  const existingId =
+    typeof raw.id === 'string' && /^[a-z0-9_-]{4,64}$/i.test(raw.id) ? raw.id : undefined
+
+  return {
+    ok: true as const,
+    slide: {
+      ...(existingId ? { id: existingId } : {}),
+      titleFirst,
+      titleSecond: text(raw.titleSecond, 120) || undefined,
+      eyebrow: text(raw.eyebrow, 120) || undefined,
+      categoryBadge: text(raw.categoryBadge, 80) || undefined,
+      description: text(raw.description, 600) || undefined,
+      ctaText,
+      ctaHref,
+      secondaryText: text(raw.secondaryText, 60) || undefined,
+      secondaryHref: secondaryHref || undefined,
+      desktopImage: desktopImageId,
+      mobileImage: mobileImageId,
+      focalX: clampFocalPercent(Number(raw.focalX), 50),
+      focalY: clampFocalPercent(Number(raw.focalY), 50),
+      mobileFocalX: clampFocalPercent(Number(raw.mobileFocalX), 50),
+      mobileFocalY: clampFocalPercent(Number(raw.mobileFocalY), 50),
+      relatedCategory:
+        cat === 'CAR' || cat === 'MOTORBIKE' || cat === 'PICKUP'
+          ? (cat as 'CAR' | 'MOTORBIKE' | 'PICKUP')
+          : null,
+      relatedModel: text(raw.relatedModelId, 100) || null,
+      credit: text(raw.credit, 200) || undefined,
+      sourceUrl: text(raw.sourceUrl, 300) || undefined,
+      durationSeconds: dur,
+      order: typeof raw.order === 'number' && Number.isFinite(raw.order) ? raw.order : idx,
+      active,
+    },
+  }
+}
+
+async function verifyMediaIdsExist(
+  payload: Awaited<ReturnType<typeof requireAdmin>> extends infer R
+    ? R extends { ok: true; payload: infer P }
+      ? P
+      : never
+    : never,
+  mediaIds: (string | null | undefined)[],
+): Promise<string | null> {
+  const uniqueIds = [...new Set(mediaIds.filter((id): id is string => Boolean(id)))]
+  if (uniqueIds.length === 0) return null
+  const found = await payload.find({
+    collection: 'media',
+    where: { id: { in: uniqueIds } },
+    limit: uniqueIds.length,
+    depth: 0,
+    overrideAccess: true,
+  })
+  const foundSet = new Set(found.docs.map((d) => String(d.id)))
+  const missing = uniqueIds.find((id) => !foundSet.has(id))
+  return missing ? `Không tìm thấy tệp ảnh (${missing}) trong Thư viện Media.` : null
+}
 
 export async function GET(request: Request) {
   try {
@@ -10,12 +205,19 @@ export async function GET(request: Request) {
     const { payload, user } = auth
 
     const draft = new URL(request.url).searchParams.get('draft') !== 'false'
-    const [site, versions, modelsRes] = await Promise.all([
+    const [site, publishedSite, versions, modelsRes] = await Promise.all([
       payload.findGlobal({
         slug: 'nori-site',
         user,
         overrideAccess: false,
         draft,
+        depth: 1,
+      }),
+      payload.findGlobal({
+        slug: 'nori-site',
+        user,
+        overrideAccess: false,
+        draft: false,
         depth: 1,
       }),
       payload.findGlobalVersions({
@@ -35,69 +237,42 @@ export async function GET(request: Request) {
       }),
     ])
 
+    const draftSlides = mapHeroSlidesForAdmin(site.heroSlides ?? [])
+    const publishedSlides = mapHeroSlidesForAdmin(publishedSite.heroSlides ?? [])
+    const hasPublishedVersion =
+      publishedSite._status === 'published' ||
+      versions.docs.some((v) => v.version?._status === 'published')
+    const hasUnpublishedChanges =
+      site._status === 'draft' ||
+      stableHeroComparisonKey(draftSlides) !== stableHeroComparisonKey(publishedSlides) ||
+      (site.heroAutoplaySeconds ?? 6) !== (publishedSite.heroAutoplaySeconds ?? 6) ||
+      (site.showHeroSection !== false) !== (publishedSite.showHeroSection !== false)
+
+    const latestPublishedVersion = versions.docs.find((v) => v.version?._status === 'published')
+
     return json({
       _status: site._status ?? 'published',
+      hasPublishedVersion,
+      hasUnpublishedChanges,
+      publishedAt: latestPublishedVersion?.updatedAt ?? publishedSite.updatedAt ?? null,
       siteName: site.siteName ?? 'NORI',
       tagline: site.tagline ?? 'Your way. Every day.',
-      logoId: typeof site.logo === 'object' && site.logo ? site.logo.id : (site.logo ?? null),
+      logoId: extractRelationId(site.logo),
       logo: photo(site.logo),
-      faviconId:
-        typeof site.favicon === 'object' && site.favicon ? site.favicon.id : (site.favicon ?? null),
+      faviconId: extractRelationId(site.favicon),
       favicon: photo(site.favicon),
       seoTitle: site.seoTitle ?? '',
       seoDescription: site.seoDescription ?? '',
-      ogImageId:
-        typeof site.ogImage === 'object' && site.ogImage ? site.ogImage.id : (site.ogImage ?? null),
+      ogImageId: extractRelationId(site.ogImage),
       ogImage: photo(site.ogImage),
       heroAutoplaySeconds: site.heroAutoplaySeconds ?? 6,
-      heroSlides: (site.heroSlides ?? []).map((s, idx) => {
-        const dImg = photo(s.desktopImage)
-        const mImg = photo(s.mobileImage)
-        const desktopImageId =
-          typeof s.desktopImage === 'object' && s.desktopImage
-            ? s.desktopImage.id
-            : (s.desktopImage ?? null)
-        const mobileImageId =
-          typeof s.mobileImage === 'object' && s.mobileImage
-            ? s.mobileImage.id
-            : (s.mobileImage ?? null)
-        const relatedModelId =
-          typeof s.relatedModel === 'object' && s.relatedModel
-            ? s.relatedModel.id
-            : (s.relatedModel ?? null)
-        return {
-          id: s.id ?? `slide-${idx}`,
-          titleFirst: s.titleFirst ?? '',
-          titleSecond: s.titleSecond ?? '',
-          eyebrow: s.eyebrow ?? '',
-          categoryBadge: s.categoryBadge ?? '',
-          description: s.description ?? '',
-          ctaText: s.ctaText ?? 'Khám phá ngay',
-          ctaHref: s.ctaHref ?? '/vehicles',
-          secondaryText: s.secondaryText ?? '',
-          secondaryHref: s.secondaryHref ?? '',
-          desktopImageId,
-          desktopImage: dImg,
-          mobileImageId,
-          mobileImage: mImg,
-          relatedCategory: s.relatedCategory ?? '',
-          relatedModelId,
-          credit: s.credit ?? '',
-          sourceUrl: s.sourceUrl ?? '',
-          durationSeconds: s.durationSeconds ?? null,
-          order: typeof s.order === 'number' ? s.order : idx,
-          active: s.active !== false,
-        }
-      }),
+      heroSlides: draftSlides,
       heroImages: (site.heroImages ?? []).flatMap((h) => {
         const img = photo(h.image)
-        const imageId = typeof h.image === 'object' && h.image ? h.image.id : h.image
+        const imageId = extractRelationId(h.image)
         return img && imageId ? [{ imageId, credit: h.credit ?? '', image: img }] : []
       }),
-      storyImageId:
-        typeof site.storyImage === 'object' && site.storyImage
-          ? site.storyImage.id
-          : (site.storyImage ?? null),
+      storyImageId: extractRelationId(site.storyImage),
       storyImage: photo(site.storyImage),
       homeIntroTitle: site.homeIntroTitle ?? '',
       homeIntroDescription: site.homeIntroDescription ?? '',
@@ -181,6 +356,10 @@ export async function PATCH(request: Request) {
     const data = await body(
       request,
       [
+        'action',
+        'slideIndex',
+        'slideId',
+        'slide',
         'restoreVersionId',
         '_status',
         'siteName',
@@ -232,17 +411,129 @@ export async function PATCH(request: Request) {
         'maintenanceBannerEnabled',
         'maintenanceBannerText',
       ],
-      65_536,
+      262_144,
     )
 
     if (data.restoreVersionId) {
+      if (!adminHasPermission(auth.admin, 'content', 'publish')) {
+        return fail(
+          'Tài khoản chưa được cấp quyền "publish" cho phân hệ "content".',
+          403,
+          'FORBIDDEN',
+        )
+      }
       await payload.restoreGlobalVersion({
         slug: 'nori-site',
         id: text(data.restoreVersionId, 100),
         user,
         overrideAccess: false,
       })
-      return json({ restored: true })
+      invalidateNoriCaches({ slugs: [], allDetails: false })
+      return json({ restored: true, revalidated: true })
+    }
+
+    // Per-slide save (writes to draft without publishing or clobbering other unsaved slides)
+    if (data.action === 'save_slide') {
+      if (!data.slide || typeof data.slide !== 'object' || Array.isArray(data.slide)) {
+        return fail('Dữ liệu Hero Slide cần lưu không hợp lệ.')
+      }
+      const rawSlide = data.slide as Record<string, unknown>
+      const requestedIndex =
+        typeof data.slideIndex === 'number' && Number.isInteger(data.slideIndex)
+          ? data.slideIndex
+          : 0
+      const requestedId = text(data.slideId, 100) || text(rawSlide.id, 100)
+
+      const validated = validateAndNormalizeSlide(rawSlide, Math.max(0, requestedIndex), {
+        requireDesktopImage: true,
+      })
+      if (!validated.ok) return fail(validated.error)
+
+      const mediaErr = await verifyMediaIdsExist(payload, [
+        validated.slide.desktopImage,
+        validated.slide.mobileImage,
+      ])
+      if (mediaErr) return fail(mediaErr)
+
+      const currentDraft = await payload.findGlobal({
+        slug: 'nori-site',
+        user,
+        overrideAccess: false,
+        draft: true,
+        depth: 0,
+      })
+
+      const existingSlides = (currentDraft.heroSlides ?? []).map((s, idx) => {
+        const rec = s as unknown as Record<string, unknown>
+        return {
+          ...(s.id ? { id: s.id } : {}),
+          titleFirst: s.titleFirst,
+          titleSecond: s.titleSecond ?? undefined,
+          eyebrow: s.eyebrow ?? undefined,
+          categoryBadge: s.categoryBadge ?? undefined,
+          description: s.description ?? undefined,
+          ctaText: s.ctaText,
+          ctaHref: s.ctaHref,
+          secondaryText: s.secondaryText ?? undefined,
+          secondaryHref: s.secondaryHref ?? undefined,
+          desktopImage: extractRelationId(s.desktopImage),
+          mobileImage: extractRelationId(s.mobileImage),
+          focalX: clampFocalPercent(rec.focalX, 50),
+          focalY: clampFocalPercent(rec.focalY, 50),
+          mobileFocalX: clampFocalPercent(rec.mobileFocalX, 50),
+          mobileFocalY: clampFocalPercent(rec.mobileFocalY, 50),
+          relatedCategory: s.relatedCategory ?? null,
+          relatedModel: extractRelationId(s.relatedModel),
+          credit: s.credit ?? undefined,
+          sourceUrl: s.sourceUrl ?? undefined,
+          durationSeconds: typeof s.durationSeconds === 'number' ? s.durationSeconds : null,
+          order: typeof s.order === 'number' ? s.order : idx,
+          active: s.active !== false,
+        }
+      })
+
+      let targetIdx = requestedId ? existingSlides.findIndex((s) => s.id === requestedId) : -1
+      if (targetIdx < 0 && requestedIndex >= 0 && requestedIndex < existingSlides.length) {
+        targetIdx = requestedIndex
+      }
+
+      if (targetIdx >= 0) {
+        existingSlides[targetIdx] = {
+          ...validated.slide,
+          order: targetIdx,
+        }
+      } else {
+        if (existingSlides.length >= 12) {
+          return fail('Tối đa 12 Hero Slide trong carousel.')
+        }
+        existingSlides.push({
+          ...validated.slide,
+          order: existingSlides.length,
+        })
+        targetIdx = existingSlides.length - 1
+      }
+
+      const updatedDraft = await payload.updateGlobal({
+        slug: 'nori-site',
+        user,
+        overrideAccess: false,
+        draft: true,
+        depth: 1,
+        data: {
+          _status: 'draft',
+          heroSlides: existingSlides,
+        } as never,
+      })
+
+      const mapped = mapHeroSlidesForAdmin(updatedDraft.heroSlides ?? [])
+      return json({
+        updated: true,
+        _status: 'draft',
+        published: false,
+        savedIndex: targetIdx,
+        savedSlide: mapped[targetIdx] ?? null,
+        heroSlides: mapped,
+      })
     }
 
     const email = text(data.email, 254)
@@ -263,6 +554,16 @@ export async function PATCH(request: Request) {
     }
 
     const status = data._status === 'draft' ? 'draft' : 'published'
+    if (
+      (status === 'published' || data.action === 'publish') &&
+      !adminHasPermission(auth.admin, 'content', 'publish')
+    ) {
+      return fail(
+        'Tài khoản chưa được cấp quyền "publish" cho phân hệ "content".',
+        403,
+        'FORBIDDEN',
+      )
+    }
     const patch: Record<string, unknown> = {
       _status: status,
       ...(data.siteName !== undefined ? { siteName: text(data.siteName, 80) } : {}),
@@ -369,41 +670,27 @@ export async function PATCH(request: Request) {
     if (data.ogImageId !== undefined) patch.ogImage = text(data.ogImageId, 100) || null
 
     if (Array.isArray(data.heroSlides)) {
-      patch.heroSlides = data.heroSlides
+      const normalizedSlides = []
+      const mediaIdsToVerify: (string | null)[] = []
+      const rawItems = data.heroSlides
         .slice(0, 12)
         .filter((item): item is Record<string, unknown> =>
           Boolean(item && typeof item === 'object'),
         )
-        .map((item, idx) => {
-          const cat = text(item.relatedCategory, 20)
-          const dur =
-            item.durationSeconds !== undefined &&
-            item.durationSeconds !== null &&
-            item.durationSeconds !== ''
-              ? Math.min(30, Math.max(3, Math.round(Number(item.durationSeconds) || 6)))
-              : null
-          return {
-            titleFirst: text(item.titleFirst, 120),
-            titleSecond: text(item.titleSecond, 120) || undefined,
-            eyebrow: text(item.eyebrow, 120) || undefined,
-            categoryBadge: text(item.categoryBadge, 80) || undefined,
-            description: text(item.description, 600) || undefined,
-            ctaText: text(item.ctaText, 60) || 'Khám phá ngay',
-            ctaHref: text(item.ctaHref, 200) || '/vehicles',
-            secondaryText: text(item.secondaryText, 60) || undefined,
-            secondaryHref: text(item.secondaryHref, 200) || undefined,
-            desktopImage: text(item.desktopImageId, 100) || null,
-            mobileImage: text(item.mobileImageId, 100) || null,
-            relatedCategory: ['CAR', 'MOTORBIKE', 'PICKUP'].includes(cat) ? cat : null,
-            relatedModel: text(item.relatedModelId, 100) || null,
-            credit: text(item.credit, 200) || undefined,
-            sourceUrl: text(item.sourceUrl, 300) || undefined,
-            durationSeconds: dur,
-            order: typeof item.order === 'number' && Number.isFinite(item.order) ? item.order : idx,
-            active: item.active !== false,
-          }
+
+      for (let idx = 0; idx < rawItems.length; idx++) {
+        const res = validateAndNormalizeSlide(rawItems[idx], idx, {
+          requireDesktopImage: status === 'published' || rawItems[idx].active !== false,
         })
-        .filter((item) => item.titleFirst)
+        if (!res.ok) return fail(res.error)
+        normalizedSlides.push(res.slide)
+        mediaIdsToVerify.push(res.slide.desktopImage, res.slide.mobileImage)
+      }
+
+      const mediaErr = await verifyMediaIdsExist(payload, mediaIdsToVerify)
+      if (mediaErr) return fail(mediaErr)
+
+      patch.heroSlides = normalizedSlides
     }
 
     if (Array.isArray(data.holidays)) {
@@ -476,15 +763,41 @@ export async function PATCH(request: Request) {
         .filter((item) => item.question && item.answer)
     }
 
-    await payload.updateGlobal({
+    const updated = await payload.updateGlobal({
       slug: 'nori-site',
       user,
       overrideAccess: false,
       draft: status === 'draft',
+      depth: 1,
       data: patch,
     })
 
-    return json({ updated: true, _status: status })
+    if (status === 'published') {
+      invalidateNoriCaches({ slugs: [], allDetails: false })
+      const verifiedPublished = await payload.findGlobal({
+        slug: 'nori-site',
+        user,
+        overrideAccess: false,
+        draft: false,
+        depth: 1,
+      })
+      return json({
+        updated: true,
+        _status: 'published',
+        published: true,
+        revalidated: true,
+        publishedAt: verifiedPublished.updatedAt ?? new Date().toISOString(),
+        heroSlides: mapHeroSlidesForAdmin(verifiedPublished.heroSlides ?? []),
+      })
+    }
+
+    return json({
+      updated: true,
+      _status: 'draft',
+      published: false,
+      revalidated: false,
+      heroSlides: mapHeroSlidesForAdmin(updated.heroSlides ?? []),
+    })
   } catch (error) {
     return apiError(error)
   }

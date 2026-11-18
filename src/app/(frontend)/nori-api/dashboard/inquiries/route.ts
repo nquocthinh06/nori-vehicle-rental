@@ -1,4 +1,4 @@
-import { requireAdmin } from '@/lib/admin-api'
+import { requireAdmin, resolveCustomerDisplayNames } from '@/lib/admin-api'
 import { apiError, assertOrigin, body, fail, json, text } from '@/lib/api-utils'
 import { isDepositExpired } from '@/lib/rental-rules'
 
@@ -15,7 +15,7 @@ const VALID_INQUIRY_STATUSES = [
 
 export async function GET(request: Request) {
   try {
-    const auth = await requireAdmin()
+    const auth = await requireAdmin({ permission: ['inquiries', 'read'] })
     if (!auth.ok) return auth.response
     const { payload, user } = auth
 
@@ -42,11 +42,19 @@ export async function GET(request: Request) {
       ...(status ? { where: { status: { equals: status } } } : {}),
     })
 
+    const customerNameMap = await resolveCustomerDisplayNames(
+      payload,
+      res.docs.map((inq) => (typeof inq.customer === 'string' ? inq.customer : '')).filter(Boolean),
+    )
+
     const filtered = res.docs
       .filter((inq) => {
         if (inquiryType && inq.inquiryType !== inquiryType) return false
         if (!q) return true
-        const custName = typeof inq.customer === 'object' ? (inq.customer?.fullName ?? '') : ''
+        const custName =
+          typeof inq.customer === 'object'
+            ? (inq.customer?.fullName ?? '')
+            : (customerNameMap.get(String(inq.customer ?? ''))?.fullName ?? '')
         const modelName = typeof inq.model === 'object' ? (inq.model?.name ?? '') : ''
         const hay =
           `${inq.reference ?? ''} ${custName} ${inq.phone} ${modelName} ${inq.vehicleReference ?? ''}`.toLowerCase()
@@ -57,8 +65,14 @@ export async function GET(request: Request) {
         reference: inq.reference ?? inq.id,
         inquiryType: inq.inquiryType ?? 'CONSULTATION',
         status: inq.status ?? 'NEW',
-        customerName: typeof inq.customer === 'object' ? inq.customer?.fullName : 'Chưa cập nhật',
-        customerEmail: typeof inq.customer === 'object' ? inq.customer?.email : undefined,
+        customerName:
+          typeof inq.customer === 'object'
+            ? inq.customer?.fullName
+            : (customerNameMap.get(String(inq.customer ?? ''))?.fullName ?? 'Chưa cập nhật'),
+        customerEmail:
+          typeof inq.customer === 'object'
+            ? inq.customer?.email
+            : customerNameMap.get(String(inq.customer ?? ''))?.email,
         phone: inq.phone,
         modelName: typeof inq.model === 'object' ? inq.model.name : 'Chưa cập nhật',
         modelSlug: typeof inq.model === 'object' ? inq.model.slug : '',
@@ -100,7 +114,7 @@ export async function GET(request: Request) {
 export async function PATCH(request: Request) {
   try {
     assertOrigin(request)
-    const auth = await requireAdmin()
+    const auth = await requireAdmin({ permission: ['inquiries', 'update'] })
     if (!auth.ok) return auth.response
     const { payload, user } = auth
 

@@ -1,5 +1,28 @@
 # NHẬT KÝ THAY ĐỔI VÀ NÂNG CẤP HỆ THỐNG NORI (CHANGELOG)
 
+## [Phiên bản 2.4.0] — 2026-11-18: Chuẩn Hóa Xác Thực & Phiên Đăng Nhập, Động Cơ Khuyến Mãi Nguyên Tử, Chuyên Mục Bài Viết & Kiểm Toán QA Toàn Diện
+
+### 1. Chuẩn hóa Xác thực, Cách ly Phiên `Customer` / `Admin` & Bảo mật Cookie (`src/lib/session-cookie.ts`, `src/lib/app-auth.ts`)
+
+- Phân tách hoàn toàn phạm vi đăng nhập giữa Khách hàng (`app-session`, thời hạn 7 ngày) và Quản trị viên (`payload-token`, thời hạn 12 giờ), hỗ trợ tham số `scope` tường minh và xử lý triệt để trường hợp trùng email giữa bảng `users` và `admins`.
+- Bổ sung mã lỗi chuẩn `403 ADMIN_ROLE_FORBIDDEN` kèm giao diện hướng dẫn chuyển tài khoản khi đang dùng phiên Quản trị viên tại trang Đặt thuê xe (`/checkout`) hoặc Đơn thuê của tôi (`/my-bookings`).
+- Tự động suy luận cờ cookie `Secure` và `SameSite` theo giao thức thực tế của Request (`X-Forwarded-Proto` / HTTPS vs HTTP localhost/LAN) và xác thực phiên sống qua `_sid` (`hasActiveSessionRecord`).
+- Tự động đồng bộ lại `AuthProvider` khi tab lấy lại tiêu điểm, chuyển trang hoặc khi API trả về `401`.
+
+### 2. Động cơ Khuyến mãi Nguyên tử & Chuẩn hóa Công thức Đặt cọc (`src/lib/promo-service.ts`, `src/lib/rental-rules.ts`)
+
+- Xây dựng `promo-service.ts` dùng chung cho báo giá (`/nori-api/availability`) và giao dịch đặt xe (`/nori-api/bookings`), phân biệt rõ 7 trạng thái mã khuyến mãi (không tồn tại, tạm tắt, sai dịch vụ, chưa đến ngày, hết hạn, hết lượt, chưa đủ ngày thuê tối thiểu).
+- Thực thi tăng/hoàn trả lượt sử dụng (`used_count`) nguyên tử ngay trong transaction SQLite kết hợp khóa tuần tự `withBookingWriteLock`, tự động hoàn lượt khi đơn chuyển sang `CANCELLED` hoặc `REJECTED`.
+- Tách bạch hoàn toàn Tiền đặt cọc đảm bảo (`depositAmount` / `initialPaymentDue`) khỏi Tổng tiền thuê dự kiến (`estimatedTotal` / `remainingAmount`).
+
+### 3. Chuyên mục Bài viết & Cẩm nang (`/posts`, `/posts/[slug]`), Trình chỉnh sửa Tiêu điểm Hero & Kiểm toán QA
+
+- Bổ sung trang danh mục bài viết `/posts` và chi tiết bài viết `/posts/[slug]` (SSG/ISR), hỗ trợ liên kết bài viết với chương trình khuyến mãi (`20261118_185500_posts_promotion_link`) và trình chọn điểm lấy nét ảnh Hero Carousel (`20261118_120000_hero_slide_focal_point`).
+- Bổ sung endpoint kiểm tra sức khỏe hệ thống `/nori-api/health` và công cụ chạy E2E trên cơ sở dữ liệu cô lập `scripts/run-e2e-isolated.mjs` + `scripts/repair-nori-db.mjs`.
+- Hoàn thành bộ báo cáo kiểm toán chất lượng toàn diện tại `docs/audit/` với **247 Unit Tests** và **108 Playwright E2E Tests** đạt 100% PASS.
+
+---
+
 ## [Phiên bản 2.3.0] — 2026-11-18: Chỉnh Sửa Đơn Chờ Duyệt, Thông Báo & Tư Vấn Sau Duyệt, Hero Carousel CMS & Quản Trị Phương Tiện Động
 
 ### 1. Nghiệp vụ Chỉnh sửa Đơn thuê Đang Chờ Duyệt (`PENDING`)

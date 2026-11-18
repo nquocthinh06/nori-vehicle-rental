@@ -28,7 +28,7 @@ function removeIfExists(filePath) {
 }
 
 async function main() {
-  const sourceDb = path.resolve(process.cwd(), 'nori.db')
+  const sourceDb = path.resolve(process.cwd(), process.env.NORI_SOURCE_DB || 'nori.db')
   const isolatedDb = path.resolve(process.cwd(), 'nori-test-isolated.db')
   const envMap = parseEnv(path.resolve(process.cwd(), '.env'))
   const adminEmail = (process.env.NORI_ADMIN_EMAIL || envMap.NORI_ADMIN_EMAIL || 'admin@nori.vn')
@@ -99,6 +99,14 @@ async function main() {
 
       const integrity = db.prepare('PRAGMA integrity_check').all()
       const fkCheck = db.prepare('PRAGMA foreign_key_check').all()
+      if (integrity[0]?.integrity_check !== 'ok') {
+        throw new Error(`Integrity check failed: ${JSON.stringify(integrity)}`)
+      }
+      if (fkCheck.length > 0) {
+        throw new Error(
+          `Foreign key check failed (${fkCheck.length}): ${JSON.stringify(fkCheck.slice(0, 10))}`,
+        )
+      }
       console.log('ISOLATED_ADMIN_TEST_PASS:', {
         adminEmail: adminRow.email,
         idempotentCount: admins.length,

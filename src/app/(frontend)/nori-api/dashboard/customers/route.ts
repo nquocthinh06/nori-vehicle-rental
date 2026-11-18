@@ -3,7 +3,7 @@ import { apiError, assertOrigin, body, fail, json, text } from '@/lib/api-utils'
 
 export async function GET(request: Request) {
   try {
-    const auth = await requireAdmin()
+    const auth = await requireAdmin({ permission: ['customers', 'read'] })
     if (!auth.ok) return auth.response
     const { payload, user } = auth
 
@@ -199,7 +199,7 @@ export async function GET(request: Request) {
 export async function PATCH(request: Request) {
   try {
     assertOrigin(request)
-    const auth = await requireAdmin()
+    const auth = await requireAdmin({ permission: ['customers', 'update'] })
     if (!auth.ok) return auth.response
     const { payload, user } = auth
 

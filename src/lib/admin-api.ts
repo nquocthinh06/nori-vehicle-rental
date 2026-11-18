@@ -1,6 +1,6 @@
 import 'server-only'
-import { headers } from 'next/headers'
-import type { Payload } from 'payload'
+import { cookies, headers } from 'next/headers'
+import { JWTAuthentication, type Payload } from 'payload'
 import type { Admin } from '@/payload-types'
 import {
   adminHasPermission,
@@ -13,6 +13,7 @@ import {
 } from '@/access/nori'
 import { fail } from './api-utils'
 import { getPayloadClient } from './payload'
+import { ADMIN_COOKIE_NAME, hasActiveSessionRecord } from './session-cookie'
 
 export type AuthenticatedAdmin = {
   id: string
@@ -37,7 +38,30 @@ export async function requireAdmin(options?: {
   | { ok: false; response: Response }
 > {
   const payload = await getPayloadClient()
-  const { user } = await payload.auth({ headers: await headers() })
+  const reqHeaders = await headers()
+  let { user } = await payload.auth({ headers: reqHeaders })
+  if (user?.collection === 'admins' && !hasActiveSessionRecord(user)) {
+    user = null
+  }
+  if (user?.collection !== 'admins' && reqHeaders.get('sec-fetch-site') !== 'cross-site') {
+    const token = (await cookies()).get(ADMIN_COOKIE_NAME)?.value
+    if (token) {
+      try {
+        const fallback = await JWTAuthentication({
+          headers: new Headers({
+            Authorization: `JWT ${token}`,
+            DisableAutologin: 'true',
+          }),
+          payload,
+        })
+        if (fallback.user?.collection === 'admins' && hasActiveSessionRecord(fallback.user)) {
+          user = fallback.user
+        }
+      } catch {
+        // invalid or expired admin token
+      }
+    }
+  }
   if (user?.collection !== 'admins') {
     return {
       ok: false,
@@ -89,4 +113,28 @@ export async function requireAdmin(options?: {
       collection: 'admins',
     },
   }
+}
+
+export async function resolveCustomerDisplayNames(
+  payload: Payload,
+  ids: Iterable<string>,
+): Promise<Map<string, { fullName: string; email?: string }>> {
+  const uniqueIds = Array.from(new Set(Array.from(ids).filter(Boolean)))
+  const map = new Map<string, { fullName: string; email?: string }>()
+  if (!uniqueIds.length) return map
+  const res = await payload.find({
+    collection: 'users',
+    overrideAccess: true,
+    depth: 0,
+    limit: uniqueIds.length,
+    where: { id: { in: uniqueIds } },
+    select: { fullName: true, email: true },
+  })
+  for (const doc of res.docs) {
+    map.set(String(doc.id), {
+      fullName: doc.fullName || 'Chưa cập nhật',
+      email: doc.email || undefined,
+    })
+  }
+  return map
 }

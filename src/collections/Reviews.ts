@@ -1,5 +1,5 @@
 import { APIError, type CollectionConfig } from 'payload'
-import { customerOnly, isAdmin, serverField } from '@/access/nori'
+import { adminHasAnyPermission, adminPermission, customerOnly, serverField } from '@/access/nori'
 import { auditCollection } from '@/hooks/audit-nori'
 import { relationId } from '@/lib/rental-rules'
 
@@ -24,9 +24,15 @@ export const Reviews: CollectionConfig = {
   access: {
     create: customerOnly,
     read: ({ req }) =>
-      req.user?.collection === 'admins' ? true : { status: { equals: 'PUBLISHED' } },
-    update: isAdmin,
-    delete: isAdmin,
+      adminHasAnyPermission(req.user, [
+        ['customers', 'read'],
+        ['vehicles', 'read'],
+        ['models', 'read'],
+      ])
+        ? true
+        : { status: { equals: 'PUBLISHED' } },
+    update: adminPermission('customers', 'update'),
+    delete: adminPermission('customers', 'delete'),
   },
   hooks: {
     beforeChange: [

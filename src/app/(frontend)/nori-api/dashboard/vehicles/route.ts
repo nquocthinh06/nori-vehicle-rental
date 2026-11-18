@@ -1,5 +1,24 @@
+import { adminHasPermission, type AdminAction, type AdminModule } from '@/access/nori'
 import { requireAdmin } from '@/lib/admin-api'
 import { apiError, assertOrigin, body, fail, json, text } from '@/lib/api-utils'
+
+async function resolveTargetModuleFromBody(request: Request): Promise<AdminModule> {
+  try {
+    const parsed = (await request.clone().json()) as { entity?: unknown } | null
+    return parsed?.entity === 'model' ? 'models' : 'vehicles'
+  } catch {
+    return 'vehicles'
+  }
+}
+
+function resolveTargetModuleFromQuery(request: Request): AdminModule {
+  const sp = new URL(request.url).searchParams
+  return sp.get('entity') === 'model' || sp.get('view') === 'models' ? 'models' : 'vehicles'
+}
+
+function fleetAuth(module: AdminModule, action: AdminAction) {
+  return requireAdmin({ permission: [module, action] })
+}
 import { photo } from '@/lib/catalogue'
 import { subCategoriesByCategory } from '@/lib/rental-rules'
 
@@ -237,7 +256,7 @@ function sanitizeVehiclePhotos(rawPhotos: unknown, fallbackPhotoIds: unknown) {
 
 export async function GET(request: Request) {
   try {
-    const auth = await requireAdmin()
+    const auth = await fleetAuth(resolveTargetModuleFromQuery(request), 'read')
     if (!auth.ok) return auth.response
     const { payload, user } = auth
 
@@ -449,14 +468,22 @@ export async function GET(request: Request) {
         limit: 200,
         sort: 'sortOrder',
       }),
-      payload.find({
-        collection: 'bookings',
-        user,
-        overrideAccess: false,
-        depth: 0,
-        limit: 500,
-        select: { vehicle: true, status: true, startDate: true, endDate: true, bookingKey: true },
-      }),
+      adminHasPermission(auth.admin, 'bookings', 'read')
+        ? payload.find({
+            collection: 'bookings',
+            user,
+            overrideAccess: false,
+            depth: 0,
+            limit: 500,
+            select: {
+              vehicle: true,
+              status: true,
+              startDate: true,
+              endDate: true,
+              bookingKey: true,
+            },
+          })
+        : Promise.resolve({ docs: [] }),
     ])
 
     const bookingsByVehicle = new Map<
@@ -656,7 +683,7 @@ const MODEL_AND_VEHICLE_ALLOWLIST = [
 export async function POST(request: Request) {
   try {
     assertOrigin(request)
-    const auth = await requireAdmin()
+    const auth = await fleetAuth(await resolveTargetModuleFromBody(request), 'create')
     if (!auth.ok) return auth.response
     const { payload, user } = auth
 
@@ -817,7 +844,7 @@ export async function POST(request: Request) {
 export async function PATCH(request: Request) {
   try {
     assertOrigin(request)
-    const auth = await requireAdmin()
+    const auth = await fleetAuth(await resolveTargetModuleFromBody(request), 'update')
     if (!auth.ok) return auth.response
     const { payload, user } = auth
 
@@ -1043,7 +1070,7 @@ export async function PATCH(request: Request) {
 export async function DELETE(request: Request) {
   try {
     assertOrigin(request)
-    const auth = await requireAdmin()
+    const auth = await fleetAuth(resolveTargetModuleFromQuery(request), 'delete')
     if (!auth.ok) return auth.response
     const { payload, user } = auth
 

@@ -32,7 +32,13 @@ type PaymentRow = {
   customerName: string | null
 }
 
-type BookingOption = { id: string; bookingKey: string; reference: string; totalPrice: number }
+type BookingOption = {
+  id: string
+  bookingKey: string
+  reference: string
+  totalPrice: number
+  status?: string
+}
 
 const typeLabels: Record<string, string> = {
   DEPOSIT: 'Tiền đặt cọc',
@@ -289,11 +295,16 @@ export function PaymentsPanel() {
               onChange={(e) => setBookingId(e.target.value)}
             >
               <option value="">-- Không gắn đơn cụ thể --</option>
-              {bookings.map((b) => (
-                <option key={b.id} value={b.id}>
-                  {b.bookingKey} ({b.reference}) — {formatMoney(b.totalPrice)}
-                </option>
-              ))}
+              {bookings
+                .filter(
+                  (b) =>
+                    paymentType === 'REFUND' || !['CANCELLED', 'REJECTED'].includes(b.status ?? ''),
+                )
+                .map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.bookingKey} ({b.reference}) — {formatMoney(b.totalPrice)}
+                  </option>
+                ))}
             </Select>
             <Select
               id="pay-type"

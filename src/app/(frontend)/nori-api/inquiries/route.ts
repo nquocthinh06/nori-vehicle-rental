@@ -10,8 +10,13 @@ export async function POST(request: Request) {
   try {
     assertOrigin(request)
     assertRateLimit(request, 'inquiries-create', 40, 60_000)
-    const user = await appAuth.currentUser()
-    if (!user) return fail('Vui lòng đăng nhập để gửi yêu cầu tư vấn.', 401, 'UNAUTHORIZED')
+    const auth = await appAuth.requireCustomer({
+      unauthMessage: 'Vui lòng đăng nhập để gửi yêu cầu tư vấn.',
+      adminForbiddenMessage:
+        'Bạn đang đăng nhập bằng tài khoản quản trị. Vui lòng sử dụng tài khoản khách hàng để gửi yêu cầu tư vấn.',
+    })
+    if (!auth.ok) return auth.response
+    const user = auth.user
     const data = await body(request, [
       'model',
       'phone',
@@ -76,8 +81,13 @@ export async function POST(request: Request) {
 
 export async function GET() {
   try {
-    const user = await appAuth.currentUser()
-    if (!user) return fail('Vui lòng đăng nhập.', 401, 'UNAUTHORIZED')
+    const auth = await appAuth.requireCustomer({
+      unauthMessage: 'Vui lòng đăng nhập.',
+      adminForbiddenMessage:
+        'Bạn đang đăng nhập bằng tài khoản quản trị. Vui lòng quản lý yêu cầu mua xe trong trang Quản trị hệ thống.',
+    })
+    if (!auth.ok) return auth.response
+    const user = auth.user
     const payload = await getPayloadClient()
     const result = await payload.find({
       collection: 'sales-inquiries',

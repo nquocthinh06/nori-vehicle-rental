@@ -1,5 +1,6 @@
 import { appAuth } from '@/lib/app-auth'
 import { getPayloadClient } from '@/lib/payload'
+import { withBookingWriteLock } from '@/lib/promo-service'
 import { apiError, assertOrigin, assertRateLimit, body, fail, json, text } from '@/lib/api-utils'
 import { canModifyBooking } from '@/lib/rental-rules'
 import type { Booking } from '@/payload-types'
@@ -68,7 +69,7 @@ function bookingView(
     totalPrice,
     depositSnapshot: booking.depositSnapshot ?? 0,
     initialPaymentDue: booking.initialPaymentDue ?? booking.depositSnapshot ?? 0,
-    remainingAmount: booking.remainingAmount ?? totalPrice,
+    remainingAmount: totalPrice,
     handoverNote: booking.handoverNote ?? null,
     expectedContactDate: booking.expectedContactDate ?? null,
     workingHoursSnapshot: booking.workingHoursSnapshot ?? null,
@@ -106,8 +107,13 @@ function bookingView(
 
 export async function GET(request: Request) {
   try {
-    const user = await appAuth.currentUser()
-    if (!user) return fail('Vui lòng đăng nhập để xem đơn thuê.', 401, 'UNAUTHORIZED')
+    const auth = await appAuth.requireCustomer({
+      unauthMessage: 'Vui lòng đăng nhập để xem đơn thuê.',
+      adminForbiddenMessage:
+        'Bạn đang đăng nhập bằng tài khoản quản trị. Vui lòng sử dụng tài khoản khách hàng để xem đơn thuê cá nhân.',
+    })
+    if (!auth.ok) return auth.response
+    const user = auth.user
     const params = new URL(request.url).searchParams
     const singleId = params.get('id')
     const payload = await getPayloadClient()
@@ -202,8 +208,13 @@ export async function POST(request: Request) {
   try {
     assertOrigin(request)
     assertRateLimit(request, 'bookings-create', 40, 60_000)
-    const user = await appAuth.currentUser()
-    if (!user) return fail('Vui lòng đăng nhập để đặt xe.', 401, 'UNAUTHORIZED')
+    const auth = await appAuth.requireCustomer({
+      unauthMessage: 'Vui lòng đăng nhập để đặt xe.',
+      adminForbiddenMessage:
+        'Bạn đang đăng nhập bằng tài khoản quản trị. Vui lòng sử dụng tài khoản khách hàng để thực hiện đặt thuê.',
+    })
+    if (!auth.ok) return auth.response
+    const user = auth.user
     const data = await body(request, [
       'vehicle',
       'startDate',
@@ -219,33 +230,52 @@ export async function POST(request: Request) {
       'driverLicenseNumber',
       'note',
       'promoCode',
+      'expectedTotalPrice',
     ])
+    const expectedTotalPrice =
+      data.expectedTotalPrice !== undefined && data.expectedTotalPrice !== null
+        ? Number(data.expectedTotalPrice)
+        : undefined
+    if (
+      expectedTotalPrice !== undefined &&
+      (!Number.isSafeInteger(expectedTotalPrice) || expectedTotalPrice < 0)
+    ) {
+      return fail('Báo giá đối chiếu không hợp lệ.')
+    }
+
     const payload = await getPayloadClient()
-    const booking = await payload.create({
-      collection: 'bookings',
-      user,
-      overrideAccess: false,
-      depth: 2,
-      data: {
-        vehicle: text(data.vehicle, 100),
-        startDate: text(data.startDate, 10),
-        endDate: text(data.endDate, 10),
-        pickupTime: text(data.pickupTime, 5) || undefined,
-        returnTime: text(data.returnTime, 5) || undefined,
-        pickupLocation: text(data.pickupLocation, 200) || undefined,
-        returnLocation: text(data.returnLocation, 200) || undefined,
-        deliveryRequested: Boolean(data.deliveryRequested),
-        addonServices: Array.isArray(data.addonServices)
-          ? data.addonServices.map((s) => text(s, 40)).join(',')
-          : text(data.addonServices, 200) || undefined,
-        customerPhone: text(data.customerPhone, 16) || undefined,
-        customerEmail: text(data.customerEmail, 254) || undefined,
-        driverLicenseNumber: text(data.driverLicenseNumber, 40) || undefined,
-        note: text(data.note, 500) || undefined,
-        promoCode: text(data.promoCode, 40) || undefined,
-      },
+    return await withBookingWriteLock(async () => {
+      const booking = await payload.create({
+        collection: 'bookings',
+        user,
+        overrideAccess: false,
+        depth: 2,
+        context: {
+          ...(expectedTotalPrice !== undefined ? { expectedTotalPrice } : {}),
+        },
+        data: {
+          vehicle: text(data.vehicle, 100),
+          startDate: text(data.startDate, 10),
+          endDate: text(data.endDate, 10),
+          pickupTime: text(data.pickupTime, 5) || undefined,
+          returnTime: text(data.returnTime, 5) || undefined,
+          pickupLocation: text(data.pickupLocation, 200) || undefined,
+          returnLocation: text(data.returnLocation, 200) || undefined,
+          deliveryRequested: Boolean(data.deliveryRequested),
+          addonServices: Array.isArray(data.addonServices)
+            ? data.addonServices.map((s) => text(s, 40)).join(',')
+            : text(data.addonServices, 200) || undefined,
+          customerPhone:
+            data.customerPhone !== undefined ? text(data.customerPhone, 16) : undefined,
+          customerEmail:
+            data.customerEmail !== undefined ? text(data.customerEmail, 254) : undefined,
+          driverLicenseNumber: text(data.driverLicenseNumber, 40) || undefined,
+          note: text(data.note, 500) || undefined,
+          promoCode: text(data.promoCode, 40) || undefined,
+        },
+      })
+      return json(bookingView(booking), 201)
     })
-    return json(bookingView(booking), 201)
   } catch (error) {
     return apiError(error)
   }
@@ -255,12 +285,18 @@ export async function PUT(request: Request) {
   try {
     assertOrigin(request)
     assertRateLimit(request, 'bookings-modify', 30, 60_000)
-    const user = await appAuth.currentUser()
-    if (!user) return fail('Vui lòng đăng nhập để chỉnh sửa đơn thuê.', 401, 'UNAUTHORIZED')
+    const auth = await appAuth.requireCustomer({
+      unauthMessage: 'Vui lòng đăng nhập để chỉnh sửa đơn thuê.',
+      adminForbiddenMessage:
+        'Bạn đang đăng nhập bằng tài khoản quản trị. Vui lòng sử dụng tài khoản khách hàng để chỉnh sửa đơn thuê.',
+    })
+    if (!auth.ok) return auth.response
+    const user = auth.user
 
     const data = await body(request, [
       'id',
       'expectedRevision',
+      'expectedTotalPrice',
       'vehicle',
       'startDate',
       'endDate',
@@ -290,6 +326,17 @@ export async function PUT(request: Request) {
       return fail('Phiên bản đơn thuê không hợp lệ.')
     }
 
+    const expectedTotalPrice =
+      data.expectedTotalPrice !== undefined && data.expectedTotalPrice !== null
+        ? Number(data.expectedTotalPrice)
+        : undefined
+    if (
+      expectedTotalPrice !== undefined &&
+      (!Number.isSafeInteger(expectedTotalPrice) || expectedTotalPrice < 0)
+    ) {
+      return fail('Báo giá đối chiếu không hợp lệ.')
+    }
+
     const payload = await getPayloadClient()
     const modifyPayload: Record<string, unknown> = {}
     if (data.vehicle !== undefined) modifyPayload.vehicle = text(data.vehicle, 100)
@@ -315,21 +362,24 @@ export async function PUT(request: Request) {
     if (data.promoCode !== undefined) modifyPayload.promoCode = text(data.promoCode, 40)
     if (data.reason !== undefined) modifyPayload.reason = text(data.reason, 300)
 
-    const updated = await payload.update({
-      collection: 'bookings',
-      id,
-      user,
-      overrideAccess: false,
-      context: {
-        noriCustomerModify: true,
-        expectedRevision,
-        noriModifyPayload: modifyPayload,
-      },
-      data: {},
-      depth: 2,
-    })
+    return await withBookingWriteLock(async () => {
+      const updated = await payload.update({
+        collection: 'bookings',
+        id,
+        user,
+        overrideAccess: false,
+        context: {
+          noriCustomerModify: true,
+          expectedRevision,
+          ...(expectedTotalPrice !== undefined ? { expectedTotalPrice } : {}),
+          noriModifyPayload: modifyPayload,
+        },
+        data: {},
+        depth: 2,
+      })
 
-    return json(bookingView(updated, { hasPaymentRecord: false, paymentConfirmed: false }))
+      return json(bookingView(updated, { hasPaymentRecord: false, paymentConfirmed: false }))
+    })
   } catch (error) {
     return apiError(error)
   }
@@ -338,34 +388,41 @@ export async function PUT(request: Request) {
 export async function PATCH(request: Request) {
   try {
     assertOrigin(request)
-    const user = await appAuth.currentUser()
-    if (!user) return fail('Vui lòng đăng nhập.', 401, 'UNAUTHORIZED')
+    const auth = await appAuth.requireCustomer({
+      unauthMessage: 'Vui lòng đăng nhập.',
+      adminForbiddenMessage:
+        'Bạn đang đăng nhập bằng tài khoản quản trị. Vui lòng sử dụng tài khoản khách hàng để hủy đơn thuê cá nhân.',
+    })
+    if (!auth.ok) return auth.response
+    const user = auth.user
     const data = await body(request, ['id'])
     const payload = await getPayloadClient()
     const id = text(data.id, 100)
-    const booking = await payload.findByID({
-      collection: 'bookings',
-      id,
-      user,
-      overrideAccess: false,
-      depth: 0,
+    return await withBookingWriteLock(async () => {
+      const booking = await payload.findByID({
+        collection: 'bookings',
+        id,
+        user,
+        overrideAccess: false,
+        depth: 0,
+      })
+      if (!['PENDING', 'DEPOSIT_PENDING'].includes(booking.status ?? ''))
+        return fail(
+          'Chỉ có thể hủy đơn đang chờ xác nhận hoặc chờ đặt cọc.',
+          409,
+          'INVALID_BOOKING_TRANSITION',
+        )
+      const updated = await payload.update({
+        collection: 'bookings',
+        id,
+        user,
+        overrideAccess: false,
+        context: { noriCustomerCancel: true },
+        data: {},
+        depth: 2,
+      })
+      return json(bookingView(updated))
     })
-    if (!['PENDING', 'DEPOSIT_PENDING'].includes(booking.status ?? ''))
-      return fail(
-        'Chỉ có thể hủy đơn đang chờ xác nhận hoặc chờ đặt cọc.',
-        409,
-        'INVALID_BOOKING_TRANSITION',
-      )
-    const updated = await payload.update({
-      collection: 'bookings',
-      id,
-      user,
-      overrideAccess: false,
-      context: { noriCustomerCancel: true },
-      data: {},
-      depth: 2,
-    })
-    return json(bookingView(updated))
   } catch (error) {
     return apiError(error)
   }

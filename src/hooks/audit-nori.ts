@@ -163,6 +163,7 @@ export function auditCollection(options: AuditOptions): {
 
 export const auditSiteContent: GlobalAfterChangeHook = async ({ doc, previousDoc, req }) => {
   const fields: Record<string, string> = {
+    heroSlides: 'Hero Carousel',
     heroImages: 'Banner',
     storyImage: 'Ảnh câu chuyện',
     aboutSummary: 'Giới thiệu',

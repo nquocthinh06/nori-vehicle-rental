@@ -66,10 +66,11 @@ export function ButtonLink({
   variant = 'primary',
   children,
   className,
+  prefetch = false,
   ...props
 }: ComponentProps<typeof Link> & { variant?: Variant; children: ReactNode; className?: string }) {
   return (
-    <Link className={cn(control, variants[variant], className)} {...props}>
+    <Link prefetch={prefetch} className={cn(control, variants[variant], className)} {...props}>
       {children}
     </Link>
   )
@@ -102,10 +103,15 @@ export function TabButton({
 export function NoriLink({
   children,
   className,
+  prefetch = false,
   ...props
 }: ComponentProps<typeof Link> & { children: ReactNode; className?: string }) {
   return (
-    <Link className={cn('rounded-sm transition-colors hover:text-brand', className)} {...props}>
+    <Link
+      prefetch={prefetch}
+      className={cn('rounded-sm transition-colors hover:text-brand', className)}
+      {...props}
+    >
       {children}
     </Link>
   )

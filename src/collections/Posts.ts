@@ -1,7 +1,7 @@
-import type { CollectionConfig } from 'payload'
-import { isAdmin } from '@/access/nori'
+import { APIError, type CollectionConfig } from 'payload'
+import { adminHasPermission, adminPermission } from '@/access/nori'
 import { auditCollection } from '@/hooks/audit-nori'
-import { revalidateSite } from '@/hooks/revalidate-nori'
+import { revalidateDeletedPost, revalidatePost } from '@/hooks/revalidate-nori'
 
 const postAudit = auditCollection({
   entity: 'post',
@@ -9,7 +9,13 @@ const postAudit = auditCollection({
   label: (doc) => String(doc.title ?? doc.slug ?? doc.id),
   statusField: '_status',
   statusLabels: { draft: 'Bản nháp', published: 'Đã xuất bản' },
-  fields: { title: 'Tiêu đề', category: 'Chuyên mục', seoTitle: 'SEO Title' },
+  fields: {
+    title: 'Tiêu đề',
+    category: 'Chuyên mục',
+    cover: 'Ảnh banner',
+    promotion: 'Khuyến mãi liên kết',
+    seoTitle: 'SEO Title',
+  },
 })
 
 export const Posts: CollectionConfig = {
@@ -21,21 +27,39 @@ export const Posts: CollectionConfig = {
     defaultColumns: ['title', 'category', '_status', 'publishedAt'],
   },
   access: {
-    create: isAdmin,
+    create: adminPermission('posts', 'create'),
     read: ({ req }) =>
-      req.user?.collection === 'admins' ? true : { _status: { equals: 'published' } },
-    update: isAdmin,
-    delete: isAdmin,
+      adminHasPermission(req.user, 'posts', 'read') ? true : { _status: { equals: 'published' } },
+    update: adminPermission('posts', 'update'),
+    delete: adminPermission('posts', 'delete'),
   },
   hooks: {
-    afterChange: [
-      async (args) => {
-        await revalidateSite(args as never)
-        return args.doc
+    beforeChange: [
+      ({ data, operation, originalDoc, req }) => {
+        if (!data || req.user?.collection !== 'admins' || req.context?.skipPermissionCheck) {
+          return data
+        }
+        const isPublishing = data._status === 'published'
+        const isUnpublishing =
+          operation === 'update' && originalDoc?._status === 'published' && data._status === 'draft'
+        if ((isPublishing || isUnpublishing) && !adminHasPermission(req.user, 'posts', 'publish')) {
+          throw new APIError('Tài khoản chưa được cấp quyền Xuất bản bài viết.', 403)
+        }
+        return data
       },
-      postAudit.afterChange,
     ],
-    afterDelete: [postAudit.afterDelete],
+    beforeValidate: [
+      ({ data, originalDoc }) => {
+        if (!data) return data
+        const nextCategory = data.category ?? originalDoc?.category
+        if (nextCategory && nextCategory !== 'PROMOTION') {
+          data.promotion = null
+        }
+        return data
+      },
+    ],
+    afterChange: [revalidatePost, postAudit.afterChange],
+    afterDelete: [revalidateDeletedPost, postAudit.afterDelete],
   },
   fields: [
     { name: 'title', label: 'Tiêu đề bài viết', type: 'text', required: true, maxLength: 200 },
@@ -60,7 +84,16 @@ export const Posts: CollectionConfig = {
       required: true,
       maxLength: 15000,
     },
-    { name: 'cover', label: 'Ảnh bìa', type: 'upload', relationTo: 'media' },
+    { name: 'cover', label: 'Ảnh banner bài viết', type: 'upload', relationTo: 'media' },
+    {
+      name: 'promotion',
+      label: 'Khuyến mãi liên kết',
+      type: 'relationship',
+      relationTo: 'promotions',
+      admin: {
+        condition: (data) => data?.category === 'PROMOTION',
+      },
+    },
     { name: 'publishedAt', label: 'Ngày xuất bản', type: 'text' },
     { name: 'seoTitle', label: 'SEO Meta Title', type: 'text', maxLength: 160 },
     { name: 'seoDescription', label: 'SEO Meta Description', type: 'textarea', maxLength: 320 },

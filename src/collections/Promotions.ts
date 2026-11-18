@@ -1,6 +1,8 @@
-import type { CollectionConfig } from 'payload'
-import { isAdmin } from '@/access/nori'
+import { APIError, type CollectionConfig } from 'payload'
+import { adminPermission } from '@/access/nori'
 import { auditCollection } from '@/hooks/audit-nori'
+import { revalidateDeletedPromotion, revalidatePromotion } from '@/hooks/revalidate-nori'
+import { validatePromotionInput } from '@/lib/rental-rules'
 
 const promoAudit = auditCollection({
   entity: 'promotion',
@@ -25,20 +27,62 @@ export const Promotions: CollectionConfig = {
     defaultColumns: ['code', 'name', 'discountType', 'discountValue', 'active', 'validTo'],
   },
   access: {
-    create: isAdmin,
-    read: ({ req }) => (req.user?.collection === 'admins' ? true : { active: { equals: true } }),
-    update: isAdmin,
-    delete: isAdmin,
+    create: adminPermission('promotions', 'create'),
+    read: adminPermission('promotions', 'read'),
+    update: adminPermission('promotions', 'update'),
+    delete: adminPermission('promotions', 'delete'),
   },
   hooks: {
     beforeValidate: [
-      ({ data }) => {
-        if (data?.code) data.code = String(data.code).trim().toUpperCase()
-        return data
+      ({ data, originalDoc, req }) => {
+        if (!data) return data
+        if (data.code) data.code = String(data.code).trim().toUpperCase()
+        // Skip full metadata re-validation when internal booking hook only updates usedCount
+        if (req.context?.skipAudit && Object.keys(data).every((k) => k === 'usedCount')) {
+          return data
+        }
+        const merged = {
+          code: data.code ?? originalDoc?.code ?? '',
+          name: data.name ?? originalDoc?.name ?? '',
+          description:
+            data.description !== undefined ? data.description : (originalDoc?.description ?? null),
+          discountType: data.discountType ?? originalDoc?.discountType ?? 'PERCENT',
+          discountValue:
+            data.discountValue !== undefined ? data.discountValue : originalDoc?.discountValue,
+          maxDiscount:
+            data.maxDiscount !== undefined ? data.maxDiscount : (originalDoc?.maxDiscount ?? null),
+          minDays: data.minDays !== undefined ? data.minDays : (originalDoc?.minDays ?? 1),
+          appliesTo: data.appliesTo ?? originalDoc?.appliesTo ?? 'RENT',
+          validFrom:
+            data.validFrom !== undefined ? data.validFrom : (originalDoc?.validFrom ?? null),
+          validTo: data.validTo !== undefined ? data.validTo : (originalDoc?.validTo ?? null),
+          usageLimit:
+            data.usageLimit !== undefined ? data.usageLimit : (originalDoc?.usageLimit ?? null),
+          active: data.active !== undefined ? Boolean(data.active) : Boolean(originalDoc?.active),
+        }
+        const check = validatePromotionInput(merged, Number(originalDoc?.usedCount ?? 0))
+        if (check.error || !check.normalized) {
+          throw new APIError(check.error ?? 'Dữ liệu chương trình khuyến mãi không hợp lệ.', 400)
+        }
+        return {
+          ...data,
+          code: check.normalized.code,
+          name: check.normalized.name,
+          description: check.normalized.description,
+          discountType: check.normalized.discountType,
+          discountValue: check.normalized.discountValue,
+          maxDiscount: check.normalized.maxDiscount,
+          minDays: check.normalized.minDays,
+          appliesTo: check.normalized.appliesTo,
+          validFrom: check.normalized.validFrom,
+          validTo: check.normalized.validTo,
+          usageLimit: check.normalized.usageLimit,
+          active: check.normalized.active,
+        }
       },
     ],
-    afterChange: [promoAudit.afterChange],
-    afterDelete: [promoAudit.afterDelete],
+    afterChange: [revalidatePromotion, promoAudit.afterChange],
+    afterDelete: [revalidateDeletedPromotion, promoAudit.afterDelete],
   },
   fields: [
     {

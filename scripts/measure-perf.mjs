@@ -1,5 +1,14 @@
 import { chromium } from '@playwright/test'
 
+const BASE_URL = process.env.NORI_PERF_BASE_URL || 'http://127.0.0.1:3000'
+const RUNS = Math.max(1, Number(process.env.NORI_PERF_RUNS || 3))
+
+function median(values) {
+  const sorted = [...values].sort((a, b) => a - b)
+  const mid = Math.floor(sorted.length / 2)
+  return sorted.length % 2 !== 0 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2
+}
+
 async function measurePage(browser, url, options = {}) {
   const { width = 1440, height = 1000, throttle = false } = options
   const context = await browser.newContext({
@@ -13,7 +22,7 @@ async function measurePage(browser, url, options = {}) {
     await cdp.send('Network.enable')
     await cdp.send('Network.emulateNetworkConditions', {
       offline: false,
-      downloadThroughput: (1.6 * 1024 * 1024) / 8, // 1.6 Mbps (Fast 3G/Slow 4G)
+      downloadThroughput: (1.6 * 1024 * 1024) / 8,
       uploadThroughput: (750 * 1024) / 8,
       latency: 150,
     })
@@ -23,6 +32,7 @@ async function measurePage(browser, url, options = {}) {
   await page.addInitScript(() => {
     window.__cls = 0
     window.__lcp = 0
+    window.__lcpNode = ''
     window.__shifts = []
     window.__inp = 0
 
@@ -45,7 +55,12 @@ async function measurePage(browser, url, options = {}) {
     new PerformanceObserver((list) => {
       const entries = list.getEntries()
       if (entries.length > 0) {
-        window.__lcp = entries[entries.length - 1].startTime
+        const last = entries[entries.length - 1]
+        window.__lcp = last.startTime
+        const el = last.element
+        if (el) {
+          window.__lcpNode = `${el.tagName}${el.getAttribute('src') ? `(${el.getAttribute('src')})` : ''}`
+        }
       }
     }).observe({ type: 'largest-contentful-paint', buffered: true })
 
@@ -59,14 +74,12 @@ async function measurePage(browser, url, options = {}) {
   })
 
   const t0 = performance.now()
-  await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 15000 })
-  await page.waitForLoadState('load', { timeout: 10000 }).catch(() => {})
+  await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 })
+  await page.waitForLoadState('load', { timeout: 25000 }).catch(() => {})
   const navTime = performance.now() - t0
 
-  // Wait extra 1000ms for any late hydration/fetches
   await page.waitForTimeout(1000)
 
-  // Trigger interactive action to measure INP / interaction delay
   const button = page.getByRole('button', { name: /Nội thất|Thông số|Thuê xe/i }).first()
   if (await button.isVisible().catch(() => false)) {
     await button.click().catch(() => {})
@@ -76,6 +89,7 @@ async function measurePage(browser, url, options = {}) {
   const metrics = await page.evaluate(() => ({
     cls: window.__cls,
     lcp: window.__lcp,
+    lcpNode: window.__lcpNode,
     inp: window.__inp,
     shifts: window.__shifts,
   }))
@@ -91,59 +105,72 @@ async function main() {
     args: ['--no-sandbox'],
   })
 
-  console.log('--- ĐO LƯỜNG HIỆU NĂNG PRODUCTION BUILD (Next.js 16.4.6) ---')
+  console.log(`--- PRODUCTION PERFORMANCE BENCHMARK (${BASE_URL}, runs=${RUNS}) ---`)
 
   const tests = [
     {
-      name: 'Desktop (1440px) - /vehicles/toyota-fortuner (Toyota Fortuner)',
-      url: 'http://localhost:3000/vehicles/toyota-fortuner',
+      name: 'Desktop (1440px) - /vehicles/toyota-fortuner',
+      url: `${BASE_URL}/vehicles/toyota-fortuner`,
       options: { width: 1440, height: 1000 },
     },
     {
-      name: 'Desktop (1440px) - /vehicles/honda-pcx (Honda PCX)',
-      url: 'http://localhost:3000/vehicles/honda-pcx',
+      name: 'Desktop (1440px) - /vehicles/honda-pcx',
+      url: `${BASE_URL}/vehicles/honda-pcx`,
       options: { width: 1440, height: 1000 },
     },
     {
-      name: 'Desktop (1440px) - /vehicles/ford-ranger-raptor (Ford Ranger)',
-      url: 'http://localhost:3000/vehicles/ford-ranger-raptor',
+      name: 'Desktop (1440px) - /vehicles/ford-ranger-raptor',
+      url: `${BASE_URL}/vehicles/ford-ranger-raptor`,
       options: { width: 1440, height: 1000 },
     },
     {
-      name: 'Mobile (375px, CPU 4x Throttling, Slow 4G) - /vehicles/toyota-fortuner',
-      url: 'http://localhost:3000/vehicles/toyota-fortuner',
+      name: 'Mobile (375px, CPU 4x, Slow 4G) - /vehicles/toyota-fortuner',
+      url: `${BASE_URL}/vehicles/toyota-fortuner`,
       options: { width: 375, height: 812, throttle: true },
     },
     {
-      name: 'Mobile (375px) - / (Home)',
-      url: 'http://localhost:3000/',
-      options: { width: 375, height: 812 },
+      name: 'Mobile (375px, CPU 4x, Slow 4G) - / (Home)',
+      url: `${BASE_URL}/`,
+      options: { width: 375, height: 812, throttle: true },
     },
     {
-      name: 'Mobile (375px) - /vehicles (Catalogue)',
-      url: 'http://localhost:3000/vehicles',
-      options: { width: 375, height: 812 },
+      name: 'Mobile (375px, CPU 4x, Slow 4G) - /vehicles (Catalogue)',
+      url: `${BASE_URL}/vehicles`,
+      options: { width: 375, height: 812, throttle: true },
     },
   ]
 
   for (const t of tests) {
-    try {
-      const res = await measurePage(browser, t.url, t.options)
-      console.log(`\n[${t.name}]`)
-      console.log(
-        `  CLS: ${res.cls.toFixed(4)} ${res.cls <= 0.1 ? '✅ PASS (<=0.1)' : '❌ FAIL (>0.1)'}`,
-      )
-      console.log(
-        `  LCP: ${Math.round(res.lcp)}ms ${res.lcp <= 2500 ? '✅ GOOD (<=2.5s)' : '⚠️ NEEDS REVIEW'}`,
-      )
-      console.log(`  INP: ${Math.round(res.inp)}ms ${res.inp <= 200 ? '✅ GOOD (<=200ms)' : '⚠️'}`)
-      console.log(`  Network Idle: ${res.navTime}ms`)
-      if (res.shifts.length > 0) {
-        console.log(`  Shifts count: ${res.shifts.length}`)
+    const samples = []
+    for (let i = 0; i < RUNS; i++) {
+      try {
+        samples.push(await measurePage(browser, t.url, t.options))
+      } catch (e) {
+        console.error(`Error measuring ${t.name} (run ${i + 1}):`, e.message)
       }
-    } catch (e) {
-      console.error(`Error measuring ${t.name}:`, e.message)
     }
+    if (samples.length === 0) continue
+    const clsVals = samples.map((s) => s.cls)
+    const lcpVals = samples.map((s) => Math.round(s.lcp))
+    const inpVals = samples.map((s) => Math.round(s.inp))
+    const navVals = samples.map((s) => s.navTime)
+    const medLcp = Math.round(median(lcpVals))
+    const medInp = Math.round(median(inpVals))
+    const medCls = median(clsVals)
+
+    console.log(`\n[${t.name}] (${samples.length} runs)`)
+    console.log(
+      `  CLS median: ${medCls.toFixed(4)} (range ${Math.min(...clsVals).toFixed(4)}..${Math.max(...clsVals).toFixed(4)}) ${medCls <= 0.1 ? 'PASS' : 'FAIL'}`,
+    )
+    console.log(
+      `  LCP median: ${medLcp}ms (range ${Math.min(...lcpVals)}..${Math.max(...lcpVals)}ms) ${medLcp <= 2500 ? 'GOOD' : 'OVER'} [candidate: ${samples[samples.length - 1].lcpNode || 'none'}]`,
+    )
+    console.log(
+      `  INP median: ${medInp}ms (range ${Math.min(...inpVals)}..${Math.max(...inpVals)}ms) ${medInp <= 200 ? 'GOOD' : 'OVER'}`,
+    )
+    console.log(
+      `  Load median: ${Math.round(median(navVals))}ms (range ${Math.min(...navVals)}..${Math.max(...navVals)}ms)`,
+    )
   }
 
   await browser.close()

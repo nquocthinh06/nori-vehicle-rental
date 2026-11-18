@@ -66,8 +66,11 @@ export type Quote = {
   addonFee: number
   discountRate: number
   discountAmount: number
+  promoCode?: string | null
   promoDiscountAmount?: number
   promoName?: string | null
+  promoStatus?: string | null
+  promoMessage?: string | null
   promoError?: string | null
   estimatedTotal: number
   depositAmount: number

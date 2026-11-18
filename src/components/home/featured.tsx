@@ -1,7 +1,7 @@
 'use client'
 
 import Image from 'next/image'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Category, ModelView } from '@/lib/catalogue'
 import { Button, ButtonLink, EmptyState, Heading, NoriLink, Text, cn } from '@/components/ui'
 import { Icon, type IconName } from '@/components/ui/icon'
@@ -73,6 +73,34 @@ const categoryCards: CategoryShowcase[] = [
 
 export function Featured({ models }: { models: ModelView[] }) {
   const [category, setCategory] = useState<Category | ''>('')
+  const [belowFoldReady, setBelowFoldReady] = useState(false)
+  const discoverRef = useRef<HTMLElement>(null)
+
+  useEffect(() => {
+    if (belowFoldReady) return
+    const enable = () => setBelowFoldReady(true)
+    if (document.readyState === 'complete') {
+      const id = window.setTimeout(enable, 60)
+      return () => window.clearTimeout(id)
+    }
+    window.addEventListener('load', enable, { once: true })
+    const timer = window.setTimeout(enable, 1800)
+    const observer =
+      typeof IntersectionObserver !== 'undefined' && discoverRef.current
+        ? new IntersectionObserver(
+            (entries) => {
+              if (entries.some((e) => e.isIntersecting)) enable()
+            },
+            { rootMargin: '200px' },
+          )
+        : null
+    if (observer && discoverRef.current) observer.observe(discoverRef.current)
+    return () => {
+      window.removeEventListener('load', enable)
+      window.clearTimeout(timer)
+      observer?.disconnect()
+    }
+  }, [belowFoldReady])
 
   // Calculate live vehicle counts
   const categoryCounts = useMemo(() => {
@@ -87,7 +115,7 @@ export function Featured({ models }: { models: ModelView[] }) {
   const visible = models.filter((m) => !category || m.category === category).slice(0, 6)
 
   return (
-    <section id="discover" className="py-14 md:py-section">
+    <section ref={discoverRef} id="discover" className="py-14 md:py-section">
       {/* Section Header */}
       <div className="flex flex-wrap items-end justify-between gap-5">
         <div className="max-w-reading">
@@ -119,13 +147,18 @@ export function Featured({ models }: { models: ModelView[] }) {
             >
               {/* Photo Area */}
               <div className="relative aspect-vehicle w-full overflow-hidden bg-night/5">
-                <Image
-                  src={cat.image}
-                  alt={cat.imageAlt}
-                  fill
-                  sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 25vw"
-                  className="object-cover object-center transition-transform duration-500 ease-out group-hover:scale-105"
-                />
+                {belowFoldReady && (
+                  <Image
+                    src={cat.image}
+                    alt={cat.imageAlt}
+                    fill
+                    loading="lazy"
+                    decoding="async"
+                    fetchPriority="low"
+                    sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 25vw"
+                    className="object-cover object-center transition-transform duration-500 ease-out group-hover:scale-105"
+                  />
+                )}
                 <div className="absolute inset-0 bg-gradient-to-t from-night/70 via-night/10 to-transparent" />
 
                 {/* Badge top-left */}

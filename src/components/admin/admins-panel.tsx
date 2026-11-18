@@ -34,13 +34,15 @@ const MODULES = [
   { key: 'reports', label: 'Báo cáo' },
 ] as const
 
-const ACTIONS = ['read', 'create', 'update', 'delete'] as const
+const ACTIONS = ['read', 'create', 'update', 'delete', 'publish'] as const
 const ACTION_LABELS: Record<string, string> = {
   read: 'Xem',
   create: 'Tạo',
   update: 'Sửa',
   delete: 'Xóa',
+  publish: 'Xuất bản',
 }
+const PUBLISHABLE_MODULES = new Set(['content', 'posts'])
 
 const DEFAULT_STAFF_PERMS: Record<string, string[]> = {
   vehicles: ['read', 'create', 'update'],
@@ -426,6 +428,13 @@ export function AdminsPanel() {
                       <tr key={m.key}>
                         <td className="px-4 py-2.5 font-medium">{m.label}</td>
                         {ACTIONS.map((act) => {
+                          if (act === 'publish' && !PUBLISHABLE_MODULES.has(m.key)) {
+                            return (
+                              <td key={act} className="px-3 py-2.5 text-center text-muted">
+                                —
+                              </td>
+                            )
+                          }
                           const checked = current.includes(act)
                           return (
                             <td key={act} className="px-3 py-2.5 text-center">

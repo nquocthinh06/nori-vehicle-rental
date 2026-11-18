@@ -737,6 +737,380 @@ export function formatMoney(value?: number | string | null): string {
     : 'Chưa cập nhật'
 }
 
+export function formatVnd(value?: number | string | null): string {
+  if (value === null || value === undefined || value === '') return 'Chưa cập nhật'
+  const amount = Number(value)
+  return Number.isSafeInteger(amount) && amount >= 0
+    ? new Intl.NumberFormat('vi-VN', {
+        style: 'currency',
+        currency: 'VND',
+        maximumFractionDigits: 0,
+      }).format(amount)
+    : 'Chưa cập nhật'
+}
+
+export const PROMO_REMOVED_MESSAGE = 'Đã bỏ mã khuyến mãi.'
+
+export type PromoEvaluationStatus =
+  | 'APPLIED'
+  | 'NOT_FOUND'
+  | 'INACTIVE'
+  | 'INVALID_SCOPE'
+  | 'NOT_STARTED'
+  | 'EXPIRED'
+  | 'USAGE_LIMIT_REACHED'
+  | 'MIN_DAYS_NOT_MET'
+
+export type PromoRecordLike = {
+  id?: string
+  code: string
+  name: string
+  description?: string | null
+  discountType: 'PERCENT' | 'FIXED'
+  discountValue: number
+  maxDiscount?: number | null
+  minDays?: number | null
+  appliesTo?: 'ALL' | 'RENT' | 'SALE' | null
+  validFrom?: string | null
+  validTo?: string | null
+  usageLimit?: number | null
+  usedCount?: number | null
+  active?: boolean | null
+}
+
+export type PromoEvaluationContext = {
+  code?: string
+  serviceType?: 'RENT' | 'SALE'
+  totalDays: number
+  subtotalBeforePromo: number
+  today?: string
+  alreadyHeldByCurrentBooking?: boolean
+}
+
+export type PromoEvaluationResult = {
+  valid: boolean
+  status: PromoEvaluationStatus
+  promoCode: string | null
+  promoName: string | null
+  discountAmount: number
+  finalTotal: number
+  message: string
+}
+
+export function evaluatePromotion(
+  promo: PromoRecordLike | null | undefined,
+  context: PromoEvaluationContext,
+): PromoEvaluationResult {
+  const subtotal = Math.max(0, Math.round(context.subtotalBeforePromo || 0))
+  const today = context.today ?? businessToday()
+  const serviceType = context.serviceType ?? 'RENT'
+
+  if (!promo) {
+    return {
+      valid: false,
+      status: 'NOT_FOUND',
+      promoCode: null,
+      promoName: null,
+      discountAmount: 0,
+      finalTotal: subtotal,
+      message: 'Mã khuyến mãi không tồn tại.',
+    }
+  }
+
+  if (!promo.active) {
+    return {
+      valid: false,
+      status: 'INACTIVE',
+      promoCode: promo.code,
+      promoName: promo.name,
+      discountAmount: 0,
+      finalTotal: subtotal,
+      message: 'Chương trình khuyến mãi hiện đang tạm ngưng áp dụng.',
+    }
+  }
+
+  const scope = promo.appliesTo ?? 'RENT'
+  if (scope !== 'ALL' && scope !== serviceType) {
+    return {
+      valid: false,
+      status: 'INVALID_SCOPE',
+      promoCode: promo.code,
+      promoName: promo.name,
+      discountAmount: 0,
+      finalTotal: subtotal,
+      message: 'Mã khuyến mãi không áp dụng cho dịch vụ này.',
+    }
+  }
+
+  if (promo.validFrom && today < promo.validFrom) {
+    return {
+      valid: false,
+      status: 'NOT_STARTED',
+      promoCode: promo.code,
+      promoName: promo.name,
+      discountAmount: 0,
+      finalTotal: subtotal,
+      message: `Chương trình chưa bắt đầu (áp dụng từ ngày ${formatDate(promo.validFrom)}).`,
+    }
+  }
+
+  if (promo.validTo && today > promo.validTo) {
+    return {
+      valid: false,
+      status: 'EXPIRED',
+      promoCode: promo.code,
+      promoName: promo.name,
+      discountAmount: 0,
+      finalTotal: subtotal,
+      message: `Chương trình đã kết thúc (hết hạn ngày ${formatDate(promo.validTo)}).`,
+    }
+  }
+
+  if (
+    !context.alreadyHeldByCurrentBooking &&
+    promo.usageLimit != null &&
+    (promo.usedCount ?? 0) >= promo.usageLimit
+  ) {
+    return {
+      valid: false,
+      status: 'USAGE_LIMIT_REACHED',
+      promoCode: promo.code,
+      promoName: promo.name,
+      discountAmount: 0,
+      finalTotal: subtotal,
+      message: 'Mã đã hết lượt sử dụng.',
+    }
+  }
+
+  const minDays = Math.max(1, Math.round(promo.minDays ?? 1))
+  if (context.totalDays < minDays) {
+    return {
+      valid: false,
+      status: 'MIN_DAYS_NOT_MET',
+      promoCode: promo.code,
+      promoName: promo.name,
+      discountAmount: 0,
+      finalTotal: subtotal,
+      message: `Mã yêu cầu thuê tối thiểu ${minDays} ngày (hiện chọn ${context.totalDays} ngày).`,
+    }
+  }
+
+  const rawDiscount =
+    promo.discountType === 'PERCENT'
+      ? Math.round((subtotal * Math.round(promo.discountValue)) / 100)
+      : Math.round(promo.discountValue)
+  const cappedByMax =
+    promo.maxDiscount != null && promo.maxDiscount >= 0
+      ? Math.min(rawDiscount, Math.round(promo.maxDiscount))
+      : rawDiscount
+  const discountAmount = Math.max(0, Math.min(cappedByMax, subtotal))
+  const finalTotal = Math.max(0, subtotal - discountAmount)
+
+  return {
+    valid: true,
+    status: 'APPLIED',
+    promoCode: promo.code,
+    promoName: promo.name,
+    discountAmount,
+    finalTotal,
+    message: `Mã đã được áp dụng thành công (-${formatVnd(discountAmount)}).`,
+  }
+}
+
+export function applyPromotionToQuote(
+  quote: RentalQuoteBreakdown,
+  promoEval?: PromoEvaluationResult | null,
+): RentalQuoteBreakdown & { promoDiscountAmount: number } {
+  const promoDiscountAmount = promoEval?.valid ? promoEval.discountAmount : 0
+  const estimatedTotal = Math.max(0, quote.estimatedTotal - promoDiscountAmount)
+  // Security deposit (initialPaymentDue / depositAmount) is strictly separate from rental fee
+  // and must NEVER be subtracted from remainingAmount.
+  return {
+    ...quote,
+    promoDiscountAmount,
+    estimatedTotal,
+    remainingAmount: estimatedTotal,
+  }
+}
+
+export type PromoRuntimeStatusInfo = {
+  status: 'ACTIVE_LIVE' | 'UPCOMING' | 'EXPIRED' | 'EXHAUSTED' | 'DISABLED'
+  label: 'Đang diễn ra' | 'Chưa bắt đầu' | 'Hết hạn' | 'Hết lượt' | 'Vô hiệu hóa'
+  tone: 'brand' | 'warning' | 'danger' | 'muted'
+  remainingUses: number | null
+}
+
+export function getPromotionRuntimeStatus(
+  promo: Pick<PromoRecordLike, 'active' | 'validFrom' | 'validTo' | 'usageLimit' | 'usedCount'>,
+  today = businessToday(),
+): PromoRuntimeStatusInfo {
+  const used = Math.max(0, Math.round(promo.usedCount ?? 0))
+  const remainingUses =
+    promo.usageLimit != null ? Math.max(0, Math.round(promo.usageLimit) - used) : null
+
+  if (!promo.active) {
+    return { status: 'DISABLED', label: 'Vô hiệu hóa', tone: 'muted', remainingUses }
+  }
+  if (promo.validTo && today > promo.validTo) {
+    return { status: 'EXPIRED', label: 'Hết hạn', tone: 'danger', remainingUses }
+  }
+  if (remainingUses !== null && remainingUses <= 0) {
+    return { status: 'EXHAUSTED', label: 'Hết lượt', tone: 'warning', remainingUses: 0 }
+  }
+  if (promo.validFrom && today < promo.validFrom) {
+    return { status: 'UPCOMING', label: 'Chưa bắt đầu', tone: 'warning', remainingUses }
+  }
+  return { status: 'ACTIVE_LIVE', label: 'Đang diễn ra', tone: 'brand', remainingUses }
+}
+
+export type PromotionValidationInput = {
+  code: string
+  name: string
+  description?: string | null
+  discountType?: string | null
+  discountValue: unknown
+  maxDiscount?: unknown
+  minDays?: unknown
+  appliesTo?: string | null
+  validFrom?: string | null
+  validTo?: string | null
+  usageLimit?: unknown
+  active?: boolean
+}
+
+export function validatePromotionInput(
+  input: PromotionValidationInput,
+  existingUsedCount = 0,
+): {
+  error?: string
+  normalized?: {
+    code: string
+    name: string
+    description: string | null
+    discountType: 'PERCENT' | 'FIXED'
+    discountValue: number
+    maxDiscount: number | null
+    minDays: number
+    appliesTo: 'ALL' | 'RENT' | 'SALE'
+    validFrom: string | null
+    validTo: string | null
+    usageLimit: number | null
+    active: boolean
+  }
+} {
+  const code = String(input.code ?? '')
+    .trim()
+    .toUpperCase()
+  if (!code) return { error: 'Vui lòng nhập mã khuyến mãi.' }
+  if (!/^[A-Z0-9_-]{2,40}$/.test(code)) {
+    return {
+      error:
+        'Mã khuyến mãi dài 2–40 ký tự, chỉ gồm chữ cái không dấu, chữ số, dấu gạch ngang (-) hoặc gạch dưới (_).',
+    }
+  }
+
+  const name = String(input.name ?? '')
+    .trim()
+    .slice(0, 160)
+  if (!name) return { error: 'Vui lòng nhập tên chương trình khuyến mãi.' }
+
+  const discountType =
+    input.discountType === 'FIXED'
+      ? 'FIXED'
+      : input.discountType === 'PERCENT' || !input.discountType
+        ? 'PERCENT'
+        : null
+  if (!discountType) return { error: 'Hình thức giảm giá không hợp lệ.' }
+
+  const discountValue = Number(input.discountValue)
+  if (!Number.isSafeInteger(discountValue) || discountValue < 1) {
+    return { error: 'Giá trị giảm phải là số nguyên dương (lớn hơn hoặc bằng 1).' }
+  }
+  if (discountType === 'PERCENT' && discountValue > 100) {
+    return { error: 'Phần trăm giảm giá không được vượt quá 100%.' }
+  }
+  if (discountType === 'FIXED' && discountValue > 500_000_000) {
+    return { error: 'Số tiền giảm cố định vượt quá ngưỡng cho phép.' }
+  }
+
+  let maxDiscount: number | null = null
+  if (input.maxDiscount !== undefined && input.maxDiscount !== null && input.maxDiscount !== '') {
+    const parsedMax = Number(input.maxDiscount)
+    if (!Number.isSafeInteger(parsedMax) || parsedMax < 1 || parsedMax > 500_000_000) {
+      return {
+        error:
+          'Số tiền giảm tối đa phải là số nguyên dương (VNĐ) hoặc để trống nếu không giới hạn.',
+      }
+    }
+    maxDiscount = parsedMax
+  }
+
+  let minDays = 1
+  if (input.minDays !== undefined && input.minDays !== null && input.minDays !== '') {
+    const parsedMinDays = Number(input.minDays)
+    if (!Number.isSafeInteger(parsedMinDays) || parsedMinDays < 1 || parsedMinDays > 365) {
+      return { error: 'Số ngày thuê tối thiểu phải là số nguyên từ 1 đến 365 ngày.' }
+    }
+    minDays = parsedMinDays
+  }
+
+  const rawScope = String(input.appliesTo ?? 'RENT')
+    .trim()
+    .toUpperCase()
+  if (!['ALL', 'RENT', 'SALE'].includes(rawScope)) {
+    return { error: 'Phạm vi áp dụng khuyến mãi không hợp lệ.' }
+  }
+  const appliesTo = rawScope as 'ALL' | 'RENT' | 'SALE'
+
+  const validFrom = String(input.validFrom ?? '').trim() || null
+  const validTo = String(input.validTo ?? '').trim() || null
+  if (validFrom && !Number.isFinite(dateNumber(validFrom))) {
+    return { error: 'Ngày bắt đầu chương trình không hợp lệ (định dạng YYYY-MM-DD).' }
+  }
+  if (validTo && !Number.isFinite(dateNumber(validTo))) {
+    return { error: 'Ngày kết thúc chương trình không hợp lệ (định dạng YYYY-MM-DD).' }
+  }
+  if (validFrom && validTo && dateNumber(validTo) < dateNumber(validFrom)) {
+    return { error: 'Ngày kết thúc không được trước ngày bắt đầu.' }
+  }
+
+  let usageLimit: number | null = null
+  if (input.usageLimit !== undefined && input.usageLimit !== null && input.usageLimit !== '') {
+    const parsedLimit = Number(input.usageLimit)
+    if (!Number.isSafeInteger(parsedLimit) || parsedLimit < 1 || parsedLimit > 1_000_000) {
+      return { error: 'Giới hạn lượt sử dụng phải là số nguyên từ 1 trở lên (hoặc để trống).' }
+    }
+    if (existingUsedCount > 0 && parsedLimit < existingUsedCount) {
+      return {
+        error: `Giới hạn lượt dùng (${parsedLimit}) không được nhỏ hơn số lượt đã sử dụng (${existingUsedCount}).`,
+      }
+    }
+    usageLimit = parsedLimit
+  }
+
+  const description =
+    String(input.description ?? '')
+      .trim()
+      .slice(0, 500) || null
+
+  return {
+    normalized: {
+      code,
+      name,
+      description,
+      discountType,
+      discountValue,
+      maxDiscount,
+      minDays,
+      appliesTo,
+      validFrom,
+      validTo,
+      usageLimit,
+      active: input.active !== false,
+    },
+  }
+}
+
 export function formatDate(value?: string | null): string {
   if (!value || !Number.isFinite(dateNumber(value.slice(0, 10)))) return 'Chưa cập nhật'
   const dateOnly = /^\d{4}-\d{2}-\d{2}$/.test(value)

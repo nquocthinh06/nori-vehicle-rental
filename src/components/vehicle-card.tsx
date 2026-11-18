@@ -65,6 +65,9 @@ export function VehicleCard({
               src={model.cover.url}
               alt={model.cover.alt}
               fill
+              loading="lazy"
+              decoding="async"
+              fetchPriority="low"
               sizes="(max-width: 767px) 100vw, (max-width: 1023px) 50vw, 33vw"
               className="object-cover transition-transform duration-500 group-hover:scale-105"
             />

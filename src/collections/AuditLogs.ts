@@ -1,5 +1,5 @@
 import type { CollectionConfig } from 'payload'
-import { isAdmin } from '@/access/nori'
+import { adminHasAnyPermission } from '@/access/nori'
 
 /**
  * Append-only operational journal. Entries are written only by server hooks
@@ -16,7 +16,11 @@ export const AuditLogs: CollectionConfig = {
   },
   access: {
     create: () => false,
-    read: isAdmin,
+    read: ({ req }) =>
+      adminHasAnyPermission(req.user, [
+        ['admins', 'read'],
+        ['reports', 'read'],
+      ]),
     update: () => false,
     delete: () => false,
   },

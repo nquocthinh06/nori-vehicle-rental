@@ -47,6 +47,9 @@ export function SiteFooter({ site }: { site: SiteContent }) {
               NORI luôn ở đây
             </Heading>
             <div className="grid gap-3.5 text-small text-on-night-muted">
+              <NoriLink href="/posts" className="hover:text-inverse">
+                Tin tức &amp; Ưu đãi
+              </NoriLink>
               <NoriLink href="/about" className="hover:text-inverse">
                 Về chúng tôi
               </NoriLink>

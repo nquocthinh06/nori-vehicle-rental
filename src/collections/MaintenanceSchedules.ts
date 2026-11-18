@@ -1,5 +1,5 @@
 import type { CollectionConfig } from 'payload'
-import { isAdmin } from '@/access/nori'
+import { adminHasAnyPermission, adminPermission } from '@/access/nori'
 import { auditCollection } from '@/hooks/audit-nori'
 
 const maintAudit = auditCollection({
@@ -25,10 +25,15 @@ export const MaintenanceSchedules: CollectionConfig = {
     defaultColumns: ['title', 'vehicle', 'maintenanceType', 'startDate', 'endDate', 'status'],
   },
   access: {
-    create: isAdmin,
-    read: () => true,
-    update: isAdmin,
-    delete: isAdmin,
+    create: adminPermission('maintenance', 'create'),
+    read: ({ req }) =>
+      adminHasAnyPermission(req.user, [
+        ['maintenance', 'read'],
+        ['vehicles', 'read'],
+        ['bookings', 'read'],
+      ]),
+    update: adminPermission('maintenance', 'update'),
+    delete: adminPermission('maintenance', 'delete'),
   },
   hooks: {
     afterChange: [maintAudit.afterChange],

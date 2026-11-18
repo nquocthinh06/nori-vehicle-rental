@@ -1,7 +1,31 @@
 import sharp from 'sharp'
+import { adminHasPermission, type AdminAction } from '@/access/nori'
 import { requireAdmin } from '@/lib/admin-api'
 import { apiError, assertOrigin, fail, json, text } from '@/lib/api-utils'
 import { photo } from '@/lib/catalogue'
+
+const MEDIA_MODULES = ['vehicles', 'models', 'posts', 'content'] as const
+
+async function requireMediaAdmin(mode: 'read' | 'write' | 'delete') {
+  const auth = await requireAdmin()
+  if (!auth.ok) return auth
+  const allowedActions: AdminAction[] =
+    mode === 'read' ? ['read'] : mode === 'write' ? ['create', 'update'] : ['delete', 'update']
+  const hasAny = MEDIA_MODULES.some((mod) =>
+    allowedActions.some((act) =>
+      mode === 'delete' && mod === 'content'
+        ? act === 'update' && adminHasPermission(auth.admin, mod, act)
+        : adminHasPermission(auth.admin, mod, act),
+    ),
+  )
+  if (!hasAny) {
+    return {
+      ok: false as const,
+      response: fail('Tài khoản chưa được cấp quyền thao tác thư viện Media.', 403, 'FORBIDDEN'),
+    }
+  }
+  return auth
+}
 
 const MAX_SIZE_BYTES = 8 * 1024 * 1024
 const MAX_BATCH_FILES = 20
@@ -75,7 +99,7 @@ function sanitizeImageFilename(rawName: string, verifiedExt: string, index = 0):
 
 export async function GET(request: Request) {
   try {
-    const auth = await requireAdmin()
+    const auth = await requireMediaAdmin('read')
     if (!auth.ok) return auth.response
     const { payload, user } = auth
 
@@ -94,6 +118,10 @@ export async function GET(request: Request) {
         id: m.id,
         alt: m.alt,
         filename: m.filename ?? null,
+        width: m.width ?? null,
+        height: m.height ?? null,
+        filesize: m.filesize ?? null,
+        mimeType: m.mimeType ?? null,
         mediaCategory: m.mediaCategory ?? null,
         sourceName: m.sourceName ?? null,
         sourceUrl: m.sourceUrl ?? null,
@@ -110,7 +138,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     assertOrigin(request)
-    const auth = await requireAdmin()
+    const auth = await requireMediaAdmin('write')
     if (!auth.ok) return auth.response
     const { payload, user } = auth
 
@@ -128,6 +156,7 @@ export async function POST(request: Request) {
     }
 
     const defaultAlt = text(form.get('alt'), 200) || 'Ảnh phương tiện NORI'
+    const purpose = text(form.get('purpose'), 40)
     const rawMediaCategory = text(form.get('mediaCategory'), 40) || 'ACTUAL_VEHICLE'
     const mediaCategory = (
       ['CATALOGUE_OFFICIAL', 'CATALOGUE_REFERENCE', 'ACTUAL_VEHICLE', 'ILLUSTRATION'].includes(
@@ -147,9 +176,18 @@ export async function POST(request: Request) {
       alt: string
       url: string | null
       filename: string | null
+      width: number | null
+      height: number | null
+      filesize: number | null
+      mimeType: string | null
+      lowResolutionWarning?: boolean
+      aspectWarning?: boolean
       photo: ReturnType<typeof photo>
     }[] = []
     const failed: { name: string; reason: string }[] = []
+
+    const isPostBanner = purpose === 'post-banner'
+    const allowedPostBannerMimes = new Set(['image/jpeg', 'image/png', 'image/webp'])
 
     for (let i = 0; i < files.length; i++) {
       const file = files[i]
@@ -163,20 +201,24 @@ export async function POST(request: Request) {
         failed.push({ name: rawName, reason: 'Dung lượng ảnh vượt quá giới hạn 8 MB.' })
         continue
       }
-      if (file.type && !ALLOWED_MIME.has(file.type)) {
+      if (file.type && !(isPostBanner ? allowedPostBannerMimes : ALLOWED_MIME).has(file.type)) {
         failed.push({
           name: rawName,
-          reason: 'Chỉ hỗ trợ định dạng hình ảnh JPG, PNG, WebP hoặc AVIF.',
+          reason: isPostBanner
+            ? 'Ảnh banner bài viết chỉ hỗ trợ định dạng JPG, JPEG, PNG hoặc WEBP.'
+            : 'Chỉ hỗ trợ định dạng hình ảnh JPG, PNG, WebP hoặc AVIF.',
         })
         continue
       }
 
       const buffer = Buffer.from(await file.arrayBuffer())
       const detected = detectMagicBytes(buffer)
-      if (!detected) {
+      if (!detected || (isPostBanner && !allowedPostBannerMimes.has(detected.mime))) {
         failed.push({
           name: rawName,
-          reason: 'Chữ ký tệp (magic bytes) không phải hình ảnh hợp lệ hoặc bị giả mạo định dạng.',
+          reason: isPostBanner
+            ? 'Tệp tải lên không phải hình ảnh JPG, PNG hoặc WEBP hợp lệ.'
+            : 'Chữ ký tệp (magic bytes) không phải hình ảnh hợp lệ hoặc bị giả mạo định dạng.',
         })
         continue
       }
@@ -207,7 +249,73 @@ export async function POST(request: Request) {
         continue
       }
 
-      const safeName = sanitizeImageFilename(rawName, detected.ext, i)
+      if (
+        (purpose === 'hero-desktop' || purpose === 'hero-mobile') &&
+        (width < 320 || height < 180)
+      ) {
+        failed.push({
+          name: rawName,
+          reason: `Ảnh Hero quá nhỏ (${width}×${height}px). Tối thiểu 320×180px để tránh vỡ hình.`,
+        })
+        continue
+      }
+
+      let finalBuffer = buffer
+      let finalMime = detected.mime
+      let finalExt = detected.ext
+      let finalWidth = width
+      let finalHeight = height
+
+      const maxEdgeW =
+        purpose === 'hero-mobile'
+          ? 1080
+          : purpose === 'hero-desktop' || purpose === 'post-banner'
+            ? 1920
+            : 2560
+      const maxEdgeH =
+        purpose === 'hero-mobile'
+          ? 1440
+          : purpose === 'hero-desktop' || purpose === 'post-banner'
+            ? 1920
+            : 2560
+      const needsResize = width > maxEdgeW || height > maxEdgeH
+      const shouldOptimizeToWebp =
+        detected.mime !== 'image/avif' &&
+        (needsResize ||
+          buffer.length > 300 * 1024 ||
+          (purpose.startsWith('hero-') && detected.mime !== 'image/webp'))
+
+      if (needsResize || shouldOptimizeToWebp) {
+        try {
+          let pipeline = sharp(buffer).rotate()
+          if (needsResize) {
+            pipeline = pipeline.resize({
+              width: maxEdgeW,
+              height: maxEdgeH,
+              fit: 'inside',
+              withoutEnlargement: true,
+            })
+          }
+          const out =
+            detected.mime === 'image/avif'
+              ? await pipeline.avif({ quality: 65 }).toBuffer({ resolveWithObject: true })
+              : await pipeline
+                  .webp({ quality: 84, effort: 4 })
+                  .toBuffer({ resolveWithObject: true })
+
+          if (needsResize || out.data.length < buffer.length || purpose.startsWith('hero-')) {
+            finalBuffer = out.data
+            finalMime = detected.mime === 'image/avif' ? 'image/avif' : 'image/webp'
+            finalExt = detected.mime === 'image/avif' ? 'avif' : 'webp'
+            finalWidth = out.info.width
+            finalHeight = out.info.height
+          }
+        } catch {
+          // Keep original validated buffer if optimization throws
+        }
+      }
+
+      const safeName = sanitizeImageFilename(rawName, finalExt, i)
       const itemAlt = files.length > 1 ? `${defaultAlt} (${i + 1})` : defaultAlt
 
       try {
@@ -226,18 +334,29 @@ export async function POST(request: Request) {
             verified: true,
           },
           file: {
-            data: buffer,
-            mimetype: detected.mime,
+            data: finalBuffer,
+            mimetype: finalMime,
             name: safeName,
-            size: buffer.length,
+            size: finalBuffer.length,
           },
         })
+        const resolvedPhoto = photo(created)
+        const storedWidth = created.width ?? finalWidth
+        const storedHeight = created.height ?? finalHeight
         uploaded.push({
           id: created.id,
           alt: created.alt,
           url: created.url ?? null,
           filename: created.filename ?? safeName,
-          photo: photo(created),
+          width: storedWidth,
+          height: storedHeight,
+          filesize: created.filesize ?? finalBuffer.length,
+          mimeType: created.mimeType ?? finalMime,
+          lowResolutionWarning:
+            (purpose === 'hero-desktop' && (storedWidth < 1280 || storedHeight < 720)) ||
+            (purpose === 'post-banner' && storedWidth < 1200),
+          aspectWarning: purpose === 'post-banner' && storedWidth < storedHeight,
+          photo: resolvedPhoto,
         })
       } catch (err) {
         failed.push({
@@ -278,7 +397,7 @@ export async function POST(request: Request) {
 export async function DELETE(request: Request) {
   try {
     assertOrigin(request)
-    const auth = await requireAdmin()
+    const auth = await requireMediaAdmin('delete')
     if (!auth.ok) return auth.response
     const { payload, user } = auth
 

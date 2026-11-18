@@ -5,8 +5,12 @@ import type { NotificationView } from '@/lib/domain-types'
 
 export async function GET() {
   try {
-    const user = await appAuth.currentUser()
-    if (!user) return fail('Vui lòng đăng nhập để xem thông báo.', 401, 'UNAUTHORIZED')
+    const auth = await appAuth.requireCustomer({
+      unauthMessage: 'Vui lòng đăng nhập để xem thông báo.',
+      adminForbiddenMessage: 'Tài khoản quản trị không sử dụng hộp thư thông báo khách hàng.',
+    })
+    if (!auth.ok) return auth.response
+    const user = auth.user
     const payload = await getPayloadClient()
 
     const res = await payload.find({
@@ -73,8 +77,12 @@ export async function GET() {
 export async function PATCH(request: Request) {
   try {
     assertOrigin(request)
-    const user = await appAuth.currentUser()
-    if (!user) return fail('Vui lòng đăng nhập.', 401, 'UNAUTHORIZED')
+    const auth = await appAuth.requireCustomer({
+      unauthMessage: 'Vui lòng đăng nhập.',
+      adminForbiddenMessage: 'Tài khoản quản trị không sử dụng hộp thư thông báo khách hàng.',
+    })
+    if (!auth.ok) return auth.response
+    const user = auth.user
 
     const data = await body(request, ['id', 'markRead', 'dismissPopup', 'markAllRead'])
     const payload = await getPayloadClient()

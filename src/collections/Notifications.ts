@@ -1,5 +1,5 @@
 import type { CollectionConfig } from 'payload'
-import { ownRecords, serverField } from '@/access/nori'
+import { adminHasPermission, serverField } from '@/access/nori'
 
 export const Notifications: CollectionConfig = {
   slug: 'notifications',
@@ -12,8 +12,20 @@ export const Notifications: CollectionConfig = {
   },
   access: {
     create: () => false,
-    read: ownRecords,
-    update: ownRecords,
+    read: ({ req }) => {
+      if (adminHasPermission(req.user, 'bookings', 'read')) return true
+      if (req.user?.collection === 'users' && req.user.status === 'ACTIVE') {
+        return { customer: { equals: req.user.id } }
+      }
+      return false
+    },
+    update: ({ req }) => {
+      if (adminHasPermission(req.user, 'bookings', 'update')) return true
+      if (req.user?.collection === 'users' && req.user.status === 'ACTIVE') {
+        return { customer: { equals: req.user.id } }
+      }
+      return false
+    },
     delete: () => false,
   },
   fields: [

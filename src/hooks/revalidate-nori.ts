@@ -11,9 +11,16 @@ async function invalidate(
   req: PayloadRequest,
   slugs: (string | null | undefined)[] = [],
   allDetails = false,
+  postSlugs: (string | null | undefined)[] = [],
+  allPosts = false,
 ) {
   if (req.context?.skipRevalidate) return
-  const change: NoriInvalidation = { slugs: slugs.filter((s): s is string => !!s), allDetails }
+  const change: NoriInvalidation = {
+    slugs: slugs.filter((s): s is string => !!s),
+    allDetails,
+    postSlugs: postSlugs.filter((s): s is string => !!s),
+    allPosts,
+  }
   try {
     invalidateNoriCaches(change)
   } catch (error) {
@@ -119,16 +126,49 @@ export const revalidateDeletedCatalogue: CollectionAfterDeleteHook = async ({ do
 }
 
 export const revalidateMedia: CollectionAfterChangeHook = async ({ req, doc }) => {
-  await invalidate(req, [], true)
+  await invalidate(req, [], true, [], true)
   return doc
 }
 
 export const revalidateDeletedMedia: CollectionAfterDeleteHook = async ({ req, doc }) => {
-  await invalidate(req, [], true)
+  await invalidate(req, [], true, [], true)
+  return doc
+}
+
+export const revalidatePost: CollectionAfterChangeHook = async ({ doc, previousDoc, req }) => {
+  const docRecord = doc as Record<string, unknown> | undefined
+  const prevRecord = previousDoc as Record<string, unknown> | undefined
+  const isPublished = docRecord?._status === 'published'
+  const wasPublished = prevRecord?._status === 'published'
+  if (!isPublished && !wasPublished) return doc
+  const docSlug = typeof docRecord?.slug === 'string' ? docRecord.slug : null
+  const prevSlug = typeof prevRecord?.slug === 'string' ? prevRecord.slug : null
+  await invalidate(req, [], false, [docSlug, prevSlug], true)
+  return doc
+}
+
+export const revalidateDeletedPost: CollectionAfterDeleteHook = async ({ doc, req }) => {
+  const docRecord = doc as Record<string, unknown> | undefined
+  const docSlug = typeof docRecord?.slug === 'string' ? docRecord.slug : null
+  await invalidate(req, [], false, [docSlug], true)
+  return doc
+}
+
+export const revalidatePromotion: CollectionAfterChangeHook = async ({ doc, req }) => {
+  await invalidate(req, [], false, [], true)
+  return doc
+}
+
+export const revalidateDeletedPromotion: CollectionAfterDeleteHook = async ({ doc, req }) => {
+  await invalidate(req, [], false, [], true)
   return doc
 }
 
 export const revalidateSite: GlobalAfterChangeHook = async ({ doc, req }) => {
+  const record = doc as Record<string, unknown> | undefined
+  if (record && '_status' in record && record._status !== 'published') {
+    return doc
+  }
   await invalidate(req)
   return doc
 }

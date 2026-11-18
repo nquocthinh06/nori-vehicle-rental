@@ -198,6 +198,9 @@ async function ensureOfficialAdmin(payload: Payload): Promise<void> {
 
 export async function seedNoriIfEmpty(payload: Payload): Promise<void> {
   await ensureOfficialAdmin(payload)
+  if (process.env.NORI_DISABLE_DEMO_SEED === '1') {
+    return
+  }
   const [modelCount, vehicleCount, siteDoc] = await Promise.all([
     payload.count({ collection: 'vehicle-models', overrideAccess: true }),
     payload.count({ collection: 'vehicles', overrideAccess: true }),

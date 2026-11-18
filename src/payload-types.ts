@@ -1238,6 +1238,7 @@ export interface Post {
   excerpt?: string | null;
   content: string;
   cover?: (string | null) | Media;
+  promotion?: (string | null) | Promotion;
   publishedAt?: string | null;
   seoTitle?: string | null;
   seoDescription?: string | null;
@@ -2054,6 +2055,7 @@ export interface PostsSelect<T extends boolean = true> {
   excerpt?: T;
   content?: T;
   cover?: T;
+  promotion?: T;
   publishedAt?: T;
   seoTitle?: T;
   seoDescription?: T;
@@ -2146,6 +2148,10 @@ export interface NoriSite {
         secondaryHref?: string | null;
         desktopImage?: (string | null) | Media;
         mobileImage?: (string | null) | Media;
+        focalX?: number | null;
+        focalY?: number | null;
+        mobileFocalX?: number | null;
+        mobileFocalY?: number | null;
         relatedCategory?: ('CAR' | 'MOTORBIKE' | 'PICKUP') | null;
         relatedModel?: (string | null) | VehicleModel;
         credit?: string | null;
@@ -2283,6 +2289,10 @@ export interface NoriSiteSelect<T extends boolean = true> {
         secondaryHref?: T;
         desktopImage?: T;
         mobileImage?: T;
+        focalX?: T;
+        focalY?: T;
+        mobileFocalX?: T;
+        mobileFocalY?: T;
         relatedCategory?: T;
         relatedModel?: T;
         credit?: T;

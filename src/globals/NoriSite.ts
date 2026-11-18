@@ -1,13 +1,37 @@
-import type { GlobalConfig } from 'payload'
-import { isAdmin } from '@/access/nori'
+import { APIError, type GlobalConfig } from 'payload'
+import { adminHasAnyPermission, adminHasPermission } from '@/access/nori'
 import { auditSiteContent } from '@/hooks/audit-nori'
 import { revalidateSite } from '@/hooks/revalidate-nori'
 
 export const NoriSite: GlobalConfig = {
   slug: 'nori-site',
   label: 'NORI · Nội dung & liên hệ',
-  access: { read: () => true, update: isAdmin },
-  hooks: { afterChange: [revalidateSite, auditSiteContent] },
+  access: {
+    read: ({ req }) =>
+      adminHasPermission(req.user, 'content', 'read') ? true : { _status: { equals: 'published' } },
+    update: ({ req }) =>
+      adminHasAnyPermission(req.user, [
+        ['content', 'update'],
+        ['settings', 'update'],
+      ]),
+  },
+  hooks: {
+    beforeChange: [
+      ({ data, req }) => {
+        if (
+          data &&
+          req.user?.collection === 'admins' &&
+          !req.context?.skipPermissionCheck &&
+          data._status === 'published' &&
+          !adminHasPermission(req.user, 'content', 'publish')
+        ) {
+          throw new APIError('Tài khoản chưa được cấp quyền Xuất bản CMS Website.', 403)
+        }
+        return data
+      },
+    ],
+    afterChange: [revalidateSite, auditSiteContent],
+  },
   versions: {
     drafts: true,
     max: 15,
@@ -72,6 +96,38 @@ export const NoriSite: GlobalConfig = {
           label: 'Ảnh nền Mobile (tùy chọn)',
           type: 'upload',
           relationTo: 'media',
+        },
+        {
+          name: 'focalX',
+          label: 'Điểm trọng tâm ngang Desktop (%)',
+          type: 'number',
+          min: 0,
+          max: 100,
+          defaultValue: 50,
+        },
+        {
+          name: 'focalY',
+          label: 'Điểm trọng tâm dọc Desktop (%)',
+          type: 'number',
+          min: 0,
+          max: 100,
+          defaultValue: 50,
+        },
+        {
+          name: 'mobileFocalX',
+          label: 'Điểm trọng tâm ngang Mobile (%)',
+          type: 'number',
+          min: 0,
+          max: 100,
+          defaultValue: 50,
+        },
+        {
+          name: 'mobileFocalY',
+          label: 'Điểm trọng tâm dọc Mobile (%)',
+          type: 'number',
+          min: 0,
+          max: 100,
+          defaultValue: 50,
         },
         {
           name: 'relatedCategory',

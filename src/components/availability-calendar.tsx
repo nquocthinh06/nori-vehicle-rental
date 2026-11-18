@@ -18,8 +18,10 @@ export function AvailabilityCalendar({
   onChange: (start: string, end: string) => void
   operationStatus?: string | null
 }) {
-  const today = businessToday()
-  const [month, setMonth] = useState(() => today.slice(0, 7))
+  const [today, setToday] = useState('')
+  const [month, setMonth] = useState(() =>
+    /^\d{4}-\d{2}-\d{2}$/.test(startDate) ? startDate.slice(0, 7) : '',
+  )
   const [busyDays, setBusyDays] = useState<string[]>([])
   const [loadedVehicle, setLoadedVehicle] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
@@ -34,6 +36,13 @@ export function AvailabilityCalendar({
     operationStatus === 'RESERVED'
 
   useEffect(() => {
+    const currentToday = businessToday()
+    setToday(currentToday)
+    setMonth((prev) => prev || currentToday.slice(0, 7))
+  }, [])
+
+  useEffect(() => {
+    if (!today) return
     const start = dateNumber(startDate)
     const now = dateNumber(today)
     if (Number.isFinite(start) && start >= now && start <= now + 90) setMonth(startDate.slice(0, 7))
@@ -67,6 +76,7 @@ export function AvailabilityCalendar({
   }, [vehicle, retry])
 
   const days = useMemo(() => {
+    if (!month) return []
     const first = new Date(`${month}-01T00:00:00Z`)
     const offset = (first.getUTCDay() + 6) % 7
     const last = new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth() + 1, 0)).getUTCDate()
@@ -77,6 +87,7 @@ export function AvailabilityCalendar({
   }, [month])
 
   function move(delta: number) {
+    if (!month) return
     const date = new Date(`${month}-01T00:00:00Z`)
     date.setUTCMonth(date.getUTCMonth() + delta)
     setMonth(date.toISOString().slice(0, 7))
@@ -97,6 +108,14 @@ export function AvailabilityCalendar({
       return
     }
     onChange(startDate, date)
+  }
+
+  if (!today || !month) {
+    return (
+      <div className="rounded-card border border-line bg-canvas p-3.5 sm:p-4">
+        <Text className="text-caption text-muted">Đang tải lịch trống phương tiện…</Text>
+      </div>
+    )
   }
 
   return (

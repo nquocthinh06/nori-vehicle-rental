@@ -1,8 +1,7 @@
-@import url('https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&display=swap');
 @import 'tailwindcss';
 
 @theme {
-  --font-sans: 'Be Vietnam Pro', Arial, sans-serif;
+  --font-sans: var(--font-be-vietnam), 'Be Vietnam Pro', Arial, sans-serif;
   --color-canvas: #ffffff;
   --color-ink: #192a2c;
   --color-muted: #5e6d69;
@@ -71,14 +70,14 @@
   --spacing-topbar: 2rem;
   --aspect-vehicle: 1.55;
   --ease-nori: cubic-bezier(0.2, 0.7, 0.2, 1);
-  --animate-enter: enter 450ms var(--ease-nori) both;
+  --animate-enter: enter 240ms var(--ease-nori) both;
   --animate-skeleton: skeleton 1500ms ease-in-out infinite;
   --animate-spin: spin 1s linear infinite;
 
   @keyframes enter {
     from {
-      opacity: 0;
-      transform: translateY(12px);
+      opacity: 0.98;
+      transform: translateY(6px);
     }
     to {
       opacity: 1;
@@ -199,6 +198,15 @@
   .no-scrollbar {
     -ms-overflow-style: none;
     scrollbar-width: none;
+  }
+  .hero-focal-img {
+    object-fit: cover;
+    object-position: var(--hero-focal-mobile, 50% 50%);
+  }
+  @media (min-width: 768px) {
+    .hero-focal-img {
+      object-position: var(--hero-focal-desktop, 50% 50%);
+    }
   }
   .hero-shade {
     background:
