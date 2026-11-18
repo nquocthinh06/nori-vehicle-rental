@@ -54,11 +54,80 @@ export async function recordAudit(
   }
 }
 
+const SENSITIVE_AUDIT_KEYS = new Set([
+  'password',
+  'hash',
+  'salt',
+  'token',
+  'resetPasswordToken',
+  'lockUntil',
+  'loginAttempts',
+  'driverLicenseNumber',
+  'idCardNumber',
+  'sessions',
+])
+
 function comparable(value: unknown): string {
-  if (Array.isArray(value)) return `array:${value.length}`
+  if (Array.isArray(value)) {
+    return JSON.stringify(
+      value.map((item) => {
+        if (item && typeof item === 'object') {
+          const rec = item as Record<string, unknown>
+          if ('image' in rec) {
+            const img = rec.image
+            return typeof img === 'object' && img && 'id' in img ? (img as { id: unknown }).id : img
+          }
+          if ('desktopImage' in rec) {
+            const dImg = rec.desktopImage
+            return typeof dImg === 'object' && dImg && 'id' in dImg
+              ? (dImg as { id: unknown }).id
+              : dImg
+          }
+        }
+        return item
+      }),
+    )
+  }
   if (value && typeof value === 'object' && 'id' in value)
     return String((value as { id: unknown }).id)
   return JSON.stringify(value ?? null)
+}
+
+function formatSanitizedValue(key: string, value: unknown): string {
+  if (SENSITIVE_AUDIT_KEYS.has(key)) return '[REDACTED]'
+  if (value === null || value === undefined || value === '') return 'null'
+  if (Array.isArray(value)) return `array(${value.length})`
+  if (typeof value === 'object') {
+    if ('filename' in value && typeof (value as { filename?: unknown }).filename === 'string') {
+      return String((value as { filename: string }).filename)
+    }
+    if ('id' in value) return String((value as { id: unknown }).id)
+    return 'object'
+  }
+  return String(value).slice(0, 60)
+}
+
+export function changedFieldSnapshots(
+  previous: Record<string, unknown> | undefined,
+  next: Record<string, unknown>,
+  fields: Record<string, string>,
+): { labels: string[]; fromSummary: string; toSummary: string } {
+  const labels: string[] = []
+  const fromParts: string[] = []
+  const toParts: string[] = []
+  for (const [key, label] of Object.entries(fields)) {
+    if (SENSITIVE_AUDIT_KEYS.has(key)) continue
+    if (comparable(previous?.[key]) !== comparable(next[key])) {
+      labels.push(label)
+      fromParts.push(`${key}=${formatSanitizedValue(key, previous?.[key])}`)
+      toParts.push(`${key}=${formatSanitizedValue(key, next[key])}`)
+    }
+  }
+  return {
+    labels,
+    fromSummary: fromParts.join('; ').slice(0, 240),
+    toSummary: toParts.join('; ').slice(0, 240),
+  }
 }
 
 export function changedFieldLabels(
@@ -66,9 +135,7 @@ export function changedFieldLabels(
   next: Record<string, unknown>,
   fields: Record<string, string>,
 ): string[] {
-  return Object.entries(fields)
-    .filter(([key]) => comparable(previous?.[key]) !== comparable(next[key]))
-    .map(([, label]) => label)
+  return changedFieldSnapshots(previous, next, fields).labels
 }
 
 type AuditOptions = {
@@ -128,15 +195,17 @@ export function auditCollection(options: AuditOptions): {
           )
         }
       }
-      const changed = changedFieldLabels(previousDoc, doc, options.fields ?? {})
-      if (changed.length) {
+      const diff = changedFieldSnapshots(previousDoc, doc, options.fields ?? {})
+      if (diff.labels.length) {
         await recordAudit(
           req.payload,
           req.user,
           {
             ...base,
             action: `${options.entity}.update`,
-            summary: `Cập nhật ${options.entityName} ${base.entityLabel}: ${changed.join(', ')}`,
+            summary: `Cập nhật ${options.entityName} ${base.entityLabel}: ${diff.labels.join(', ')}`,
+            fromStatus: diff.fromSummary || undefined,
+            toStatus: diff.toSummary || undefined,
           },
           req,
         )
@@ -163,9 +232,18 @@ export function auditCollection(options: AuditOptions): {
 
 export const auditSiteContent: GlobalAfterChangeHook = async ({ doc, previousDoc, req }) => {
   const fields: Record<string, string> = {
+    siteName: 'Tên thương hiệu',
+    tagline: 'Khẩu hiệu',
+    logo: 'Logo',
+    favicon: 'Favicon',
+    ogImage: 'Ảnh OG',
     heroSlides: 'Hero Carousel',
     heroImages: 'Banner',
     storyImage: 'Ảnh câu chuyện',
+    homeIntroTitle: 'Tiêu đề trang chủ',
+    homeIntroDescription: 'Mô tả trang chủ',
+    headerMenu: 'Menu Header',
+    footerLinks: 'Liên kết Footer',
     aboutSummary: 'Giới thiệu',
     address: 'Địa chỉ',
     phone: 'Hotline',
@@ -179,9 +257,12 @@ export const auditSiteContent: GlobalAfterChangeHook = async ({ doc, previousDoc
     cancellationPolicy: 'Chính sách hủy',
     depositPolicy: 'Chính sách đặt cọc',
     termsOfUse: 'Điều khoản sử dụng',
+    faqs: 'FAQ',
+    maintenanceBannerEnabled: 'Banner bảo trì',
+    maintenanceBannerText: 'Nội dung bảo trì',
   }
-  const changed = changedFieldLabels(previousDoc, doc, fields)
-  if (changed.length)
+  const diff = changedFieldSnapshots(previousDoc, doc, fields)
+  if (diff.labels.length)
     await recordAudit(
       req.payload,
       req.user,
@@ -189,7 +270,9 @@ export const auditSiteContent: GlobalAfterChangeHook = async ({ doc, previousDoc
         action: 'content.update',
         entity: 'nori-site',
         entityLabel: 'Nội dung website',
-        summary: `Cập nhật nội dung website: ${changed.join(', ')}`,
+        summary: `Cập nhật nội dung website: ${diff.labels.join(', ')}`,
+        fromStatus: diff.fromSummary || undefined,
+        toStatus: diff.toSummary || undefined,
       },
       req,
     )

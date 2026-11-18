@@ -136,6 +136,13 @@ const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
         group: 'Hệ thống',
         module: 'admins',
       },
+      {
+        href: '/dashboard/system',
+        label: 'Đồng bộ & Sao lưu dữ liệu',
+        icon: 'sliders',
+        group: 'Hệ thống',
+        module: 'content',
+      },
     ],
   },
 ]

@@ -2,7 +2,21 @@ import { APIError, type CollectionConfig } from 'payload'
 
 import { createFolderField, createTagField } from 'payload'
 import { adminMediaDeleteAccess, adminMediaWriteAccess } from '@/access/nori'
+import { auditCollection } from '@/hooks/audit-nori'
 import { revalidateMedia, revalidateDeletedMedia } from '@/hooks/revalidate-nori'
+
+const mediaAudit = auditCollection({
+  entity: 'media',
+  entityName: 'hình ảnh media',
+  label: (doc) => String(doc.filename ?? doc.alt ?? doc.id),
+  fields: {
+    alt: 'Alt text',
+    filename: 'Tên tệp',
+    mediaCategory: 'Phân loại nguồn ảnh',
+    sourceUrl: 'URL nguồn',
+    verified: 'Xác minh nguồn ảnh',
+  },
+})
 
 export const Media: CollectionConfig = {
   slug: 'media',
@@ -106,8 +120,8 @@ export const Media: CollectionConfig = {
         }
       },
     ],
-    afterChange: [revalidateMedia],
-    afterDelete: [revalidateDeletedMedia],
+    afterChange: [revalidateMedia, mediaAudit.afterChange],
+    afterDelete: [revalidateDeletedMedia, mediaAudit.afterDelete],
   },
   fields: [
     {

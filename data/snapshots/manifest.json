@@ -1,0 +1,92 @@
+{
+  "allowlistedCollections": [
+    "categories",
+    "brands",
+    "vehicle-models",
+    "vehicles",
+    "site-settings",
+    "hero-slides",
+    "banners",
+    "articles",
+    "promotions",
+    "roles-permissions",
+    "media-manifest"
+  ],
+  "contentHash": "1a90aa85a72eb5bfbf535551",
+  "counts": {
+    "articles": 0,
+    "banners": 3,
+    "brands": 10,
+    "categories": 3,
+    "heroSlides": 5,
+    "media": 67,
+    "promotions": 1,
+    "rolesPermissions": 3,
+    "vehicleModels": 21,
+    "vehicles": 21
+  },
+  "excludedSensitiveCollections": [
+    "admins",
+    "users",
+    "bookings",
+    "rental-days",
+    "payments",
+    "sales-inquiries",
+    "consultations",
+    "notifications",
+    "reviews",
+    "audit-logs",
+    "admins-sessions",
+    "users-sessions"
+  ],
+  "exportedAt": "2026-11-18T16:02:13.804Z",
+  "files": {
+    "articles.json": {
+      "recordCount": 0,
+      "sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570"
+    },
+    "banners.json": {
+      "recordCount": 3,
+      "sha256": "5927c8b7535240f24294298e954fb3301a27c396f55521bd0e995dbcc3d42647"
+    },
+    "brands.json": {
+      "recordCount": 10,
+      "sha256": "9b63fb90ea1dee67d1d06d9676d804665bbe2fd41e846d3b27e481dfea3b261a"
+    },
+    "categories.json": {
+      "recordCount": 3,
+      "sha256": "407107a89c791c5d61650b8c4cabb22667406827edae7673d54d0fb8944f7a5a"
+    },
+    "hero-slides.json": {
+      "recordCount": 5,
+      "sha256": "0b8bfc76bed122fab5268b9f3913d2e3e02bad72175732ad5d9fed0fa8ba2ca3"
+    },
+    "media-manifest.json": {
+      "recordCount": 67,
+      "sha256": "cd4141494d22d38294a34fdc3eb41861a9780b6425f1350ffc825d101fa7e963"
+    },
+    "promotions.json": {
+      "recordCount": 1,
+      "sha256": "5b209b01974545bed4e1dd6ee60350e0ebb9ff517017afa9e8202883e5f319b1"
+    },
+    "roles-permissions.json": {
+      "recordCount": 3,
+      "sha256": "dadbf898daf90bb3e02f284fcca3a95a06773334b8db7ed0aa60f85468b53a87"
+    },
+    "site-settings.json": {
+      "recordCount": 1,
+      "sha256": "47d34bf4017da76eb15bcb34e2ec938ce4cc1dd4b3e665d8c4b354c5061eba70"
+    },
+    "vehicle-models.json": {
+      "recordCount": 21,
+      "sha256": "8264e8df4ee99db82416a9bd4f40fe2030b279265705a7b28beff5abf32b3dfd"
+    },
+    "vehicles.json": {
+      "recordCount": 21,
+      "sha256": "f831e096f58fd8579d5c2b147d90fba215b2f59a732ee15c57b7dc7a3f98cfb1"
+    }
+  },
+  "formatVersion": "1.0.0",
+  "schemaVersion": "nori-payload-sqlite-v2.5",
+  "snapshotVersion": "snap-1a90aa85a72e"
+}

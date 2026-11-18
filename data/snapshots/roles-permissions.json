@@ -1,0 +1,93 @@
+{
+  "actions": [
+    "read",
+    "create",
+    "update",
+    "delete",
+    "publish"
+  ],
+  "defaultOperatorPermissions": {
+    "admins": [],
+    "bookings": [
+      "read",
+      "update"
+    ],
+    "content": [
+      "read"
+    ],
+    "customers": [
+      "read",
+      "update"
+    ],
+    "inquiries": [
+      "read",
+      "update"
+    ],
+    "maintenance": [
+      "read",
+      "create",
+      "update"
+    ],
+    "models": [
+      "read",
+      "update"
+    ],
+    "payments": [
+      "read",
+      "create",
+      "update"
+    ],
+    "posts": [
+      "read",
+      "create",
+      "update"
+    ],
+    "promotions": [
+      "read"
+    ],
+    "reports": [
+      "read"
+    ],
+    "settings": [],
+    "vehicles": [
+      "read",
+      "create",
+      "update"
+    ]
+  },
+  "modules": [
+    "vehicles",
+    "models",
+    "bookings",
+    "inquiries",
+    "maintenance",
+    "promotions",
+    "payments",
+    "customers",
+    "content",
+    "posts",
+    "reports",
+    "admins",
+    "settings"
+  ],
+  "roles": [
+    {
+      "code": "SUPER_ADMIN",
+      "collection": "admins",
+      "description": "Toàn quyền quản trị hệ thống, phân quyền RBAC, đồng bộ dữ liệu và sao lưu.",
+      "label": "Quản trị viên cấp cao"
+    },
+    {
+      "code": "OPERATOR",
+      "collection": "admins",
+      "description": "Quản lý vận hành theo ma trận quyền RBAC từng module.",
+      "label": "Nhân viên vận hành"
+    },
+    {
+      "code": "CUSTOMER",
+      "collection": "users",
+      "description": "Đặt thuê xe, gửi yêu cầu mua xe, quản lý đơn thuê và hồ sơ cá nhân.",
+      "label": "Khách hàng"
+    }
+  ]
+}

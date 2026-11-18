@@ -1,0 +1,88 @@
+[
+  {
+    "code": "CAR",
+    "label": "Ô tô",
+    "subCategories": [
+      {
+        "code": "HATCHBACK",
+        "label": "Hatchback"
+      },
+      {
+        "code": "SEDAN",
+        "label": "Sedan"
+      },
+      {
+        "code": "SUV",
+        "label": "SUV"
+      },
+      {
+        "code": "CUV",
+        "label": "CUV"
+      },
+      {
+        "code": "MPV",
+        "label": "MPV"
+      },
+      {
+        "code": "COUPE",
+        "label": "Coupe"
+      },
+      {
+        "code": "SPORTS",
+        "label": "Xe thể thao"
+      },
+      {
+        "code": "ELECTRIC_CAR",
+        "label": "Xe điện"
+      }
+    ]
+  },
+  {
+    "code": "MOTORBIKE",
+    "label": "Xe máy",
+    "subCategories": [
+      {
+        "code": "MANUAL_BIKE",
+        "label": "Xe số"
+      },
+      {
+        "code": "SCOOTER",
+        "label": "Xe tay ga"
+      },
+      {
+        "code": "CLUTCH_BIKE",
+        "label": "Xe côn tay"
+      },
+      {
+        "code": "BIG_BIKE",
+        "label": "Mô tô phân khối lớn"
+      },
+      {
+        "code": "ELECTRIC_BIKE",
+        "label": "Xe máy điện"
+      }
+    ]
+  },
+  {
+    "code": "PICKUP",
+    "label": "Bán tải",
+    "subCategories": [
+      {
+        "code": "STANDARD_PICKUP",
+        "label": "Bán tải phổ thông"
+      },
+      {
+        "code": "WORK_PICKUP",
+        "label": "Bán tải công việc"
+      },
+      {
+        "code": "PREMIUM_PICKUP",
+        "label": "Bán tải cao cấp"
+      },
+      {
+        "code": "PERFORMANCE_PICKUP",
+        "label": "Bán tải hiệu năng cao"
+      }
+    ]
+  }
+]

@@ -6,7 +6,12 @@ const audit = auditCollection({
   entity: 'admin',
   entityName: 'tài khoản quản trị',
   label: (doc) => String(doc.email ?? doc.id),
-  fields: { fullName: 'Họ tên', adminRole: 'Vai trò', email: 'Email' },
+  fields: {
+    fullName: 'Họ tên',
+    adminRole: 'Vai trò',
+    email: 'Email',
+    permissions: 'Phân quyền RBAC',
+  },
 })
 
 async function countSuperAdmins(

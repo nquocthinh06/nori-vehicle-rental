@@ -17,9 +17,15 @@ build/
 *.sqlite-*
 *.sqlite3
 *.sqlite3-*
-/media/
 
-# Backups & Test Artifacts
+# Runtime media uploads (keep version-controlled media/seed/ tracked in Git)
+/media/*
+!/media/seed/
+/media/uploads/
+
+# Runtime sync state & Backups & Test Artifacts
+/data/runtime/
+/data/backups/
 backups/
 test-results/
 playwright-report/

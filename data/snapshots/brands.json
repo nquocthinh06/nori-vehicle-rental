@@ -1,0 +1,86 @@
+[
+  {
+    "categories": [
+      "PICKUP"
+    ],
+    "modelCount": 2,
+    "name": "Ford",
+    "slug": "ford"
+  },
+  {
+    "categories": [
+      "CAR",
+      "MOTORBIKE"
+    ],
+    "modelCount": 6,
+    "name": "Honda",
+    "slug": "honda"
+  },
+  {
+    "categories": [
+      "CAR"
+    ],
+    "modelCount": 1,
+    "name": "Hyundai",
+    "slug": "hyundai"
+  },
+  {
+    "categories": [
+      "MOTORBIKE"
+    ],
+    "modelCount": 1,
+    "name": "Kawasaki",
+    "slug": "kawasaki"
+  },
+  {
+    "categories": [
+      "CAR"
+    ],
+    "modelCount": 1,
+    "name": "Mazda",
+    "slug": "mazda"
+  },
+  {
+    "categories": [
+      "CAR"
+    ],
+    "modelCount": 1,
+    "name": "Mercedes-Benz",
+    "slug": "mercedes-benz"
+  },
+  {
+    "categories": [
+      "CAR",
+      "PICKUP"
+    ],
+    "modelCount": 2,
+    "name": "Mitsubishi",
+    "slug": "mitsubishi"
+  },
+  {
+    "categories": [
+      "CAR",
+      "PICKUP"
+    ],
+    "modelCount": 3,
+    "name": "Toyota",
+    "slug": "toyota"
+  },
+  {
+    "categories": [
+      "CAR",
+      "MOTORBIKE"
+    ],
+    "modelCount": 3,
+    "name": "VinFast",
+    "slug": "vinfast"
+  },
+  {
+    "categories": [
+      "MOTORBIKE"
+    ],
+    "modelCount": 1,
+    "name": "Yamaha",
+    "slug": "yamaha"
+  }
+]

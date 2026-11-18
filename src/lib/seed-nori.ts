@@ -28,7 +28,12 @@ async function ensureMedia(payload: Payload, key: string): Promise<string | null
 
   const existing = await payload.find({
     collection: 'media',
-    where: { filename: { equals: entry.filename } },
+    where: {
+      or: [
+        { filename: { equals: entry.filename } },
+        ...(entry.sourceUrl ? [{ sourceUrl: { equals: entry.sourceUrl } }] : []),
+      ],
+    },
     limit: 1,
     overrideAccess: true,
     depth: 0,

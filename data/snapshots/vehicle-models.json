@@ -1,0 +1,4149 @@
+[
+  {
+    "bodyStyle": "Xe máy điện đô thị",
+    "brand": "VinFast",
+    "category": "MOTORBIKE",
+    "coverMediaKey": "xe-dien-vinfast-evo-max-1.jpg",
+    "defaultDepositSuggestion": 2000000,
+    "description": "VinFast Evo Max (tên thương mại dòng VinFast Evo thế hệ hỗ trợ đổi pin nhanh) mang phong cách thanh lịch kiểu châu Âu, hướng đến nhu cầu đi lại linh hoạt trong đô thị. Xe trang bị động cơ điện BLDC Inhub đặt tại bánh sau, hỗ trợ cấu hình 1 hoặc 2 pin LFP tháo rời giúp chủ động sạc tại nhà hoặc đổi pin nhanh tại trạm.",
+    "driveType": "Mô-tơ bánh sau (Inhub)",
+    "engineOverview": "Động cơ điện một chiều không chổi than (BLDC Inhub) công suất danh định 1.500 W (công suất tối đa khoảng 2.450 W), tốc độ tối đa công bố khoảng 70 km/h.",
+    "exteriorOverview": "Thiết kế bo tròn thanh lịch với cụm đèn chiếu sáng Full LED, đèn pha tròn đặc trưng, sàn để chân phẳng rộng rãi và đạt chuẩn kháng nước IP67.",
+    "featured": true,
+    "features": [
+      {
+        "category": "TECHNOLOGY",
+        "name": "Hệ thống chiếu sáng và đèn định vị Full LED",
+        "status": "EQUIPPED",
+        "variantNote": null
+      },
+      {
+        "category": "TECHNOLOGY",
+        "name": "Pin LFP an toàn, hỗ trợ tháo rời sạc hoặc đổi pin tại trạm",
+        "status": "EQUIPPED",
+        "variantNote": null
+      },
+      {
+        "category": "SAFETY",
+        "name": "Tiêu chuẩn chống nước IP67 cho động cơ và hệ thống pin",
+        "status": "EQUIPPED",
+        "variantNote": null
+      },
+      {
+        "category": "SAFETY",
+        "name": "Phanh đĩa bánh trước kết hợp lốp không săm",
+        "status": "EQUIPPED",
+        "variantNote": null
+      },
+      {
+        "category": "DRIVER_ASSIST",
+        "name": "Hai chế độ vận hành Eco / Sport trên tay lái",
+        "status": "EQUIPPED",
+        "variantNote": null
+      }
+    ],
+    "fuelType": "Điện (EV)",
+    "gallery": [
+      {
+        "altText": "VinFast Evo Max màu Đen bóng góc chéo trước",
+        "caption": "VinFast Evo Max phiên bản màu Đen bóng góc chéo trước",
+        "colorName": "Đen bóng",
+        "isPrimary": true,
+        "kind": "EXTERIOR",
+        "license": null,
+        "mediaKey": "xe-dien-vinfast-evo-max-1.jpg",
+        "photoType": "FRONT_LEFT",
+        "sortOrder": 0,
+        "sourceUrl": null,
+        "variantName": "Tiêu chuẩn đổi pin",
+        "verified": true
+      },
+      {
+        "altText": "Thiết kế dòng xe máy điện đô thị VinFast Evo",
+        "caption": "Thiết kế dòng xe máy điện đô thị VinFast Evo (Wikimedia Commons)",
+        "colorName": null,
+        "isPrimary": false,
+        "kind": "OVERVIEW",
+        "license": "CC BY-SA 4.0",
+        "mediaKey": "vinfast-evo200-ext-7.jpg",
+        "photoType": "OVERVIEW",
+        "sortOrder": 1,
+        "sourceUrl": "https://commons.wikimedia.org/wiki/File:Newone_-_Yellow_VinFast_Evo_%26_Vento_01.jpg",
+        "variantName": null,
+        "verified": true
+      }
+    ],
+    "generation": "Thế hệ đổi pin 2025",
+    "highlights": [
+      "Hỗ trợ pin LFP tháo rời linh hoạt (lắp 1 hoặc tối đa 2 pin)",
+      "Động cơ BLDC Inhub danh định 1.500 W, vận tốc tối đa ~70 km/h",
+      "Tiêu chuẩn kháng nước IP67 phù hợp điều kiện đường phố đô thị",
+      "Hệ thống chiếu sáng Full LED kết hợp phanh đĩa trước an toàn"
+    ],
+    "id": "748643cb-ad1f-462a-8833-ab9641ab4de1",
+    "interiorOverview": "Cụm đồng hồ kỹ thuật số hiển thị trực quan vận tốc, mức pin và chế độ lái; hộc chứa đồ dưới yên linh hoạt theo cấu hình lắp 1 hoặc 2 pin LFP.",
+    "listedPrice": 19990000,
+    "modelLine": "Evo",
+    "modelYear": 2025,
+    "name": "VinFast Evo Max",
+    "officialName": "VinFast Evo (Evo Max – Phiên bản đổi pin LFP)",
+    "origin": "Việt Nam (VinFast)",
+    "recordHash": "5c92d65cc1149046211a8991",
+    "referenceRentPrice": 60000,
+    "seats": 2,
+    "segment": "Xe máy điện đô thị đổi pin LFP",
+    "shortDescription": "Mẫu xe máy điện đô thị VinFast Evo thế hệ hỗ trợ đổi pin LFP linh hoạt, động cơ BLDC Inhub êm ái và chuẩn kháng nước IP67.",
+    "slug": "vinfast-evo-max",
+    "sortOrder": 0,
+    "source": "https://vinfastauto.com/vn_vi",
+    "specifications": [
+      {
+        "group": "EV",
+        "label": "Loại mô-tơ điện",
+        "source": "VinFast công bố",
+        "value": "BLDC Inhub đặt tại bánh sau",
+        "variantName": null
+      },
+      {
+        "group": "EV",
+        "label": "Công suất danh định / tối đa",
+        "source": "VinFast công bố",
+        "value": "1.500 W / ~2.450 W",
+        "variantName": null
+      },
+      {
+        "group": "EV",
+        "label": "Công nghệ pin",
+        "source": "VinFast công bố",
+        "value": "Pin LFP tháo rời (hỗ trợ lắp tối đa 2 pin)",
+        "variantName": null
+      },
+      {
+        "group": "EV",
+        "label": "Quãng đường di chuyển tham khảo",
+        "source": "Tài liệu công bố dòng Evo đổi pin",
+        "value": "~85 km (1 pin) · tối đa ~165 km (2 pin)",
+        "variantName": null
+      },
+      {
+        "group": "EV",
+        "label": "Thời gian sạc tiêu chuẩn tại nhà",
+        "source": "Tài liệu công bố dòng Evo đổi pin",
+        "value": "Khoảng 4 giờ 30 phút (bộ sạc 400 W cho 1 pin)",
+        "variantName": null
+      },
+      {
+        "group": "MOTORBIKE",
+        "label": "Vận tốc tối đa",
+        "source": "VinFast công bố",
+        "value": "~70 km/h",
+        "variantName": null
+      },
+      {
+        "group": "MOTORBIKE",
+        "label": "Tiêu chuẩn kháng nước",
+        "source": "VinFast công bố",
+        "value": "IP67 (ngập sâu 0,5 m trong 30 phút)",
+        "variantName": null
+      },
+      {
+        "group": "DIMENSIONS",
+        "label": "Kích thước Dài x Rộng x Cao",
+        "source": "Tài liệu kỹ thuật dòng Evo đổi pin",
+        "value": "1.856 x 683 x 1.133 mm",
+        "variantName": null
+      },
+      {
+        "group": "DIMENSIONS",
+        "label": "Chiều cao yên",
+        "source": "Tài liệu kỹ thuật dòng Evo đổi pin",
+        "value": "770 mm",
+        "variantName": null
+      },
+      {
+        "group": "DIMENSIONS",
+        "label": "Khối lượng bản thân",
+        "source": "Tài liệu kỹ thuật dòng Evo đổi pin",
+        "value": "~86 kg (kèm 1 pin) · ~98 kg (kèm 2 pin)",
+        "variantName": null
+      },
+      {
+        "group": "CHASSIS",
+        "label": "Hệ thống phanh trước / sau",
+        "source": "VinFast công bố",
+        "value": "Phanh đĩa trước / Phanh cơ (tang trống) sau",
+        "variantName": null
+      }
+    ],
+    "subCategory": "ELECTRIC_BIKE",
+    "suitableFor": "Khách hàng di chuyển nội đô, sinh viên, nhân viên văn phòng ưu tiên phương tiện không phát thải, vận hành êm ái.",
+    "transmission": "Truyền động trực tiếp (BLDC Inhub)",
+    "updatedAt": "2026-11-17T22:34:00.187Z",
+    "usagePurpose": "Di chuyển đô thị hằng ngày, đi học, đi làm tiết kiệm chi phí vận hành",
+    "variants": [
+      {
+        "colors": [
+          {
+            "hex": "#18181B",
+            "mediaKey": "xe-dien-vinfast-evo-max-1.jpg",
+            "name": "Đen bóng",
+            "sourceUrl": null
+          },
+          {
+            "hex": "#EAB308",
+            "mediaKey": "vinfast-evo200-ext-7.jpg",
+            "name": "Vàng",
+            "sourceUrl": null
+          },
+          {
+            "hex": "#F8FAFC",
+            "mediaKey": null,
+            "name": "Trắng ngọc trai",
+            "sourceUrl": null
+          }
+        ],
+        "driveType": null,
+        "fuelType": null,
+        "listedPrice": 19990000,
+        "name": "Bản không kèm pin (Thuê pin)",
+        "referenceRentPrice": null,
+        "seats": null,
+        "summary": "Giá đề xuất chưa gồm pin, linh hoạt đăng ký gói thuê/đổi pin",
+        "transmission": null,
+        "year": null
+      },
+      {
+        "colors": [
+          {
+            "hex": "#18181B",
+            "mediaKey": "xe-dien-vinfast-evo-max-1.jpg",
+            "name": "Đen bóng",
+            "sourceUrl": null
+          },
+          {
+            "hex": "#EAB308",
+            "mediaKey": "vinfast-evo200-ext-7.jpg",
+            "name": "Vàng",
+            "sourceUrl": null
+          }
+        ],
+        "driveType": null,
+        "fuelType": null,
+        "listedPrice": 25600000,
+        "name": "Bản kèm pin LFP",
+        "referenceRentPrice": null,
+        "seats": null,
+        "summary": "Giá đề xuất đã bao gồm VAT và 01 bộ pin LFP tiêu chuẩn",
+        "transmission": null,
+        "year": null
+      }
+    ],
+    "verificationStatus": "VERIFIED",
+    "versionName": "Tiêu chuẩn đổi pin",
+    "visible": true
+  },
+  {
+    "bodyStyle": "SUV 7 chỗ",
+    "brand": "Toyota",
+    "category": "CAR",
+    "coverMediaKey": "toyota-fortuner-ext-10.jpg",
+    "defaultDepositSuggestion": null,
+    "description": "Toyota Fortuner là mẫu SUV 7 chỗ khung gầm rời (body-on-frame) quen thuộc tại Việt Nam nhờ độ bền bỉ, khoảng sáng gầm 279 mm và khả năng vận hành ổn định trên nhiều dạng địa hình. Nội thất ba hàng ghế rộng rãi đáp ứng tốt nhu cầu di chuyển gia đình hoặc đưa đón chuyên gia.",
+    "driveType": "Cầu sau (4x2) / 2 cầu bán thời gian (4x4)",
+    "engineOverview": "Tùy chọn động cơ Diesel 2.4L (2GD-FTV, 147 mã lực / 400 Nm) tiết kiệm nhiên liệu hoặc Diesel 2.8L (1GD-FTV, 201 mã lực / 500 Nm) kết hợp hộp số tự động 6 cấp và khóa vi sai cầu sau.",
+    "exteriorOverview": "Ngoại hình bề thế với lưới tản nhiệt kích thước lớn, cụm đèn chiếu sáng Bi-LED sắc nét, thanh giá nóc thể thao và bộ mâm hợp kim 17–18 inch tùy phiên bản.",
+    "featured": true,
+    "features": [
+      {
+        "category": "COMFORT",
+        "name": "Điều hòa tự động 2 vùng & cửa gió hàng ghế sau",
+        "status": "EQUIPPED",
+        "variantNote": null
+      },
+      {
+        "category": "TECHNOLOGY",
+        "name": "Màn hình cảm ứng 9 inch Apple CarPlay / Android Auto",
+        "status": "EQUIPPED",
+        "variantNote": null
+      },
+      {
+        "category": "COMFORT",
+        "name": "Cốp đóng mở điện thông minh",
+        "status": "EQUIPPED",
+        "variantNote": "Bản Legender"
+      },
+      {
+        "category": "SAFETY",
+        "name": "7 túi khí & Cân bằng điện tử VSC",
+        "status": "EQUIPPED",
+        "variantNote": null
+      },
+      {
+        "category": "DRIVER_ASSIST",
+        "name": "Camera 360 độ & Cảm biến hỗ trợ đỗ xe",
+        "status": "EQUIPPED",
+        "variantNote": null
+      },
+      {
+        "category": "DRIVER_ASSIST",
+        "name": "Cảnh báo tiền va chạm (PCS) & Giữ làn (LDA)",
+        "status": "EQUIPPED",
+        "variantNote": "Bản 2.8 AT 4x4"
+      }
+    ],
+    "fuelType": "Dầu (Diesel)",
+    "gallery": [
+      {
+        "altText": null,
+        "caption": "Ngoại thất tổng thể góc nhìn trực diện bên hông (Wikimedia Commons)",
+        "colorName": null,
+        "isPrimary": false,
+        "kind": "EXTERIOR",
+        "license": "CC BY-SA 4.0",
+        "mediaKey": "toyota-fortuner-ext-10.jpg",
+        "photoType": null,
+        "sortOrder": 0,
+        "sourceUrl": "https://commons.wikimedia.org/wiki/File:TOYOTA_FORTUNER_(AN150,AN160)_China.jpg",
+        "variantName": null,
+        "verified": true
+      },
+      {
+        "altText": null,
+        "caption": "Cụm đèn hậu LED và thiết kế đuôi xe (Wikimedia Commons)",
+        "colorName": null,
+        "isPrimary": false,
+        "kind": "EXTERIOR",
+        "license": "CC BY-SA 4.0",
+        "mediaKey": "toyota-fortuner-ext-11.jpg",
+        "photoType": null,
+        "sortOrder": 0,
+        "sourceUrl": "https://commons.wikimedia.org/wiki/File:TOYOTA_FORTUNER_(AN150,AN160)_China_(4).jpg",
+        "variantName": null,
+        "verified": true
+      },
+      {
+        "altText": null,
+        "caption": "Góc nhìn chéo 45 độ thân xe SUV 7 chỗ (Wikimedia Commons)",
+        "colorName": null,
+        "isPrimary": false,
+        "kind": "EXTERIOR",
+        "license": "CC BY-SA 4.0",
+        "mediaKey": "toyota-fortuner-ext-12.jpg",
+        "photoType": null,
+        "sortOrder": 0,
+        "sourceUrl": "https://commons.wikimedia.org/wiki/File:Toyota_Fortuner,_Cape_Town_(P1060077).jpg",
+        "variantName": null,
+        "verified": true
+      },
+      {
+        "altText": null,
+        "caption": "Khoang lái và bảng điều khiển trung tâm (Wikimedia Commons)",
+        "colorName": null,
+        "isPrimary": false,
+        "kind": "INTERIOR",
+        "license": "CC BY-SA 4.0",
+        "mediaKey": "toyota-fortuner-int-4.jpg",
+        "photoType": null,
+        "sortOrder": 0,
+        "sourceUrl": "https://commons.wikimedia.org/wiki/File:Toyota_Fortuner_LTD_4x2_interior_20221019.jpg",
+        "variantName": null,
+        "verified": true
+      },
+      {
+        "altText": null,
+        "caption": "Khoang động cơ Diesel 2GD-FTV 2.4L (Wikimedia Commons)",
+        "colorName": null,
+        "isPrimary": false,
+        "kind": "ENGINE",
+        "license": "CC BY-SA 4.0",
+        "mediaKey": "toyota-fortuner-eng-4.jpg",
+        "photoType": null,
+        "sortOrder": 0,
+        "sourceUrl": "https://commons.wikimedia.org/wiki/File:2019_Toyota_FORTUNER_2.4_2GD-FTV_(190428).jpg",
+        "variantName": null,
+        "verified": true
+      }
+    ],
+    "generation": null,
+    "highlights": [
+      "Khoảng sáng gầm 279 mm vượt trội trong phân khúc SUV 7 chỗ",
+      "Khung gầm rời bền bỉ, phù hợp cả đường trường lẫn địa hình xấu",
+      "Gói an toàn Toyota Safety Sense trên phiên bản 2.8L Legender",
+      "Ba hàng ghế rộng rãi với cửa gió điều hòa cho từng hàng ghế"
+    ],
+    "id": "573bca2d-5092-4e22-a1c8-ab7954584ca1",
+    "interiorOverview": "Khoang lái bọc da với ghế trước chỉnh điện 8 hướng, màn hình giải trí trung tâm 8–9 inch hỗ trợ Apple CarPlay/Android Auto không dây và điều hòa tự động 2 vùng độc lập có cửa gió cho cả 3 hàng ghế.",
+    "listedPrice": 1055000000,
+    "modelLine": null,
+    "modelYear": 2024,
+    "name": "Toyota Fortuner",
+    "officialName": null,
+    "origin": "Việt Nam / Indonesia",
+    "recordHash": "92df044a2a1aff31cf2a6af0",
+    "referenceRentPrice": 1350000,
+    "seats": 7,
+    "segment": "SUV hạng D khung gầm rời",
+    "shortDescription": null,
+    "slug": "toyota-fortuner",
+    "sortOrder": 1,
+    "source": "https://www.toyota.com.vn/",
+    "specifications": [
+      {
+        "group": "ENGINE",
+        "label": "Động cơ",
+        "source": "Toyota Việt Nam",
+        "value": "2GD-FTV 2.4L Turbo Diesel / 1GD-FTV 2.8L (tùy phiên bản)",
+        "variantName": null
+      },
+      {
+        "group": "ENGINE",
+        "label": "Công suất cực đại",
+        "source": "Toyota Việt Nam",
+        "value": "147 hp @ 3.400 rpm (2.4L) / 201 hp (2.8L)",
+        "variantName": null
+      },
+      {
+        "group": "ENGINE",
+        "label": "Mô-men xoắn cực đại",
+        "source": "Toyota Việt Nam",
+        "value": "400 Nm @ 1.600 rpm (2.4L) / 500 Nm (2.8L)",
+        "variantName": null
+      },
+      {
+        "group": "ENGINE",
+        "label": "Hộp số & Dẫn động",
+        "source": "Toyota Việt Nam",
+        "value": "Tự động 6 cấp · RWD (4x2) hoặc 4WD (4x4)",
+        "variantName": null
+      },
+      {
+        "group": "ENGINE",
+        "label": "Dung tích bình nhiên liệu",
+        "source": "Toyota Việt Nam",
+        "value": "80 lít",
+        "variantName": null
+      },
+      {
+        "group": "DIMENSIONS",
+        "label": "Kích thước (D × R × C)",
+        "source": "Toyota Việt Nam",
+        "value": "4.795 × 1.855 × 1.835 mm",
+        "variantName": null
+      },
+      {
+        "group": "DIMENSIONS",
+        "label": "Chiều dài cơ sở",
+        "source": "Toyota Việt Nam",
+        "value": "2.745 mm",
+        "variantName": null
+      },
+      {
+        "group": "DIMENSIONS",
+        "label": "Khoảng sáng gầm xe",
+        "source": "Toyota Việt Nam",
+        "value": "279 mm",
+        "variantName": null
+      },
+      {
+        "group": "DIMENSIONS",
+        "label": "Bán kính quay vòng tối thiểu",
+        "source": "Toyota Việt Nam",
+        "value": "5,8 m",
+        "variantName": null
+      },
+      {
+        "group": "CHASSIS",
+        "label": "Hệ thống phanh trước / sau",
+        "source": "Toyota Việt Nam",
+        "value": "Đĩa thông gió / Đĩa đặc (ABS, EBD, BA)",
+        "variantName": null
+      },
+      {
+        "group": "CHASSIS",
+        "label": "Kích thước lốp & mâm",
+        "source": "Toyota Việt Nam",
+        "value": "265/65R17 hoặc 265/60R18 (Legender)",
+        "variantName": null
+      }
+    ],
+    "subCategory": "SUV",
+    "suitableFor": "Gia đình 5–7 người, công tác liên tỉnh, đường đèo dốc và hành trình dài ngày",
+    "transmission": "Tự động 6 cấp",
+    "updatedAt": "2026-11-17T08:11:31.671Z",
+    "usagePurpose": null,
+    "variants": [
+      {
+        "colors": [
+          {
+            "hex": "#f4f4f0",
+            "mediaKey": "toyota-fortuner-ext-12.jpg",
+            "name": "Trắng ngọc trai",
+            "sourceUrl": "https://commons.wikimedia.org/wiki/File:Toyota_Fortuner,_Cape_Town_(P1060077).jpg"
+          },
+          {
+            "hex": "#1c1f24",
+            "mediaKey": "toyota-fortuner-ext-10.jpg",
+            "name": "Đen ánh kim",
+            "sourceUrl": "https://commons.wikimedia.org/wiki/File:TOYOTA_FORTUNER_(AN150,AN160)_China.jpg"
+          },
+          {
+            "hex": "#b6bcc2",
+            "mediaKey": null,
+            "name": "Bạc",
+            "sourceUrl": null
+          }
+        ],
+        "driveType": "Cầu sau (4x2)",
+        "fuelType": "Dầu (Diesel)",
+        "listedPrice": 1055000000,
+        "name": "2.4 AT 4x2",
+        "referenceRentPrice": 1350000,
+        "seats": 7,
+        "summary": "Động cơ dầu 2.4L tiết kiệm nhiên liệu, 7 túi khí, phù hợp di chuyển gia đình và công tác.",
+        "transmission": "Tự động 6 cấp",
+        "year": 2024
+      },
+      {
+        "colors": [
+          {
+            "hex": "#eef0f2",
+            "mediaKey": "toyota-fortuner-ext-12.jpg",
+            "name": "Trắng ngọc trai nóc đen",
+            "sourceUrl": "https://commons.wikimedia.org/wiki/File:Toyota_Fortuner,_Cape_Town_(P1060077).jpg"
+          },
+          {
+            "hex": "#1c1f24",
+            "mediaKey": "toyota-fortuner-ext-10.jpg",
+            "name": "Đen ánh kim",
+            "sourceUrl": "https://commons.wikimedia.org/wiki/File:TOYOTA_FORTUNER_(AN150,AN160)_China.jpg"
+          }
+        ],
+        "driveType": "2 cầu bán thời gian (4x4)",
+        "fuelType": "Dầu (Diesel)",
+        "listedPrice": 1350000000,
+        "name": "Legender 2.8 AT 4x4",
+        "referenceRentPrice": 1650000,
+        "seats": 7,
+        "summary": "Phiên bản cao cấp động cơ 2.8L 201 hp, dẫn động 2 cầu, Toyota Safety Sense và 11 loa JBL.",
+        "transmission": "Tự động 6 cấp",
+        "year": 2024
+      }
+    ],
+    "verificationStatus": "VERIFIED",
+    "versionName": null,
+    "visible": true
+  },
+  {
+    "bodyStyle": "Xe tay ga đường trường",
+    "brand": "Honda",
+    "category": "MOTORBIKE",
+    "coverMediaKey": "honda-pcx-ext-10.jpg",
+    "defaultDepositSuggestion": null,
+    "description": "Honda PCX 160 nổi bật với thiết kế touring trường xe, tư thế ngồi duỗi chân thoải mái và động cơ eSP+ 4 van vận hành êm ái. Khoang chứa đồ 30 lít dưới yên cùng bình xăng lớn 8,1 lít giúp giảm tần suất tiếp nhiên liệu trên những chặng đường dài.",
+    "driveType": "Dây đai V-Matic",
+    "engineOverview": "Động cơ eSP+ 156,9 cc 4 van làm mát bằng dung dịch, công suất 15,8 mã lực, tích hợp Idling Stop và kiểm soát lực kéo HSTC.",
+    "exteriorOverview": "Đèn định vị LED dạng cánh chim đặc trưng, kính chắn gió tối màu, sàn để chân hai tầng và yên hai tầng ôm lưng người lái.",
+    "featured": true,
+    "features": [
+      {
+        "category": "TECHNOLOGY",
+        "name": "Hệ thống khóa thông minh Honda Smart Key",
+        "status": "EQUIPPED",
+        "variantNote": null
+      },
+      {
+        "category": "SAFETY",
+        "name": "Phanh chống bó cứng ABS bánh trước",
+        "status": "EQUIPPED",
+        "variantNote": null
+      },
+      {
+        "category": "DRIVER_ASSIST",
+        "name": "Hệ thống kiểm soát lực kéo HSTC",
+        "status": "EQUIPPED",
+        "variantNote": null
+      },
+      {
+        "category": "COMFORT",
+        "name": "Cổng sạc USB-C trong hộc đồ trước",
+        "status": "EQUIPPED",
+        "variantNote": null
+      }
+    ],
+    "fuelType": "Xăng",
+    "gallery": [
+      {
+        "altText": null,
+        "caption": "Honda PCX 160 góc ngang thân xe (Wikimedia Commons)",
+        "colorName": null,
+        "isPrimary": false,
+        "kind": "EXTERIOR",
+        "license": "CC BY-SA 4.0",
+        "mediaKey": "honda-pcx-ext-10.jpg",
+        "photoType": null,
+        "sortOrder": 0,
+        "sourceUrl": "https://commons.wikimedia.org/wiki/File:HONDA_PCX_160_China.jpg",
+        "variantName": null,
+        "verified": true
+      },
+      {
+        "altText": null,
+        "caption": "Thiết kế đuôi xe và cụm đèn LED chữ X (Wikimedia Commons)",
+        "colorName": null,
+        "isPrimary": false,
+        "kind": "EXTERIOR",
+        "license": "CC BY-SA 4.0",
+        "mediaKey": "honda-pcx-ext-11.jpg",
+        "photoType": null,
+        "sortOrder": 0,
+        "sourceUrl": "https://commons.wikimedia.org/wiki/File:HONDA_PCX_160_China_(3).jpg",
+        "variantName": null,
+        "verified": true
+      },
+      {
+        "altText": null,
+        "caption": "Phiên bản màu Xám Đen mờ góc trước (Wikimedia Commons)",
+        "colorName": "Xám đen mờ",
+        "isPrimary": false,
+        "kind": "EXTERIOR",
+        "license": "CC BY 4.0",
+        "mediaKey": "honda-pcx-ext-12.jpg",
+        "photoType": null,
+        "sortOrder": 0,
+        "sourceUrl": "https://commons.wikimedia.org/wiki/File:2022_Honda_PCX_160_Gray_Black.jpg",
+        "variantName": null,
+        "verified": true
+      }
+    ],
+    "generation": null,
+    "highlights": [
+      "Tư thế ngồi touring thoải mái, giảm mỏi lưng khi đi đường dài",
+      "Cốp dưới yên dung tích 30 lít chứa vừa mũ bảo hiểm cả đầu",
+      "Bình xăng 8,1 lít cho quãng đường di chuyển dài mỗi lần đổ",
+      "Trang bị phanh ABS bánh trước và Smart Key chống trộm"
+    ],
+    "id": "b3c796ab-6589-44f6-bab6-d3b951276b03",
+    "interiorOverview": "Mặt đồng hồ LCD toàn phần hiển thị rõ tốc độ, mức tiêu hao nhiên liệu và cảnh báo bảo dưỡng; hộc chứa đồ phía trước tích hợp cổng sạc USB Type-C.",
+    "listedPrice": 89000000,
+    "modelLine": null,
+    "modelYear": 2024,
+    "name": "Honda PCX",
+    "officialName": null,
+    "origin": "Thái Lan / Indonesia (Nhập khẩu)",
+    "recordHash": "cb6cb4af425c1ba5b90ccf67",
+    "referenceRentPrice": 320000,
+    "seats": 2,
+    "segment": "Xe tay ga cao cấp cỡ trung",
+    "shortDescription": null,
+    "slug": "honda-pcx",
+    "sortOrder": 2,
+    "source": "https://www.honda.com.vn/xe-may/san-pham",
+    "specifications": [
+      {
+        "group": "MOTORBIKE",
+        "label": "Động cơ",
+        "source": "Honda Motor",
+        "value": "eSP+ 4 kỳ, xi-lanh đơn, 4 van, làm mát dung dịch",
+        "variantName": null
+      },
+      {
+        "group": "MOTORBIKE",
+        "label": "Dung tích xi-lanh",
+        "source": "Honda Motor",
+        "value": "156,9 cc",
+        "variantName": null
+      },
+      {
+        "group": "MOTORBIKE",
+        "label": "Công suất cực đại",
+        "source": "Honda Motor",
+        "value": "11,8 kW (15,8 hp) @ 8.500 rpm",
+        "variantName": null
+      },
+      {
+        "group": "MOTORBIKE",
+        "label": "Mô-men xoắn cực đại",
+        "source": "Honda Motor",
+        "value": "14,7 Nm @ 6.500 rpm",
+        "variantName": null
+      },
+      {
+        "group": "MOTORBIKE",
+        "label": "Hệ thống phanh",
+        "source": "Honda Motor",
+        "value": "Đĩa trước ABS / Đĩa sau (tùy thị trường)",
+        "variantName": null
+      },
+      {
+        "group": "MOTORBIKE",
+        "label": "Dung tích bình xăng & cốp",
+        "source": "Honda Motor",
+        "value": "8,1 lít · Cốp 30 lít",
+        "variantName": null
+      },
+      {
+        "group": "DIMENSIONS",
+        "label": "Chiều cao yên",
+        "source": "Honda Motor",
+        "value": "764 mm",
+        "variantName": null
+      },
+      {
+        "group": "DIMENSIONS",
+        "label": "Trọng lượng bản thân",
+        "source": "Honda Motor",
+        "value": "132 kg",
+        "variantName": null
+      }
+    ],
+    "subCategory": "SCOOTER",
+    "suitableFor": "Đi làm hằng ngày, di chuyển liên quận êm ái và phượt ngoại ô cuối tuần",
+    "transmission": "Vô cấp CVT",
+    "updatedAt": "2026-11-17T08:11:31.751Z",
+    "usagePurpose": null,
+    "variants": [
+      {
+        "colors": [
+          {
+            "hex": "#4b5056",
+            "mediaKey": "honda-pcx-ext-12.jpg",
+            "name": "Xám đen mờ",
+            "sourceUrl": "https://commons.wikimedia.org/wiki/File:2022_Honda_PCX_160_Gray_Black.jpg"
+          },
+          {
+            "hex": "#f2f3f5",
+            "mediaKey": null,
+            "name": "Trắng ngọc trai",
+            "sourceUrl": null
+          }
+        ],
+        "driveType": "Dây đai",
+        "fuelType": "Xăng",
+        "listedPrice": 89000000,
+        "name": "PCX 160 ABS",
+        "referenceRentPrice": 320000,
+        "seats": 2,
+        "summary": "Động cơ eSP+ 160 cc mạnh mẽ, phanh ABS bánh trước, Smart Key và cốp 30 lít.",
+        "transmission": "Vô cấp CVT",
+        "year": 2024
+      }
+    ],
+    "verificationStatus": "VERIFIED",
+    "versionName": null,
+    "visible": true
+  },
+  {
+    "bodyStyle": "Bán tải hiệu năng cao",
+    "brand": "Ford",
+    "category": "PICKUP",
+    "coverMediaKey": "ford-ranger-raptor-ext-10.jpg",
+    "defaultDepositSuggestion": null,
+    "description": "Ford Ranger Raptor thế hệ mới được Ford Performance phát triển chuyên biệt cho khả năng chạy địa hình tốc độ cao. Xe trang bị hệ thống treo FOX 2.5-inch Live Valve, khung gầm gia cường và 7 chế độ lái linh hoạt từ đường phố đến địa hình Baja.",
+    "driveType": "2 cầu toàn thời gian (4WD) · 7 chế độ lái",
+    "engineOverview": "Động cơ Diesel 2.0L Bi-Turbo công suất 210 PS và mô-men xoắn 500 Nm kết hợp hộp số tự động 10 cấp, khóa vi sai trước/sau và hệ dẫn động 4A thông minh.",
+    "exteriorOverview": "Mặt ca-lăng chữ FORD cỡ lớn đầy uy lực, đèn pha LED Matrix tự động điều chỉnh chùm sáng, vòm bánh mở rộng và bộ lốp địa hình BFGoodrich All-Terrain 285/70R17.",
+    "featured": true,
+    "features": [
+      {
+        "category": "DRIVER_ASSIST",
+        "name": "Hệ thống treo FOX 2.5-inch Live Valve",
+        "status": "EQUIPPED",
+        "variantNote": null
+      },
+      {
+        "category": "DRIVER_ASSIST",
+        "name": "Khóa vi sai cầu trước & cầu sau",
+        "status": "EQUIPPED",
+        "variantNote": null
+      },
+      {
+        "category": "TECHNOLOGY",
+        "name": "Màn hình dọc 12 inch SYNC 4A & Apple CarPlay không dây",
+        "status": "EQUIPPED",
+        "variantNote": null
+      },
+      {
+        "category": "SAFETY",
+        "name": "Camera 360 độ hiển thị góc nhìn địa hình",
+        "status": "EQUIPPED",
+        "variantNote": null
+      },
+      {
+        "category": "DRIVER_ASSIST",
+        "name": "Ga tự động thích ứng & Cảnh báo điểm mù",
+        "status": "EQUIPPED",
+        "variantNote": null
+      }
+    ],
+    "fuelType": "Dầu (Diesel)",
+    "gallery": [
+      {
+        "altText": null,
+        "caption": "Ford Ranger Raptor góc chéo trước (Wikimedia Commons)",
+        "colorName": null,
+        "isPrimary": false,
+        "kind": "EXTERIOR",
+        "license": "CC BY-SA 4.0",
+        "mediaKey": "ford-ranger-raptor-ext-10.jpg",
+        "photoType": null,
+        "sortOrder": 0,
+        "sourceUrl": "https://commons.wikimedia.org/wiki/File:Ford_Ranger_Raptor_(P703)_1X7A6774.jpg",
+        "variantName": null,
+        "verified": true
+      },
+      {
+        "altText": null,
+        "caption": "Góc nhìn phía sau và thùng hàng cabin kép (Wikimedia Commons)",
+        "colorName": null,
+        "isPrimary": false,
+        "kind": "EXTERIOR",
+        "license": "CC BY-SA 4.0",
+        "mediaKey": "ford-ranger-raptor-ext-11.jpg",
+        "photoType": null,
+        "sortOrder": 0,
+        "sourceUrl": "https://commons.wikimedia.org/wiki/File:Ford_Ranger_Raptor_(P703)_1X7A6776.jpg",
+        "variantName": null,
+        "verified": true
+      },
+      {
+        "altText": null,
+        "caption": "Khoảng sáng gầm và lốp địa hình BFGoodrich (Wikimedia Commons)",
+        "colorName": null,
+        "isPrimary": false,
+        "kind": "EXTERIOR",
+        "license": "CC BY-SA 4.0",
+        "mediaKey": "ford-ranger-raptor-ext-12.jpg",
+        "photoType": null,
+        "sortOrder": 0,
+        "sourceUrl": "https://commons.wikimedia.org/wiki/File:Ford_Ranger_Raptor_(P703)_DSC_7063.jpg",
+        "variantName": null,
+        "verified": true
+      },
+      {
+        "altText": null,
+        "caption": "Khoang lái thể thao và màn hình dọc 12 inch (Wikimedia Commons)",
+        "colorName": null,
+        "isPrimary": false,
+        "kind": "INTERIOR",
+        "license": "CC BY-SA 4.0",
+        "mediaKey": "ford-ranger-raptor-int-4.jpg",
+        "photoType": null,
+        "sortOrder": 0,
+        "sourceUrl": "https://commons.wikimedia.org/wiki/File:Ford_Ranger_P703_3.0_Raptor_EcoBoost_V6_interior.jpg",
+        "variantName": null,
+        "verified": true
+      }
+    ],
+    "generation": null,
+    "highlights": [
+      "Giảm xóc FOX 2.5-inch Live Valve thích ứng theo địa hình",
+      "Hệ dẫn động 4WD toàn thời gian với khóa vi sai cả cầu trước & cầu sau",
+      "7 chế độ lái chuyên dụng gồm Normal, Sport, Slippery, Mud/Ruts, Sand, Rock Crawl, Baja",
+      "Đèn Matrix LED và màn hình giải trí dọc 12 inch SYNC 4A"
+    ],
+    "id": "1de828b6-adbb-4f6c-9e1e-b767e698a7e1",
+    "interiorOverview": "Ghế thể thao ôm lưng lấy cảm hứng từ ghế máy bay chiến đấu, đường chỉ khâu cam nổi bật, màn hình dọc 12 inch SYNC 4A và cụm đồng hồ kỹ thuật số 12,4 inch.",
+    "listedPrice": 1299000000,
+    "modelLine": null,
+    "modelYear": 2024,
+    "name": "Ford Ranger Raptor",
+    "officialName": null,
+    "origin": "Thái Lan (Ford Việt Nam)",
+    "recordHash": "1321ac748faf79417f2941bd",
+    "referenceRentPrice": 1850000,
+    "seats": 5,
+    "segment": "Bán tải off-road chuyên dụng",
+    "shortDescription": null,
+    "slug": "ford-ranger-raptor",
+    "sortOrder": 3,
+    "source": "https://www.ford.com.vn/",
+    "specifications": [
+      {
+        "group": "ENGINE",
+        "label": "Động cơ",
+        "source": "Ford Việt Nam",
+        "value": "2.0L Bi-Turbo Diesel I4",
+        "variantName": null
+      },
+      {
+        "group": "ENGINE",
+        "label": "Công suất cực đại",
+        "source": "Ford Việt Nam",
+        "value": "210 PS (154,5 kW) @ 3.750 rpm",
+        "variantName": null
+      },
+      {
+        "group": "ENGINE",
+        "label": "Mô-men xoắn cực đại",
+        "source": "Ford Việt Nam",
+        "value": "500 Nm @ 1.750–2.000 rpm",
+        "variantName": null
+      },
+      {
+        "group": "ENGINE",
+        "label": "Hộp số",
+        "source": "Ford Việt Nam",
+        "value": "Tự động 10 cấp điện tử e-Shifter",
+        "variantName": null
+      },
+      {
+        "group": "DIMENSIONS",
+        "label": "Kích thước (D × R × C)",
+        "source": "Ford Việt Nam",
+        "value": "5.381 × 2.028 × 1.922 mm",
+        "variantName": null
+      },
+      {
+        "group": "DIMENSIONS",
+        "label": "Chiều dài cơ sở",
+        "source": "Ford Việt Nam",
+        "value": "3.270 mm",
+        "variantName": null
+      },
+      {
+        "group": "DIMENSIONS",
+        "label": "Khoảng sáng gầm xe",
+        "source": "Ford Việt Nam",
+        "value": "265 mm",
+        "variantName": null
+      },
+      {
+        "group": "PICKUP",
+        "label": "Khả năng lội nước",
+        "source": "Ford Việt Nam",
+        "value": "850 mm",
+        "variantName": null
+      },
+      {
+        "group": "PICKUP",
+        "label": "Hệ thống treo",
+        "source": "Ford Việt Nam",
+        "value": "FOX 2.5-inch Live Valve Internal Bypass",
+        "variantName": null
+      },
+      {
+        "group": "PICKUP",
+        "label": "Lốp & Mâm",
+        "source": "Ford Việt Nam",
+        "value": "BFGoodrich 285/70R17 · Mâm hợp kim 17 inch",
+        "variantName": null
+      }
+    ],
+    "subCategory": "PERFORMANCE_PICKUP",
+    "suitableFor": "Chinh phục địa hình đồi núi, cắm trại dã ngoại dài ngày và trải nghiệm lái thể thao",
+    "transmission": "Tự động 10 cấp",
+    "updatedAt": "2026-11-17T08:11:31.825Z",
+    "usagePurpose": null,
+    "variants": [
+      {
+        "colors": [
+          {
+            "hex": "#d9531e",
+            "mediaKey": "ford-ranger-raptor-ext-10.jpg",
+            "name": "Cam Code Orange",
+            "sourceUrl": "https://commons.wikimedia.org/wiki/File:Ford_Ranger_Raptor_(P703)_1X7A6774.jpg"
+          },
+          {
+            "hex": "#62686e",
+            "mediaKey": "ford-ranger-raptor-ext-11.jpg",
+            "name": "Xám Meteor",
+            "sourceUrl": "https://commons.wikimedia.org/wiki/File:Ford_Ranger_Raptor_(P703)_1X7A6776.jpg"
+          },
+          {
+            "hex": "#181a1d",
+            "mediaKey": null,
+            "name": "Đen",
+            "sourceUrl": null
+          }
+        ],
+        "driveType": "4WD toàn thời gian",
+        "fuelType": "Dầu (Diesel)",
+        "listedPrice": 1299000000,
+        "name": "2.0L Bi-Turbo 4WD",
+        "referenceRentPrice": 1850000,
+        "seats": 5,
+        "summary": "Phiên bản phân phối chính hãng tại Việt Nam với giảm xóc FOX và 7 chế độ lái.",
+        "transmission": "Tự động 10 cấp",
+        "year": 2024
+      }
+    ],
+    "verificationStatus": "VERIFIED",
+    "versionName": null,
+    "visible": true
+  },
+  {
+    "bodyStyle": "Xe số phổ thông",
+    "brand": "Honda",
+    "category": "MOTORBIKE",
+    "coverMediaKey": "honda-wave-alpha-ext-7.jpg",
+    "defaultDepositSuggestion": null,
+    "description": "Honda Wave Alpha 110 là mẫu xe số phổ thông bền bỉ hàng đầu tại Việt Nam, sở hữu trọng lượng nhẹ 96 kg, mức tiêu hao nhiên liệu chỉ khoảng 1,72 lít/100 km và chi phí vận hành cực kỳ hợp lý.",
+    "driveType": "Xích tải",
+    "engineOverview": "Động cơ 109,1 cc SOHC 4 kỳ làm mát bằng không khí đạt chuẩn Euro 3, vận hành bền bỉ và dễ bảo trì.",
+    "exteriorOverview": "Kiểu dáng thon gọn linh hoạt len lỏi trong phố đông, tem xe sắc nét cùng tùy chọn vành nan hoa hoặc vành đúc phiên bản cổ điển/đặc biệt.",
+    "featured": false,
+    "features": [
+      {
+        "category": "SAFETY",
+        "name": "Đèn trước tự động bật sáng ban ngày",
+        "status": "EQUIPPED",
+        "variantNote": null
+      },
+      {
+        "category": "SAFETY",
+        "name": "Ổ khóa 3 trong 1 có nắp từ chống trộm",
+        "status": "EQUIPPED",
+        "variantNote": null
+      },
+      {
+        "category": "COMFORT",
+        "name": "Khởi động điện & Cần đạp dự phòng",
+        "status": "EQUIPPED",
+        "variantNote": null
+      }
+    ],
+    "fuelType": "Xăng",
+    "gallery": [
+      {
+        "altText": null,
+        "caption": "Honda Wave 110 vận hành trong đô thị (Wikimedia Commons)",
+        "colorName": null,
+        "isPrimary": false,
+        "kind": "EXTERIOR",
+        "license": "CC BY-SA 3.0",
+        "mediaKey": "honda-wave-alpha-ext-7.jpg",
+        "photoType": null,
+        "sortOrder": 0,
+        "sourceUrl": "https://commons.wikimedia.org/wiki/File:Honda_wave_110_in_kuala_lumpur.jpg",
+        "variantName": null,
+        "verified": true
+      },
+      {
+        "altText": null,
+        "caption": "Honda Wave 110 góc nhìn ngang thân xe (Wikimedia Commons)",
+        "colorName": null,
+        "isPrimary": false,
+        "kind": "EXTERIOR",
+        "license": "CC BY-SA 4.0",
+        "mediaKey": "honda-wave-alpha-ext-8.jpg",
+        "photoType": null,
+        "sortOrder": 0,
+        "sourceUrl": "https://commons.wikimedia.org/wiki/File:2026_Honda_Wave_110_Special_Edition_(Alloy_Type).jpg",
+        "variantName": null,
+        "verified": true
+      }
+    ],
+    "generation": null,
+    "highlights": [
+      "Mức tiêu hao nhiên liệu công bố chỉ 1,72 lít/100 km",
+      "Trọng lượng 96 kg gọn nhẹ, dễ dắt và xoay trở trong hẻm nhỏ",
+      "Đèn chiếu sáng phía trước luôn sáng tăng nhận diện an toàn"
+    ],
+    "id": "41ebc4f4-c0c6-4fa4-8a26-5a58e5904c4f",
+    "interiorOverview": "Mặt đồng hồ analog bố trí khoa học dễ quan sát, ổ khóa đa năng 3 trong 1 an toàn chống rỉ sét.",
+    "listedPrice": 17859273,
+    "modelLine": null,
+    "modelYear": 2025,
+    "name": "Honda Wave Alpha 110",
+    "officialName": null,
+    "origin": "Việt Nam (Honda Việt Nam)",
+    "recordHash": "f03d5091364e9dd18876d2cd",
+    "referenceRentPrice": 130000,
+    "seats": 2,
+    "segment": "Xe số 110cc tiết kiệm",
+    "shortDescription": null,
+    "slug": "honda-wave-alpha",
+    "sortOrder": 4,
+    "source": "https://www.honda.com.vn/xe-may/san-pham/wave-alpha-110cc",
+    "specifications": [
+      {
+        "group": "MOTORBIKE",
+        "label": "Động cơ",
+        "source": "Honda Việt Nam",
+        "value": "109,1 cc, 4 kỳ, xi-lanh đơn, làm mát không khí",
+        "variantName": null
+      },
+      {
+        "group": "MOTORBIKE",
+        "label": "Công suất tối đa",
+        "source": "Honda Việt Nam",
+        "value": "6,12 kW @ 7.500 rpm",
+        "variantName": null
+      },
+      {
+        "group": "MOTORBIKE",
+        "label": "Mô-men xoắn cực đại",
+        "source": "Honda Việt Nam",
+        "value": "8,44 Nm @ 5.500 rpm",
+        "variantName": null
+      },
+      {
+        "group": "MOTORBIKE",
+        "label": "Mức tiêu thụ nhiên liệu",
+        "source": "Honda Việt Nam",
+        "value": "1,72 lít/100 km",
+        "variantName": null
+      },
+      {
+        "group": "MOTORBIKE",
+        "label": "Dung tích bình xăng",
+        "source": "Honda Việt Nam",
+        "value": "3,7 lít",
+        "variantName": null
+      },
+      {
+        "group": "DIMENSIONS",
+        "label": "Chiều cao yên / Trọng lượng",
+        "source": "Honda Việt Nam",
+        "value": "769 mm · 96 kg",
+        "variantName": null
+      }
+    ],
+    "subCategory": "MANUAL_BIKE",
+    "suitableFor": "Di chuyển hằng ngày trong phố, tiết kiệm xăng tối đa và dễ làm quen với mọi người lái",
+    "transmission": "4 số tròn",
+    "updatedAt": "2026-11-17T08:11:31.896Z",
+    "usagePurpose": null,
+    "variants": [
+      {
+        "colors": [
+          {
+            "hex": "#a91d22",
+            "mediaKey": "honda-wave-alpha-ext-7.jpg",
+            "name": "Đỏ bạc",
+            "sourceUrl": "https://commons.wikimedia.org/wiki/File:Honda_wave_110_in_kuala_lumpur.jpg"
+          },
+          {
+            "hex": "#f4f5f7",
+            "mediaKey": null,
+            "name": "Trắng",
+            "sourceUrl": null
+          }
+        ],
+        "driveType": "Xích tải",
+        "fuelType": "Xăng",
+        "listedPrice": 17859273,
+        "name": "Tiêu chuẩn 2025",
+        "referenceRentPrice": 130000,
+        "seats": 2,
+        "summary": "Phiên bản vành nan hoa, phanh tang trống gọn nhẹ.",
+        "transmission": "4 số tròn",
+        "year": 2025
+      },
+      {
+        "colors": [
+          {
+            "hex": "#222428",
+            "mediaKey": "honda-wave-alpha-ext-8.jpg",
+            "name": "Đen nhám",
+            "sourceUrl": "https://commons.wikimedia.org/wiki/File:2026_Honda_Wave_110_Special_Edition_(Alloy_Type).jpg"
+          }
+        ],
+        "driveType": "Xích tải",
+        "fuelType": "Xăng",
+        "listedPrice": 18742909,
+        "name": "Đặc biệt Đen nhám",
+        "referenceRentPrice": 140000,
+        "seats": 2,
+        "summary": "Màu đen nhám thể thao, vành đúc/nan hoa tùy đợt sản xuất.",
+        "transmission": "4 số tròn",
+        "year": 2025
+      }
+    ],
+    "verificationStatus": "VERIFIED",
+    "versionName": null,
+    "visible": true
+  },
+  {
+    "bodyStyle": "Xe tay ga phổ thông",
+    "brand": "Honda",
+    "category": "MOTORBIKE",
+    "coverMediaKey": "honda-vision-ext-7.jpg",
+    "defaultDepositSuggestion": null,
+    "description": "Honda Vision là mẫu xe tay ga quốc dân tại Việt Nam nhờ chiều cao yên vừa phải 761 mm, trọng lượng 94–98 kg dễ kiểm soát và động cơ eSP 110 cc tiết kiệm xăng cùng khung dập hàn laser eSAF.",
+    "driveType": "Dây đai",
+    "engineOverview": "Động cơ eSP 109,5 cc phun xăng điện tử PGM-FI tích hợp bộ đề ACG êm ái và ngắt động cơ tạm thời Idling Stop.",
+    "exteriorOverview": "Thiết kế nhỏ gọn thanh lịch, đường nét gọn gàng, đèn hậu tinh gọn cùng mâm 14 inch (hoặc 16 inch bánh trước ở bản Thể thao).",
+    "featured": false,
+    "features": [
+      {
+        "category": "TECHNOLOGY",
+        "name": "Khung sườn dập hàn laser eSAF nhẹ và cứng vững",
+        "status": "EQUIPPED",
+        "variantNote": null
+      },
+      {
+        "category": "SAFETY",
+        "name": "Phanh kết hợp CBS an toàn",
+        "status": "EQUIPPED",
+        "variantNote": null
+      },
+      {
+        "category": "TECHNOLOGY",
+        "name": "Hệ thống ngắt động cơ tạm thời Idling Stop",
+        "status": "EQUIPPED",
+        "variantNote": null
+      },
+      {
+        "category": "SAFETY",
+        "name": "Honda Smart Key",
+        "status": "EQUIPPED",
+        "variantNote": "Từ bản Cao cấp trở lên"
+      }
+    ],
+    "fuelType": "Xăng",
+    "gallery": [
+      {
+        "altText": null,
+        "caption": "Honda Vision 110 góc chéo trước (Wikimedia Commons)",
+        "colorName": null,
+        "isPrimary": false,
+        "kind": "EXTERIOR",
+        "license": "CC0",
+        "mediaKey": "honda-vision-ext-7.jpg",
+        "photoType": null,
+        "sortOrder": 0,
+        "sourceUrl": "https://commons.wikimedia.org/wiki/File:Honda_Vision_110-002.JPG",
+        "variantName": null,
+        "verified": true
+      },
+      {
+        "altText": null,
+        "caption": "Honda Vision tổng thể xe tay ga đô thị (Wikimedia Commons)",
+        "colorName": null,
+        "isPrimary": false,
+        "kind": "EXTERIOR",
+        "license": "CC BY 2.0",
+        "mediaKey": "honda-vision-ext-8.jpg",
+        "photoType": null,
+        "sortOrder": 0,
+        "sourceUrl": "https://commons.wikimedia.org/wiki/File:Honda_Vision_scooter.jpg",
+        "variantName": null,
+        "verified": true
+      }
+    ],
+    "generation": null,
+    "highlights": [
+      "Chiều cao yên 761 mm thân thiện với vóc dáng người Việt",
+      "Tiêu hao nhiên liệu chỉ khoảng 1,85 lít/100 km",
+      "Smart Key và cổng sạc tiện dụng trên phiên bản Cao cấp / Thể thao"
+    ],
+    "id": "af731ef6-c39a-4487-89bd-68f01c4ea5e3",
+    "interiorOverview": "Sàn để chân phẳng rộng rãi, cốp dưới yên 15,8 lít và hộc đựng đồ phía trước có cổng sạc tiện lợi (trên các bản từ Cao cấp trở lên).",
+    "listedPrice": 31113818,
+    "modelLine": null,
+    "modelYear": 2025,
+    "name": "Honda Vision",
+    "officialName": null,
+    "origin": "Việt Nam (Honda Việt Nam)",
+    "recordHash": "fdd5b86512c962c228d0ab4e",
+    "referenceRentPrice": 160000,
+    "seats": 2,
+    "segment": "Xe tay ga đô thị cỡ nhỏ",
+    "shortDescription": null,
+    "slug": "honda-vision",
+    "sortOrder": 5,
+    "source": "https://www.honda.com.vn/xe-may/san-pham/vision",
+    "specifications": [
+      {
+        "group": "MOTORBIKE",
+        "label": "Động cơ",
+        "source": "Honda Việt Nam",
+        "value": "eSP 109,5 cc, 4 kỳ, làm mát bằng không khí",
+        "variantName": null
+      },
+      {
+        "group": "MOTORBIKE",
+        "label": "Công suất tối đa",
+        "source": "Honda Việt Nam",
+        "value": "6,59 kW @ 7.500 rpm",
+        "variantName": null
+      },
+      {
+        "group": "MOTORBIKE",
+        "label": "Mô-men xoắn cực đại",
+        "source": "Honda Việt Nam",
+        "value": "9,29 Nm @ 6.000 rpm",
+        "variantName": null
+      },
+      {
+        "group": "MOTORBIKE",
+        "label": "Mức tiêu thụ nhiên liệu",
+        "source": "Honda Việt Nam",
+        "value": "1,85 lít/100 km",
+        "variantName": null
+      },
+      {
+        "group": "MOTORBIKE",
+        "label": "Dung tích bình xăng & cốp",
+        "source": "Honda Việt Nam",
+        "value": "4,9 lít · Cốp 15,8 lít",
+        "variantName": null
+      },
+      {
+        "group": "DIMENSIONS",
+        "label": "Chiều cao yên / Trọng lượng",
+        "source": "Honda Việt Nam",
+        "value": "761 mm · 94–98 kg",
+        "variantName": null
+      }
+    ],
+    "subCategory": "SCOOTER",
+    "suitableFor": "Di chuyển hàng ngày trong nội thành, sinh viên, nhân viên văn phòng và du khách",
+    "transmission": "Vô cấp CVT",
+    "updatedAt": "2026-11-17T08:11:31.948Z",
+    "usagePurpose": null,
+    "variants": [
+      {
+        "colors": [
+          {
+            "hex": "#f4f4f6",
+            "mediaKey": "honda-vision-ext-8.jpg",
+            "name": "Trắng đen",
+            "sourceUrl": "https://commons.wikimedia.org/wiki/File:Honda_Vision_scooter.jpg"
+          },
+          {
+            "hex": "#a51c24",
+            "mediaKey": "honda-vision-ext-7.jpg",
+            "name": "Đỏ đen",
+            "sourceUrl": "https://commons.wikimedia.org/wiki/File:Honda_Vision_110-002.JPG"
+          }
+        ],
+        "driveType": "Dây đai",
+        "fuelType": "Xăng",
+        "listedPrice": 32782909,
+        "name": "Cao cấp",
+        "referenceRentPrice": 160000,
+        "seats": 2,
+        "summary": "Trang bị Smart Key, cổng sạc USB và đồng hồ kết hợp LCD nhỏ.",
+        "transmission": "Vô cấp CVT",
+        "year": 2025
+      },
+      {
+        "colors": [
+          {
+            "hex": "#6a7078",
+            "mediaKey": null,
+            "name": "Xám đen",
+            "sourceUrl": null
+          }
+        ],
+        "driveType": "Dây đai",
+        "fuelType": "Xăng",
+        "listedPrice": 36612000,
+        "name": "Thể thao",
+        "referenceRentPrice": 180000,
+        "seats": 2,
+        "summary": "Bánh trước 16 inch cho tư thế lái cao thoáng, tem thể thao đen nhám/xám xi măng.",
+        "transmission": "Vô cấp CVT",
+        "year": 2025
+      }
+    ],
+    "verificationStatus": "VERIFIED",
+    "versionName": null,
+    "visible": true
+  },
+  {
+    "bodyStyle": "Xe tay ga bánh lớn cao cấp",
+    "brand": "Honda",
+    "category": "MOTORBIKE",
+    "coverMediaKey": "honda-sh160i-ext-7.jpg",
+    "defaultDepositSuggestion": null,
+    "description": "Honda SH160i sở hữu phong cách châu Âu sang trọng với vành đúc 16 inch vững chãi, động cơ eSP+ 4 van 156,9 cc bốc mượt và trang bị an toàn ABS 2 kênh kết hợp kiểm soát lực kéo HSTC.",
+    "driveType": "Dây đai",
+    "engineOverview": "Động cơ eSP+ 156,9 cc 4 van làm mát dung dịch đạt công suất 12,4 kW (16,6 hp), tiêu hao nhiên liệu khoảng 2,37 lít/100 km.",
+    "exteriorOverview": "Thiết kế thân xe cao ráo thanh lịch, cụm đèn LED 2 tầng trước sau nhận diện rõ nét và bộ mâm 16 inch giúp vượt gờ giảm tốc êm ái.",
+    "featured": false,
+    "features": [
+      {
+        "category": "SAFETY",
+        "name": "Phanh ABS 2 kênh trước/sau",
+        "status": "EQUIPPED",
+        "variantNote": "Phiên bản ABS"
+      },
+      {
+        "category": "DRIVER_ASSIST",
+        "name": "Kiểm soát lực kéo HSTC",
+        "status": "EQUIPPED",
+        "variantNote": "Phiên bản ABS"
+      },
+      {
+        "category": "TECHNOLOGY",
+        "name": "Kết nối Bluetooth My Honda+",
+        "status": "EQUIPPED",
+        "variantNote": null
+      },
+      {
+        "category": "COMFORT",
+        "name": "Cốp 28 lít & Smart Key",
+        "status": "EQUIPPED",
+        "variantNote": null
+      }
+    ],
+    "fuelType": "Xăng",
+    "gallery": [
+      {
+        "altText": null,
+        "caption": "Honda SH 150i/160i kiểu dáng châu Âu bánh lớn (Wikimedia Commons)",
+        "colorName": null,
+        "isPrimary": false,
+        "kind": "EXTERIOR",
+        "license": "CC BY 4.0",
+        "mediaKey": "honda-sh160i-ext-7.jpg",
+        "photoType": null,
+        "sortOrder": 0,
+        "sourceUrl": "https://commons.wikimedia.org/wiki/File:Honda_SH_150.jpg",
+        "variantName": null,
+        "verified": true
+      },
+      {
+        "altText": null,
+        "caption": "Thân xe cao ráo và yên đôi (Wikimedia Commons)",
+        "colorName": null,
+        "isPrimary": false,
+        "kind": "EXTERIOR",
+        "license": "CC BY 2.0",
+        "mediaKey": "honda-sh160i-ext-8.jpg",
+        "photoType": null,
+        "sortOrder": 0,
+        "sourceUrl": "https://commons.wikimedia.org/wiki/File:Honda_SH150.jpg",
+        "variantName": null,
+        "verified": true
+      }
+    ],
+    "generation": null,
+    "highlights": [
+      "Động cơ eSP+ 4 van 156,9 cc mạnh mẽ và mượt mà",
+      "Hệ thống phanh ABS 2 kênh trước/sau & Kiểm soát lực kéo HSTC (bản ABS)",
+      "Nắp bình xăng bố trí phía trước, cốp 28 lít tích hợp cổng sạc USB"
+    ],
+    "id": "cefd1c76-d368-4876-a31b-8618da0a09a3",
+    "interiorOverview": "Đồng hồ LCD kép hiển thị đầy đủ thông số, kết nối Bluetooth qua ứng dụng My Honda+, cốp 28 lít tích hợp cổng sạc USB và nắp bình xăng phía trước tiện lợi.",
+    "listedPrice": 92490000,
+    "modelLine": null,
+    "modelYear": 2025,
+    "name": "Honda SH160i",
+    "officialName": null,
+    "origin": "Việt Nam (Honda Việt Nam)",
+    "recordHash": "0ad5aee14578cc0d8aae5c7f",
+    "referenceRentPrice": 360000,
+    "seats": 2,
+    "segment": "Xe tay ga cao cấp",
+    "shortDescription": null,
+    "slug": "honda-sh160i",
+    "sortOrder": 6,
+    "source": "https://www.honda.com.vn/xe-may/san-pham/sh160i-125i",
+    "specifications": [
+      {
+        "group": "MOTORBIKE",
+        "label": "Động cơ",
+        "source": "Honda Việt Nam",
+        "value": "eSP+ 4 van 156,9 cc làm mát dung dịch",
+        "variantName": null
+      },
+      {
+        "group": "MOTORBIKE",
+        "label": "Công suất tối đa",
+        "source": "Honda Việt Nam",
+        "value": "12,4 kW @ 8.500 rpm",
+        "variantName": null
+      },
+      {
+        "group": "MOTORBIKE",
+        "label": "Mô-men xoắn cực đại",
+        "source": "Honda Việt Nam",
+        "value": "14,8 Nm @ 6.500 rpm",
+        "variantName": null
+      },
+      {
+        "group": "MOTORBIKE",
+        "label": "Mức tiêu thụ nhiên liệu",
+        "source": "Honda Việt Nam",
+        "value": "2,37 lít/100 km",
+        "variantName": null
+      },
+      {
+        "group": "MOTORBIKE",
+        "label": "Bình xăng & Cốp",
+        "source": "Honda Việt Nam",
+        "value": "7,0 lít · Cốp 28 lít",
+        "variantName": null
+      },
+      {
+        "group": "DIMENSIONS",
+        "label": "Chiều cao yên / Trọng lượng",
+        "source": "Honda Việt Nam",
+        "value": "799 mm · 133 kg",
+        "variantName": null
+      }
+    ],
+    "subCategory": "SCOOTER",
+    "suitableFor": "Di chuyển lịch lãm hằng ngày, gặp gỡ đối tác và đi phố cao cấp",
+    "transmission": "Vô cấp CVT",
+    "updatedAt": "2026-11-17T08:11:31.997Z",
+    "usagePurpose": null,
+    "variants": [
+      {
+        "colors": [
+          {
+            "hex": "#f4f4f6",
+            "mediaKey": "honda-sh160i-ext-7.jpg",
+            "name": "Trắng đen",
+            "sourceUrl": "https://commons.wikimedia.org/wiki/File:Honda_SH_150.jpg"
+          },
+          {
+            "hex": "#9e1920",
+            "mediaKey": null,
+            "name": "Đỏ đen",
+            "sourceUrl": null
+          }
+        ],
+        "driveType": "Dây đai",
+        "fuelType": "Xăng",
+        "listedPrice": 100490000,
+        "name": "Cao cấp ABS",
+        "referenceRentPrice": 360000,
+        "seats": 2,
+        "summary": "Phanh ABS 2 kênh, HSTC, đồng hồ LCD kết nối Bluetooth.",
+        "transmission": "Vô cấp CVT",
+        "year": 2025
+      },
+      {
+        "colors": [
+          {
+            "hex": "#6c727a",
+            "mediaKey": "honda-sh160i-ext-8.jpg",
+            "name": "Xám đen",
+            "sourceUrl": "https://commons.wikimedia.org/wiki/File:Honda_SH150.jpg"
+          }
+        ],
+        "driveType": "Dây đai",
+        "fuelType": "Xăng",
+        "listedPrice": 102190000,
+        "name": "Thể thao ABS",
+        "referenceRentPrice": 380000,
+        "seats": 2,
+        "summary": "Màu xám xi măng thể thao, heo dầu đỏ và giảm xóc sau sơn đỏ.",
+        "transmission": "Vô cấp CVT",
+        "year": 2025
+      }
+    ],
+    "verificationStatus": "VERIFIED",
+    "versionName": null,
+    "visible": true
+  },
+  {
+    "bodyStyle": "Xe tay ga phân khối lớn",
+    "brand": "Honda",
+    "category": "MOTORBIKE",
+    "coverMediaKey": "honda-sh350i-ext-10.jpg",
+    "defaultDepositSuggestion": null,
+    "description": "Honda SH350i là mẫu xe tay ga đầu bảng trang bị động cơ eSP+ 329,6 cc đầy uy lực, khung sườn cứng vững, phanh ABS 2 kênh và cảnh báo phanh khẩn cấp ESS. Yêu cầu người lái có giấy phép lái xe mô tô hạng A2 (hoặc hạng A theo quy định mới).",
+    "driveType": "Dây đai",
+    "engineOverview": "Động cơ eSP+ 329,6 cc SOHC 4 van làm mát dung dịch sản sinh 21,5 kW (28,8 hp) và mô-men xoắn 31,8 Nm giúp tăng tốc dứt khoát trên cao tốc/quốc lộ.",
+    "exteriorOverview": "Thân xe bề thế với mặt nạ mới hiện đại, đèn định vị LED sắc sảo, cặp lốp 16 inch bản rộng và ống xả lớn mạ crôm.",
+    "featured": false,
+    "features": [
+      {
+        "category": "SAFETY",
+        "name": "Phanh ABS 2 kênh & Đèn báo phanh khẩn cấp ESS",
+        "status": "EQUIPPED",
+        "variantNote": null
+      },
+      {
+        "category": "DRIVER_ASSIST",
+        "name": "Kiểm soát lực kéo HSTC chống trượt bánh sau",
+        "status": "EQUIPPED",
+        "variantNote": null
+      },
+      {
+        "category": "TECHNOLOGY",
+        "name": "Smart Key & Kết nối Bluetooth",
+        "status": "EQUIPPED",
+        "variantNote": null
+      }
+    ],
+    "fuelType": "Xăng",
+    "gallery": [
+      {
+        "altText": null,
+        "caption": "Honda SH 350i — Góc trực diện phần đầu xe (Wikimedia Commons)",
+        "colorName": null,
+        "isPrimary": false,
+        "kind": "EXTERIOR",
+        "license": "CC BY-SA 4.0",
+        "mediaKey": "honda-sh350i-ext-10.jpg",
+        "photoType": null,
+        "sortOrder": 0,
+        "sourceUrl": "https://commons.wikimedia.org/wiki/File:Honda_SH_350i_2025.jpg",
+        "variantName": null,
+        "verified": true
+      },
+      {
+        "altText": null,
+        "caption": "Honda SH 350i — Góc chéo thân xe và hệ thống phanh đĩa (Wikimedia Commons)",
+        "colorName": null,
+        "isPrimary": false,
+        "kind": "EXTERIOR",
+        "license": "CC BY-SA 4.0",
+        "mediaKey": "honda-sh350i-ext-11.jpg",
+        "photoType": null,
+        "sortOrder": 0,
+        "sourceUrl": "https://commons.wikimedia.org/wiki/File:Honda_SH_350i_2025_EICMA_2024.jpg",
+        "variantName": null,
+        "verified": true
+      },
+      {
+        "altText": null,
+        "caption": "Honda SH 350i — Tổng thể ngoại thất (Wikimedia Commons)",
+        "colorName": null,
+        "isPrimary": false,
+        "kind": "EXTERIOR",
+        "license": "CC BY 4.0",
+        "mediaKey": "honda-sh350i-ext-12.jpg",
+        "photoType": null,
+        "sortOrder": 0,
+        "sourceUrl": "https://commons.wikimedia.org/wiki/File:Honda_SH_350i.jpg",
+        "variantName": null,
+        "verified": true
+      }
+    ],
+    "generation": null,
+    "highlights": [
+      "Động cơ eSP+ 329,6 cc công suất 21,5 kW / mô-men xoắn 31,8 Nm",
+      "Trang bị phanh ABS 2 kênh, kiểm soát lực kéo HSTC và tín hiệu dừng khẩn cấp ESS",
+      "Bình xăng 9,3 lít đáp ứng hành trình đường trường"
+    ],
+    "id": "1f8f92b4-e8ab-4c7a-bb96-5e99a57971e6",
+    "interiorOverview": "Cụm đồng hồ LCD đa thông tin kết nối điện thoại thông minh, hộc đồ trước và cốp dưới yên chứa mũ bảo hiểm cả đầu cùng cổng sạc USB-C.",
+    "listedPrice": 151190000,
+    "modelLine": null,
+    "modelYear": 2025,
+    "name": "Honda SH350i",
+    "officialName": null,
+    "origin": "Việt Nam / Ý",
+    "recordHash": "4eb71d9c78f2f1f5da1be183",
+    "referenceRentPrice": 550000,
+    "seats": 2,
+    "segment": "Maxi-scooter bánh lớn hạng sang",
+    "shortDescription": null,
+    "slug": "honda-sh350i",
+    "sortOrder": 7,
+    "source": "https://www.honda.com.vn/xe-may/san-pham/sh350i",
+    "specifications": [
+      {
+        "group": "MOTORBIKE",
+        "label": "Động cơ",
+        "source": "Honda Việt Nam",
+        "value": "eSP+ 329,6 cc SOHC 4 van làm mát dung dịch",
+        "variantName": null
+      },
+      {
+        "group": "MOTORBIKE",
+        "label": "Công suất tối đa",
+        "source": "Honda Việt Nam",
+        "value": "21,5 kW @ 7.500 rpm",
+        "variantName": null
+      },
+      {
+        "group": "MOTORBIKE",
+        "label": "Mô-men xoắn cực đại",
+        "source": "Honda Việt Nam",
+        "value": "31,8 Nm @ 5.250 rpm",
+        "variantName": null
+      },
+      {
+        "group": "MOTORBIKE",
+        "label": "Bình xăng & Tiêu hao",
+        "source": "Honda Việt Nam",
+        "value": "9,3 lít · ~3,63 lít/100 km",
+        "variantName": null
+      },
+      {
+        "group": "DIMENSIONS",
+        "label": "Chiều cao yên / Trọng lượng",
+        "source": "Honda Việt Nam",
+        "value": "805 mm · 172 kg",
+        "variantName": null
+      },
+      {
+        "group": "MOTORBIKE",
+        "label": "Yêu cầu bằng lái",
+        "source": "Quy định VN",
+        "value": "GPLX mô tô trên 175 cc (A2 / A)",
+        "variantName": null
+      }
+    ],
+    "subCategory": "SCOOTER",
+    "suitableFor": "Người có bằng lái A2/A yêu thích sức mạnh xe tay ga phân khối lớn đi phố và ngoại ô",
+    "transmission": "Vô cấp CVT",
+    "updatedAt": "2026-11-17T08:11:32.051Z",
+    "usagePurpose": null,
+    "variants": [
+      {
+        "colors": [
+          {
+            "hex": "#636970",
+            "mediaKey": "honda-sh350i-ext-10.jpg",
+            "name": "Xám đen",
+            "sourceUrl": "https://commons.wikimedia.org/wiki/File:Honda_SH_350i_2025.jpg"
+          },
+          {
+            "hex": "#f0f1f4",
+            "mediaKey": "honda-sh350i-ext-12.jpg",
+            "name": "Trắng đen",
+            "sourceUrl": "https://commons.wikimedia.org/wiki/File:Honda_SH_350i.jpg"
+          }
+        ],
+        "driveType": "Dây đai",
+        "fuelType": "Xăng",
+        "listedPrice": 152690000,
+        "name": "Thể thao ABS 2025",
+        "referenceRentPrice": 550000,
+        "seats": 2,
+        "summary": "Phiên bản thể thao Xám đen/Xanh đen, kẹp phanh đỏ, ABS 2 kênh và HSTC.",
+        "transmission": "Vô cấp CVT",
+        "year": 2025
+      }
+    ],
+    "verificationStatus": "VERIFIED",
+    "versionName": null,
+    "visible": true
+  },
+  {
+    "bodyStyle": "Xe côn tay thể thao",
+    "brand": "Yamaha",
+    "category": "MOTORBIKE",
+    "coverMediaKey": "yamaha-exciter-ext-7.jpg",
+    "defaultDepositSuggestion": null,
+    "description": "Yamaha Exciter 155 VVA thừa hưởng nhiều công nghệ từ mô tô R-Series như van biến thiên VVA, hộp số 6 cấp kèm bộ ly hợp hỗ trợ chống trượt A&S (Assist & Slipper Clutch) và phiên bản phanh ABS bánh trước.",
+    "driveType": "Xích tải",
+    "engineOverview": "Động cơ 155,09 cc SOHC 4 van làm mát dung dịch tích hợp VVA sản sinh 17,9 PS tại 9.500 rpm và mô-men xoắn 14,4 Nm.",
+    "exteriorOverview": "Thân xe khí động học đậm chất thể thao, đầu đèn chia 2 tầng tách biệt đèn chiếu gần/xa và đuôi xe vuốt nhọn phong cách R1.",
+    "featured": false,
+    "features": [
+      {
+        "category": "DRIVER_ASSIST",
+        "name": "Bộ ly hợp chống trượt Assist & Slipper Clutch",
+        "status": "EQUIPPED",
+        "variantNote": null
+      },
+      {
+        "category": "TECHNOLOGY",
+        "name": "Van biến thiên VVA",
+        "status": "EQUIPPED",
+        "variantNote": null
+      },
+      {
+        "category": "SAFETY",
+        "name": "Phanh ABS bánh trước",
+        "status": "EQUIPPED",
+        "variantNote": "Phiên bản ABS"
+      },
+      {
+        "category": "COMFORT",
+        "name": "Smart Key & Ổ cắm sạc 12V",
+        "status": "EQUIPPED",
+        "variantNote": "Bản Cao cấp / ABS"
+      }
+    ],
+    "fuelType": "Xăng",
+    "gallery": [
+      {
+        "altText": null,
+        "caption": "Yamaha Exciter / Y15ZR ngoại thất thể thao (Wikimedia Commons)",
+        "colorName": null,
+        "isPrimary": false,
+        "kind": "EXTERIOR",
+        "license": "CC BY-SA 4.0",
+        "mediaKey": "yamaha-exciter-ext-7.jpg",
+        "photoType": null,
+        "sortOrder": 0,
+        "sourceUrl": "https://commons.wikimedia.org/wiki/File:Yamaha_Y15ZR_V2.jpg",
+        "variantName": null,
+        "verified": true
+      },
+      {
+        "altText": null,
+        "caption": "Thân xe thiết kế underbone khí động học (Wikimedia Commons)",
+        "colorName": null,
+        "isPrimary": false,
+        "kind": "EXTERIOR",
+        "license": "CC BY-SA 4.0",
+        "mediaKey": "yamaha-exciter-ext-8.jpg",
+        "photoType": null,
+        "sortOrder": 0,
+        "sourceUrl": "https://commons.wikimedia.org/wiki/File:Yamaha_Jupiter_MX_King_150_-_Jakarta_Fair_2016_-_June_21_2016.jpg",
+        "variantName": null,
+        "verified": true
+      },
+      {
+        "altText": null,
+        "caption": "Cụm đồng hồ hiển thị thể thao dòng Exciter / MX King (Wikimedia Commons)",
+        "colorName": null,
+        "isPrimary": false,
+        "kind": "FEATURE",
+        "license": "CC BY-SA 3.0",
+        "mediaKey": "yamaha-exciter-feat-4.jpg",
+        "photoType": null,
+        "sortOrder": 0,
+        "sourceUrl": "https://commons.wikimedia.org/wiki/File:Yamaha_Jupiter_MX_Speedometer.jpg",
+        "variantName": null,
+        "verified": true
+      }
+    ],
+    "generation": null,
+    "highlights": [
+      "Động cơ 155 cc tích hợp Van biến thiên VVA cho dải tốc độ linh hoạt",
+      "Hộp số 6 cấp & Ly hợp chống trượt A&S giúp dồn số êm ái",
+      "Tùy chọn phanh ABS bánh trước trên phiên bản ABS"
+    ],
+    "id": "52a27fc7-590e-4267-8eae-fc98cc02e628",
+    "interiorOverview": "Màn hình LCD đơn sắc đầy đủ vòng tua máy, vị trí cấp số, quãng đường và mức nhiên liệu; bản Cao cấp/ABS trang bị Smart Key.",
+    "listedPrice": 48000000,
+    "modelLine": null,
+    "modelYear": 2024,
+    "name": "Yamaha Exciter 155 VVA",
+    "officialName": null,
+    "origin": "Việt Nam (Yamaha Motor Việt Nam)",
+    "recordHash": "558eb6a18723f9959ab687af",
+    "referenceRentPrice": 220000,
+    "seats": 2,
+    "segment": "Underbone côn tay 155cc",
+    "shortDescription": null,
+    "slug": "yamaha-exciter-155-vva",
+    "sortOrder": 8,
+    "source": "https://yamaha-motor.com.vn/xe/exciter-155-vva/",
+    "specifications": [
+      {
+        "group": "MOTORBIKE",
+        "label": "Động cơ",
+        "source": "Yamaha Motor VN",
+        "value": "155,09 cc, 4 kỳ, 4 van SOHC VVA, làm mát dung dịch",
+        "variantName": null
+      },
+      {
+        "group": "MOTORBIKE",
+        "label": "Công suất tối đa",
+        "source": "Yamaha Motor VN",
+        "value": "17,9 PS (13,2 kW) @ 9.500 rpm",
+        "variantName": null
+      },
+      {
+        "group": "MOTORBIKE",
+        "label": "Mô-men xoắn cực đại",
+        "source": "Yamaha Motor VN",
+        "value": "14,4 Nm @ 8.000 rpm",
+        "variantName": null
+      },
+      {
+        "group": "MOTORBIKE",
+        "label": "Hộp số",
+        "source": "Yamaha Motor VN",
+        "value": "Côn tay 6 cấp, ly hợp A&S",
+        "variantName": null
+      },
+      {
+        "group": "MOTORBIKE",
+        "label": "Bình xăng",
+        "source": "Yamaha Motor VN",
+        "value": "5,4 lít",
+        "variantName": null
+      },
+      {
+        "group": "DIMENSIONS",
+        "label": "Chiều cao yên / Trọng lượng",
+        "source": "Yamaha Motor VN",
+        "value": "795 mm · 119–123 kg",
+        "variantName": null
+      }
+    ],
+    "subCategory": "CLUTCH_BIKE",
+    "suitableFor": "Người thích cảm giác sang số thể thao, đi tour đường đèo và phong cách năng động",
+    "transmission": "Côn tay 6 cấp",
+    "updatedAt": "2026-11-17T08:11:32.103Z",
+    "usagePurpose": null,
+    "variants": [
+      {
+        "colors": [
+          {
+            "hex": "#144296",
+            "mediaKey": "yamaha-exciter-ext-7.jpg",
+            "name": "Xanh GP",
+            "sourceUrl": "https://commons.wikimedia.org/wiki/File:Yamaha_Y15ZR_V2.jpg"
+          },
+          {
+            "hex": "#23262b",
+            "mediaKey": null,
+            "name": "Đen nhám",
+            "sourceUrl": null
+          }
+        ],
+        "driveType": "Xích tải",
+        "fuelType": "Xăng",
+        "listedPrice": 54000000,
+        "name": "Cao cấp ABS",
+        "referenceRentPrice": 220000,
+        "seats": 2,
+        "summary": "Phanh ABS bánh trước, Smart Key và kẹp phanh 2 piston.",
+        "transmission": "Côn tay 6 cấp",
+        "year": 2024
+      }
+    ],
+    "verificationStatus": "VERIFIED",
+    "versionName": null,
+    "visible": true
+  },
+  {
+    "bodyStyle": "Xe máy điện đô thị",
+    "brand": "VinFast",
+    "category": "MOTORBIKE",
+    "coverMediaKey": "vinfast-evo200-ext-7.jpg",
+    "defaultDepositSuggestion": null,
+    "description": "VinFast Evo200 là mẫu xe máy điện phổ biến nhờ kiểu dáng gọn gàng mang hơi hướng châu Âu, sử dụng pin LFP 3,5 kWh cho quãng đường di chuyển công bố lên đến 203 km sau mỗi lần sạc ở điều kiện tiêu chuẩn 30 km/h.",
+    "driveType": "Mô-tơ bánh sau",
+    "engineOverview": "Động cơ điện Inhub công suất danh định 1.500 W (tối đa 2.500 W), vận tốc tối đa 70 km/h, vận hành êm ái không tiếng ồn.",
+    "exteriorOverview": "Đèn pha LED projector tròn cổ điển kết hợp thân xe bo tròn mềm mại, đạt tiêu chuẩn chống nước IP67 cho cả động cơ và pin.",
+    "featured": false,
+    "features": [
+      {
+        "category": "TECHNOLOGY",
+        "name": "Pin LFP dung lượng 3,5 kWh an toàn chống cháy nổ",
+        "status": "EQUIPPED",
+        "variantNote": null
+      },
+      {
+        "category": "SAFETY",
+        "name": "Chống nước IP67 cho động cơ và bộ pin",
+        "status": "EQUIPPED",
+        "variantNote": null
+      },
+      {
+        "category": "COMFORT",
+        "name": "Cốp dưới yên dung tích 22 lít",
+        "status": "EQUIPPED",
+        "variantNote": null
+      },
+      {
+        "category": "DRIVER_ASSIST",
+        "name": "Hai chế độ lái Eco / Sport",
+        "status": "EQUIPPED",
+        "variantNote": null
+      }
+    ],
+    "fuelType": "Điện (EV)",
+    "gallery": [
+      {
+        "altText": null,
+        "caption": "VinFast Evo phiên bản màu vàng nổi bật (Wikimedia Commons)",
+        "colorName": null,
+        "isPrimary": false,
+        "kind": "EXTERIOR",
+        "license": "CC BY-SA 4.0",
+        "mediaKey": "vinfast-evo200-ext-7.jpg",
+        "photoType": null,
+        "sortOrder": 0,
+        "sourceUrl": "https://commons.wikimedia.org/wiki/File:Newone_-_Yellow_VinFast_Evo_%26_Vento_01.jpg",
+        "variantName": null,
+        "verified": true
+      },
+      {
+        "altText": null,
+        "caption": "VinFast Evo phiên bản màu xanh rêu (Wikimedia Commons)",
+        "colorName": null,
+        "isPrimary": false,
+        "kind": "EXTERIOR",
+        "license": "CC BY-SA 4.0",
+        "mediaKey": "vinfast-evo200-ext-8.jpg",
+        "photoType": null,
+        "sortOrder": 0,
+        "sourceUrl": "https://commons.wikimedia.org/wiki/File:Newone_-_olive_green_VinFast_Evo_Grand_01.jpg",
+        "variantName": null,
+        "verified": true
+      }
+    ],
+    "generation": null,
+    "highlights": [
+      "Pin LFP 3,5 kWh công bố đi tới 203 km/lần sạc (điều kiện tiêu chuẩn)",
+      "Động cơ & Pin chuẩn chống nước IP67 phù hợp điều kiện đường mưa ngập nhẹ",
+      "Cốp xe rộng 22 lít dưới yên dù đặt pin LFP dưới sàn"
+    ],
+    "id": "19e57e4c-64d1-4145-9662-e92b72895e3a",
+    "interiorOverview": "Màn hình đồng hồ HMI kỹ thuật số hiển thị dung lượng pin, chế độ Eco/Sport và kết nối ứng dụng VinFast E-Scooter.",
+    "listedPrice": 25900000,
+    "modelLine": null,
+    "modelYear": 2024,
+    "name": "VinFast Evo200",
+    "officialName": null,
+    "origin": "Việt Nam (VinFast)",
+    "recordHash": "d32d5513dd2b9eacb950aee2",
+    "referenceRentPrice": 150000,
+    "seats": 2,
+    "segment": "Xe máy điện pin LFP",
+    "shortDescription": null,
+    "slug": "vinfast-evo200",
+    "sortOrder": 9,
+    "source": "https://vinfastauto.com/vn_vi",
+    "specifications": [
+      {
+        "group": "EV",
+        "label": "Loại mô-tơ",
+        "source": "VinFast",
+        "value": "Động cơ điện Inhub đặt bánh sau",
+        "variantName": null
+      },
+      {
+        "group": "EV",
+        "label": "Công suất danh định / tối đa",
+        "source": "VinFast",
+        "value": "1.500 W / 2.500 W",
+        "variantName": null
+      },
+      {
+        "group": "EV",
+        "label": "Loại & dung lượng pin",
+        "source": "VinFast",
+        "value": "Pin LFP · 3,5 kWh",
+        "variantName": null
+      },
+      {
+        "group": "EV",
+        "label": "Quãng đường công bố",
+        "source": "VinFast",
+        "value": "Tối đa 203 km/lần sạc (ở 30 km/h, 1 người 65 kg)",
+        "variantName": null
+      },
+      {
+        "group": "EV",
+        "label": "Thời gian sạc tiêu chuẩn",
+        "source": "VinFast",
+        "value": "~10 giờ (sạc 400W) hoặc ~4 giờ (sạc 1000W)",
+        "variantName": null
+      },
+      {
+        "group": "DIMENSIONS",
+        "label": "Chiều cao yên / Trọng lượng",
+        "source": "VinFast",
+        "value": "750 mm · 97 kg (gồm pin)",
+        "variantName": null
+      }
+    ],
+    "subCategory": "ELECTRIC_BIKE",
+    "suitableFor": "Đi làm, đi học trong đô thị, không khí thải, chi phí sạc điện rất thấp",
+    "transmission": "Truyền động trực tiếp (Inhub)",
+    "updatedAt": "2026-11-17T08:11:32.153Z",
+    "usagePurpose": null,
+    "variants": [
+      {
+        "colors": [
+          {
+            "hex": "#e5b822",
+            "mediaKey": "vinfast-evo200-ext-7.jpg",
+            "name": "Vàng",
+            "sourceUrl": "https://commons.wikimedia.org/wiki/File:Newone_-_Yellow_VinFast_Evo_%26_Vento_01.jpg"
+          },
+          {
+            "hex": "#4f5d42",
+            "mediaKey": "vinfast-evo200-ext-8.jpg",
+            "name": "Xanh rêu",
+            "sourceUrl": "https://commons.wikimedia.org/wiki/File:Newone_-_olive_green_VinFast_Evo_Grand_01.jpg"
+          },
+          {
+            "hex": "#f2f3f5",
+            "mediaKey": null,
+            "name": "Trắng ngọc trai",
+            "sourceUrl": null
+          }
+        ],
+        "driveType": "Inhub bánh sau",
+        "fuelType": "Điện (EV)",
+        "listedPrice": 25900000,
+        "name": "Evo200 (Kèm pin / thuê pin)",
+        "referenceRentPrice": 150000,
+        "seats": 2,
+        "summary": "Tốc độ tối đa 70 km/h, pin LFP 3,5 kWh, cốp 22 lít.",
+        "transmission": "Tự động (Điện)",
+        "year": 2024
+      }
+    ],
+    "verificationStatus": "VERIFIED",
+    "versionName": null,
+    "visible": true
+  },
+  {
+    "bodyStyle": "Mô tô Naked-bike",
+    "brand": "Kawasaki",
+    "category": "MOTORBIKE",
+    "coverMediaKey": "kawasaki-z650-ext-7.jpg",
+    "defaultDepositSuggestion": null,
+    "description": "Kawasaki Z650 ABS mang ngôn ngữ thiết kế Sugomi góc cạnh cùng khối động cơ 2 xi-lanh thẳng hàng 649 cc giàu lực kéo ở dải vòng tua thấp và trung, khung sườn ống thép Trellis nhẹ chỉ 188 kg.",
+    "driveType": "Xích tải",
+    "engineOverview": "Động cơ 649 cc DOHC 2 xi-lanh làm mát dung dịch, công suất 68 PS @ 8.000 rpm, mô-men xoắn 64 Nm, kết hợp kiểm soát lực kéo KTRC.",
+    "exteriorOverview": "Thiết kế Sugomi với đầu đèn LED sắc bén, bình xăng cơ bắp 15 lít và ống xả đặt gọn gàng dưới gầm giúp trọng tâm xe thấp.",
+    "featured": false,
+    "features": [
+      {
+        "category": "DRIVER_ASSIST",
+        "name": "Kiểm soát lực kéo KTRC",
+        "status": "EQUIPPED",
+        "variantNote": null
+      },
+      {
+        "category": "SAFETY",
+        "name": "Phanh đĩa đôi trước 300 mm ABS Bosch",
+        "status": "EQUIPPED",
+        "variantNote": null
+      },
+      {
+        "category": "TECHNOLOGY",
+        "name": "Màn hình màu TFT & Kết nối Rideology",
+        "status": "EQUIPPED",
+        "variantNote": null
+      },
+      {
+        "category": "DRIVER_ASSIST",
+        "name": "Ly hợp chống trượt Assist & Slipper Clutch",
+        "status": "EQUIPPED",
+        "variantNote": null
+      }
+    ],
+    "fuelType": "Xăng",
+    "gallery": [
+      {
+        "altText": null,
+        "caption": "Kawasaki Z650 góc ngang thân xe khung Trellis (Wikimedia Commons)",
+        "colorName": null,
+        "isPrimary": false,
+        "kind": "EXTERIOR",
+        "license": "CC BY-SA 3.0",
+        "mediaKey": "kawasaki-z650-ext-7.jpg",
+        "photoType": null,
+        "sortOrder": 0,
+        "sourceUrl": "https://commons.wikimedia.org/wiki/File:Kawasaki_Z650_schwarz_2020.jpg",
+        "variantName": null,
+        "verified": true
+      },
+      {
+        "altText": null,
+        "caption": "Kawasaki Z650 thiết kế Sugomi góc chéo (Wikimedia Commons)",
+        "colorName": null,
+        "isPrimary": false,
+        "kind": "EXTERIOR",
+        "license": "CC BY-SA 4.0",
+        "mediaKey": "kawasaki-z650-ext-8.jpg",
+        "photoType": null,
+        "sortOrder": 0,
+        "sourceUrl": "https://commons.wikimedia.org/wiki/File:Kawasaki_Z650.jpg",
+        "variantName": null,
+        "verified": true
+      }
+    ],
+    "generation": null,
+    "highlights": [
+      "Khung sườn Trellis trọng lượng ướt nhẹ chỉ 188 kg, dễ làm quen",
+      "Hệ thống kiểm soát lực kéo KTRC 2 chế độ & Phanh ABS 2 kênh",
+      "Màn hình TFT màu 4,3 inch kết nối Rideology"
+    ],
+    "id": "cf10adcf-ddcc-415c-a457-524cb92b990e",
+    "interiorOverview": "Màn hình TFT màu 4,3 inch hỗ trợ kết nối smartphone qua ứng dụng Rideology hiển thị cuộc gọi, nhật ký hành trình và trạng thái xe.",
+    "listedPrice": 190000000,
+    "modelLine": null,
+    "modelYear": 2024,
+    "name": "Kawasaki Z650 ABS",
+    "officialName": null,
+    "origin": "Thái Lan (Nhập khẩu)",
+    "recordHash": "2227fa7a2be9dd0dc008d65c",
+    "referenceRentPrice": 950000,
+    "seats": 2,
+    "segment": "Mô tô phân khối lớn 650cc",
+    "shortDescription": null,
+    "slug": "kawasaki-z650",
+    "sortOrder": 10,
+    "source": "https://www.kawasaki-motors.vn/",
+    "specifications": [
+      {
+        "group": "MOTORBIKE",
+        "label": "Động cơ",
+        "source": "Kawasaki",
+        "value": "649 cc, 2 xi-lanh thẳng hàng, DOHC 8 van",
+        "variantName": null
+      },
+      {
+        "group": "MOTORBIKE",
+        "label": "Công suất tối đa",
+        "source": "Kawasaki",
+        "value": "68 PS (50,2 kW) @ 8.000 rpm",
+        "variantName": null
+      },
+      {
+        "group": "MOTORBIKE",
+        "label": "Mô-men xoắn cực đại",
+        "source": "Kawasaki",
+        "value": "64 Nm @ 6.700 rpm",
+        "variantName": null
+      },
+      {
+        "group": "MOTORBIKE",
+        "label": "Bình xăng",
+        "source": "Kawasaki",
+        "value": "15 lít",
+        "variantName": null
+      },
+      {
+        "group": "DIMENSIONS",
+        "label": "Chiều cao yên / Trọng lượng ướt",
+        "source": "Kawasaki",
+        "value": "790 mm · 188 kg",
+        "variantName": null
+      },
+      {
+        "group": "MOTORBIKE",
+        "label": "Yêu cầu bằng lái",
+        "source": "Quy định VN",
+        "value": "GPLX mô tô trên 175 cc (A2 / A)",
+        "variantName": null
+      }
+    ],
+    "subCategory": "BIG_BIKE",
+    "suitableFor": "Biker có GPLX hạng A2/A muốn trải nghiệm mô tô hạng trung dễ điều khiển và mô-men xoắn tốt",
+    "transmission": "Côn tay 6 cấp",
+    "updatedAt": "2026-11-17T08:11:32.202Z",
+    "usagePurpose": null,
+    "variants": [
+      {
+        "colors": [
+          {
+            "hex": "#1a1d21",
+            "mediaKey": "kawasaki-z650-ext-7.jpg",
+            "name": "Đen ánh kim",
+            "sourceUrl": "https://commons.wikimedia.org/wiki/File:Kawasaki_Z650_schwarz_2020.jpg"
+          },
+          {
+            "hex": "#39a832",
+            "mediaKey": "kawasaki-z650-ext-8.jpg",
+            "name": "Xanh đen Kawasaki",
+            "sourceUrl": "https://commons.wikimedia.org/wiki/File:Kawasaki_Z650.jpg"
+          }
+        ],
+        "driveType": "Xích tải",
+        "fuelType": "Xăng",
+        "listedPrice": 190000000,
+        "name": "Z650 ABS 2024",
+        "referenceRentPrice": 950000,
+        "seats": 2,
+        "summary": "Động cơ 649 cc, màn hình TFT, KTRC và phanh ABS.",
+        "transmission": "Côn tay 6 cấp",
+        "year": 2024
+      }
+    ],
+    "verificationStatus": "VERIFIED",
+    "versionName": null,
+    "visible": true
+  },
+  {
+    "bodyStyle": "Sedan hạng B",
+    "brand": "Toyota",
+    "category": "CAR",
+    "coverMediaKey": "toyota-vios-ext-7.jpg",
+    "defaultDepositSuggestion": null,
+    "description": "Toyota Vios là mẫu sedan hạng B phổ biến bậc nhất tại Việt Nam nhờ khoang hành lý rộng 506 lít, khả năng vận hành bền bỉ, tiết kiệm nhiên liệu (~5,88 L/100km bản G) và bổ sung gói Toyota Safety Sense trên phiên bản G.",
+    "driveType": "Cầu trước (FWD)",
+    "engineOverview": "Động cơ xăng 2NR-FE 1.5L 4 xi-lanh Dual VVT-i công suất 107 mã lực, mô-men xoắn 140 Nm kết hợp hộp số CVT mượt mà.",
+    "exteriorOverview": "Mặt ca-lăng mở rộng sắc nét, đèn chiếu sáng Bi-LED tiêu chuẩn trên cả 3 phiên bản cùng bộ mâm hợp kim phay xước 15 inch.",
+    "featured": false,
+    "features": [
+      {
+        "category": "TECHNOLOGY",
+        "name": "Màn hình cảm ứng 9 inch kết nối Apple CarPlay / Android Auto",
+        "status": "EQUIPPED",
+        "variantNote": null
+      },
+      {
+        "category": "COMFORT",
+        "name": "Điều hòa tự động (bản G)",
+        "status": "EQUIPPED",
+        "variantNote": "1.5G CVT"
+      },
+      {
+        "category": "SAFETY",
+        "name": "7 túi khí & Cân bằng điện tử VSC",
+        "status": "EQUIPPED",
+        "variantNote": "1.5G CVT"
+      },
+      {
+        "category": "DRIVER_ASSIST",
+        "name": "Cảnh báo tiền va chạm & Lệch làn đường",
+        "status": "EQUIPPED",
+        "variantNote": "1.5G CVT"
+      }
+    ],
+    "fuelType": "Xăng",
+    "gallery": [
+      {
+        "altText": null,
+        "caption": "Toyota Vios góc chéo trước (Wikimedia Commons)",
+        "colorName": null,
+        "isPrimary": false,
+        "kind": "EXTERIOR",
+        "license": "CC BY-SA 4.0",
+        "mediaKey": "toyota-vios-ext-7.jpg",
+        "photoType": null,
+        "sortOrder": 0,
+        "sourceUrl": "https://commons.wikimedia.org/wiki/File:TOYOTA_VIOS_XP150_China.jpg",
+        "variantName": null,
+        "verified": true
+      },
+      {
+        "altText": null,
+        "caption": "Phần đầu xe thiết kế sedan (Wikimedia Commons)",
+        "colorName": null,
+        "isPrimary": false,
+        "kind": "EXTERIOR",
+        "license": "CC BY-SA 4.0",
+        "mediaKey": "toyota-vios-ext-8.jpg",
+        "photoType": null,
+        "sortOrder": 0,
+        "sourceUrl": "https://commons.wikimedia.org/wiki/File:Toyota_Vios_(XP150)_sedan_front_view.jpg",
+        "variantName": null,
+        "verified": true
+      },
+      {
+        "altText": null,
+        "caption": "Khoang lái và vô lăng Toyota Vios (Wikimedia Commons)",
+        "colorName": null,
+        "isPrimary": false,
+        "kind": "INTERIOR",
+        "license": "CC BY-SA 4.0",
+        "mediaKey": "toyota-vios-int-4.jpg",
+        "photoType": null,
+        "sortOrder": 0,
+        "sourceUrl": "https://commons.wikimedia.org/wiki/File:2021_Toyota_Vios_1.5J_MT_Super_White_interior_view_in_Brunei.jpg",
+        "variantName": null,
+        "verified": true
+      }
+    ],
+    "generation": null,
+    "highlights": [
+      "Khoang hành lý rộng tới 506 lít chứa được nhiều vali cho chuyến đi xa",
+      "Tiết kiệm nhiên liệu trung bình chỉ 5,88 lít/100 km (đường hỗn hợp)",
+      "Trang bị 7 túi khí và gói an toàn chủ động trên bản 1.5G CVT"
+    ],
+    "id": "34eaf4d4-4ba2-4e64-b4ef-7a60fc216e63",
+    "interiorOverview": "Không gian hàng ghế sau thoáng rộng hàng đầu phân khúc, màn hình cảm ứng 9 inch hỗ trợ kết nối điện thoại thông minh, lẫy chuyển số trên vô lăng (bản G).",
+    "listedPrice": 458000000,
+    "modelLine": null,
+    "modelYear": 2024,
+    "name": "Toyota Vios",
+    "officialName": null,
+    "origin": "Việt Nam (Toyota Việt Nam)",
+    "recordHash": "a2af9c6fc87aa26b354dfcce",
+    "referenceRentPrice": 700000,
+    "seats": 5,
+    "segment": "Sedan đô thị 5 chỗ",
+    "shortDescription": null,
+    "slug": "toyota-vios",
+    "sortOrder": 11,
+    "source": "https://www.toyota.com.vn/",
+    "specifications": [
+      {
+        "group": "ENGINE",
+        "label": "Động cơ",
+        "source": "Toyota Việt Nam",
+        "value": "2NR-FE 1.5L 4 xi-lanh Dual VVT-i",
+        "variantName": null
+      },
+      {
+        "group": "ENGINE",
+        "label": "Công suất / Mô-men xoắn",
+        "source": "Toyota Việt Nam",
+        "value": "107 hp @ 6.000 rpm · 140 Nm @ 4.200 rpm",
+        "variantName": null
+      },
+      {
+        "group": "ENGINE",
+        "label": "Tiêu hao nhiên liệu hỗn hợp",
+        "source": "Toyota Việt Nam",
+        "value": "5,88 lít/100 km (bản G CVT)",
+        "variantName": null
+      },
+      {
+        "group": "DIMENSIONS",
+        "label": "Kích thước (D × R × C)",
+        "source": "Toyota Việt Nam",
+        "value": "4.425 × 1.730 × 1.475 mm",
+        "variantName": null
+      },
+      {
+        "group": "DIMENSIONS",
+        "label": "Chiều dài cơ sở / Khoảng sáng gầm",
+        "source": "Toyota Việt Nam",
+        "value": "2.550 mm · 133 mm",
+        "variantName": null
+      },
+      {
+        "group": "DIMENSIONS",
+        "label": "Dung tích cốp & Bình xăng",
+        "source": "Toyota Việt Nam",
+        "value": "506 lít · 42 lít",
+        "variantName": null
+      }
+    ],
+    "subCategory": "SEDAN",
+    "suitableFor": "Đi công tác, di chuyển hằng ngày trong phố và gia đình nhỏ cần sự ổn định, tiết kiệm",
+    "transmission": "Vô cấp CVT / Số sàn 5 cấp",
+    "updatedAt": "2026-11-17T08:11:32.250Z",
+    "usagePurpose": null,
+    "variants": [
+      {
+        "colors": [
+          {
+            "hex": "#f4f4f2",
+            "mediaKey": "toyota-vios-ext-7.jpg",
+            "name": "Trắng ngọc trai",
+            "sourceUrl": "https://commons.wikimedia.org/wiki/File:TOYOTA_VIOS_XP150_China.jpg"
+          },
+          {
+            "hex": "#b8bec4",
+            "mediaKey": null,
+            "name": "Bạc",
+            "sourceUrl": null
+          }
+        ],
+        "driveType": "Cầu trước (FWD)",
+        "fuelType": "Xăng",
+        "listedPrice": 488000000,
+        "name": "1.5E CVT",
+        "referenceRentPrice": 700000,
+        "seats": 5,
+        "summary": "Phiên bản số tự động tiêu chuẩn với đèn Bi-LED và màn hình giải trí.",
+        "transmission": "Vô cấp CVT",
+        "year": 2024
+      },
+      {
+        "colors": [
+          {
+            "hex": "#f4f4f2",
+            "mediaKey": "toyota-vios-ext-8.jpg",
+            "name": "Trắng ngọc trai",
+            "sourceUrl": "https://commons.wikimedia.org/wiki/File:Toyota_Vios_(XP150)_sedan_front_view.jpg"
+          },
+          {
+            "hex": "#181a1d",
+            "mediaKey": null,
+            "name": "Đen",
+            "sourceUrl": null
+          }
+        ],
+        "driveType": "Cầu trước (FWD)",
+        "fuelType": "Xăng",
+        "listedPrice": 545000000,
+        "name": "1.5G CVT",
+        "referenceRentPrice": 780000,
+        "seats": 5,
+        "summary": "7 túi khí, điều hòa tự động, màn hình 9 inch, cảnh báo tiền va chạm & lệch làn.",
+        "transmission": "Vô cấp CVT",
+        "year": 2024
+      }
+    ],
+    "verificationStatus": "VERIFIED",
+    "versionName": null,
+    "visible": true
+  },
+  {
+    "bodyStyle": "CUV 5 chỗ",
+    "brand": "Mazda",
+    "category": "CAR",
+    "coverMediaKey": "mazda-cx5-ext-7.jpg",
+    "defaultDepositSuggestion": null,
+    "description": "Mazda CX-5 chinh phục người dùng nhờ ngôn ngữ thiết kế KODO thanh lịch, khoang nội thất hoàn thiện tinh xảo, công nghệ kiểm soát gia tốc G-Vectoring Control Plus (GVC Plus) và gói an toàn i-Activsense.",
+    "driveType": "FWD / AWD",
+    "engineOverview": "Động cơ xăng Skyactiv-G 2.0L (154 hp / 200 Nm) hoặc 2.5L kết hợp hộp số tự động 6 cấp chuyển số mượt mà.",
+    "exteriorOverview": "Mặt ca-lăng họa tiết 3D đặc trưng, cụm đèn LED thích ứng thông minh ALH và bộ mâm hợp kim 19 inch cân đối.",
+    "featured": false,
+    "features": [
+      {
+        "category": "DRIVER_ASSIST",
+        "name": "Hệ thống kiểm soát gia tốc GVC Plus",
+        "status": "EQUIPPED",
+        "variantNote": null
+      },
+      {
+        "category": "TECHNOLOGY",
+        "name": "10 loa Bose & Màn hình HUD kính lái",
+        "status": "EQUIPPED",
+        "variantNote": "Bản Premium trở lên"
+      },
+      {
+        "category": "SAFETY",
+        "name": "Cảnh báo điểm mù BSM & Phương tiện cắt ngang RCTA",
+        "status": "EQUIPPED",
+        "variantNote": null
+      },
+      {
+        "category": "COMFORT",
+        "name": "Cửa sổ trời & Cốp điện",
+        "status": "EQUIPPED",
+        "variantNote": null
+      }
+    ],
+    "fuelType": "Xăng",
+    "gallery": [
+      {
+        "altText": null,
+        "caption": "Mazda CX-5 KF facelift góc chéo trước (Wikimedia Commons)",
+        "colorName": null,
+        "isPrimary": false,
+        "kind": "EXTERIOR",
+        "license": "CC BY-SA 4.0",
+        "mediaKey": "mazda-cx5-ext-7.jpg",
+        "photoType": null,
+        "sortOrder": 0,
+        "sourceUrl": "https://commons.wikimedia.org/wiki/File:Mazda_CX-5_(KF)_Facelift_1X7A0331_(2).jpg",
+        "variantName": null,
+        "verified": true
+      },
+      {
+        "altText": null,
+        "caption": "Ngôn ngữ thiết kế KODO góc bên hông (Wikimedia Commons)",
+        "colorName": null,
+        "isPrimary": false,
+        "kind": "EXTERIOR",
+        "license": "CC BY-SA 4.0",
+        "mediaKey": "mazda-cx5-ext-8.jpg",
+        "photoType": null,
+        "sortOrder": 0,
+        "sourceUrl": "https://commons.wikimedia.org/wiki/File:Mazda_CX-5_Newground_1X7A6786_(cropped).jpg",
+        "variantName": null,
+        "verified": true
+      },
+      {
+        "altText": null,
+        "caption": "Khoang lái Mazda CX-5 thế hệ KF (Wikimedia Commons)",
+        "colorName": null,
+        "isPrimary": false,
+        "kind": "INTERIOR",
+        "license": "CC BY-SA 4.0",
+        "mediaKey": "mazda-cx5-int-4.jpg",
+        "photoType": null,
+        "sortOrder": 0,
+        "sourceUrl": "https://commons.wikimedia.org/wiki/File:Mazda_CX-5_25S_L_Package_2WD_(6BA-KF5P)_interior.jpg",
+        "variantName": null,
+        "verified": true
+      },
+      {
+        "altText": null,
+        "caption": "Động cơ xăng Skyactiv-G 2.0L (Wikimedia Commons)",
+        "colorName": null,
+        "isPrimary": false,
+        "kind": "ENGINE",
+        "license": "CC BY 4.0",
+        "mediaKey": "mazda-cx5-eng-4.jpg",
+        "photoType": null,
+        "sortOrder": 0,
+        "sourceUrl": "https://commons.wikimedia.org/wiki/File:Mazda_Skyactiv-G_2.0_PE-VPS.jpg",
+        "variantName": null,
+        "verified": true
+      }
+    ],
+    "generation": null,
+    "highlights": [
+      "Thiết kế KODO sang trọng, nội thất hoàn thiện cao cấp trong tầm giá",
+      "Hệ thống kiểm soát gia tốc GVC Plus giúp ôm cua êm ái, giảm say xe",
+      "10 loa Bose và màn hình HUD trên phiên bản Premium / Exclusive"
+    ],
+    "id": "32f7951d-d46e-468a-b10a-61185186609d",
+    "interiorOverview": "Ghế bọc da cao cấp, màn hình HUD hắt kính lái, cửa sổ trời, 10 loa Bose (từ bản Premium) và cốp đóng mở điện.",
+    "listedPrice": 749000000,
+    "modelLine": null,
+    "modelYear": 2024,
+    "name": "Mazda CX-5",
+    "officialName": null,
+    "origin": "Việt Nam (THACO Mazda)",
+    "recordHash": "7108141f8d324b59b4e4486d",
+    "referenceRentPrice": 1050000,
+    "seats": 5,
+    "segment": "CUV hạng C",
+    "shortDescription": null,
+    "slug": "mazda-cx-5",
+    "sortOrder": 12,
+    "source": "https://www.mazdamotors.vn/",
+    "specifications": [
+      {
+        "group": "ENGINE",
+        "label": "Động cơ",
+        "source": "Mazda Việt Nam",
+        "value": "Skyactiv-G 2.0L (154 hp) / 2.5L (188 hp)",
+        "variantName": null
+      },
+      {
+        "group": "ENGINE",
+        "label": "Mô-men xoắn cực đại",
+        "source": "Mazda Việt Nam",
+        "value": "200 Nm @ 4.000 rpm (bản 2.0L)",
+        "variantName": null
+      },
+      {
+        "group": "ENGINE",
+        "label": "Hộp số",
+        "source": "Mazda Việt Nam",
+        "value": "Tự động 6 cấp",
+        "variantName": null
+      },
+      {
+        "group": "DIMENSIONS",
+        "label": "Kích thước (D × R × C)",
+        "source": "Mazda Việt Nam",
+        "value": "4.590 × 1.845 × 1.680 mm",
+        "variantName": null
+      },
+      {
+        "group": "DIMENSIONS",
+        "label": "Chiều dài cơ sở / Khoảng sáng gầm",
+        "source": "Mazda Việt Nam",
+        "value": "2.700 mm · 200 mm",
+        "variantName": null
+      },
+      {
+        "group": "DIMENSIONS",
+        "label": "Dung tích khoang hành lý",
+        "source": "Mazda Việt Nam",
+        "value": "442 lít",
+        "variantName": null
+      }
+    ],
+    "subCategory": "CUV",
+    "suitableFor": "Gia đình 4–5 người yêu cầu thẩm mỹ cao cấp, nội thất tinh tế và cảm giác lái đầm chắc",
+    "transmission": "Tự động 6 cấp",
+    "updatedAt": "2026-11-17T08:11:32.299Z",
+    "usagePurpose": null,
+    "variants": [
+      {
+        "colors": [
+          {
+            "hex": "#9b111e",
+            "mediaKey": "mazda-cx5-ext-7.jpg",
+            "name": "Đỏ Soul Red Crystal",
+            "sourceUrl": "https://commons.wikimedia.org/wiki/File:Mazda_CX-5_(KF)_Facelift_1X7A0331_(2).jpg"
+          },
+          {
+            "hex": "#f4f4f2",
+            "mediaKey": "mazda-cx5-ext-8.jpg",
+            "name": "Trắng",
+            "sourceUrl": "https://commons.wikimedia.org/wiki/File:Mazda_CX-5_Newground_1X7A6786_(cropped).jpg"
+          }
+        ],
+        "driveType": "Cầu trước (FWD)",
+        "fuelType": "Xăng",
+        "listedPrice": 789000000,
+        "name": "2.0L Luxury",
+        "referenceRentPrice": 1050000,
+        "seats": 5,
+        "summary": "Cốp điện, điều hòa 2 vùng, 6 túi khí, cảnh báo điểm mù BSM.",
+        "transmission": "Tự động 6 cấp",
+        "year": 2024
+      },
+      {
+        "colors": [
+          {
+            "hex": "#5d6166",
+            "mediaKey": null,
+            "name": "Xám Machine Grey",
+            "sourceUrl": null
+          }
+        ],
+        "driveType": "Cầu trước (FWD)",
+        "fuelType": "Xăng",
+        "listedPrice": 829000000,
+        "name": "2.0L Premium Active",
+        "referenceRentPrice": 1150000,
+        "seats": 5,
+        "summary": "10 loa Bose, HUD, sưởi/làm mát ghế trước, gói i-Activsense đầy đủ.",
+        "transmission": "Tự động 6 cấp",
+        "year": 2024
+      }
+    ],
+    "verificationStatus": "VERIFIED",
+    "versionName": null,
+    "visible": true
+  },
+  {
+    "bodyStyle": "MPV 7 chỗ",
+    "brand": "Mitsubishi",
+    "category": "CAR",
+    "coverMediaKey": "mitsubishi-xpander-ext-7.jpg",
+    "defaultDepositSuggestion": null,
+    "description": "Mitsubishi Xpander là mẫu MPV 7 chỗ bán chạy hàng đầu nhờ không gian cabin rộng rãi, gầm cao tới 225 mm (bản AT Premium) tương đương nhiều xe CUV, phanh tay điện tử và chi phí sử dụng kinh tế.",
+    "driveType": "Cầu trước (FWD)",
+    "engineOverview": "Động cơ xăng 1.5L MIVEC công suất 104 PS, mô-men xoắn 141 Nm tối ưu cho độ bền và tiết kiệm nhiên liệu trong đô thị lẫn đường trường.",
+    "exteriorOverview": "Thiết kế Dynamic Shield hiện đại với đèn pha T-Shape đặt thấp chống chói, mâm hợp kim 17 inch hai tông màu và khoảng sáng gầm 225 mm.",
+    "featured": false,
+    "features": [
+      {
+        "category": "COMFORT",
+        "name": "Phanh tay điện tử & Auto Hold",
+        "status": "EQUIPPED",
+        "variantNote": "AT Premium / Cross"
+      },
+      {
+        "category": "TECHNOLOGY",
+        "name": "Màn hình cảm ứng 9 inch Apple CarPlay / Android Auto",
+        "status": "EQUIPPED",
+        "variantNote": null
+      },
+      {
+        "category": "DRIVER_ASSIST",
+        "name": "Kiểm soát vào cua chủ động AYC",
+        "status": "EQUIPPED",
+        "variantNote": "Xpander Cross"
+      },
+      {
+        "category": "SAFETY",
+        "name": "Cân bằng điện tử ASC & Hỗ trợ khởi hành ngang dốc HSA",
+        "status": "EQUIPPED",
+        "variantNote": null
+      }
+    ],
+    "fuelType": "Xăng",
+    "gallery": [
+      {
+        "altText": null,
+        "caption": "Mitsubishi Xpander góc trước Dynamic Shield (Wikimedia Commons)",
+        "colorName": null,
+        "isPrimary": false,
+        "kind": "EXTERIOR",
+        "license": "CC BY-SA 4.0",
+        "mediaKey": "mitsubishi-xpander-ext-7.jpg",
+        "photoType": null,
+        "sortOrder": 0,
+        "sourceUrl": "https://commons.wikimedia.org/wiki/File:2022_Mitsubishi_Xpander_GLS_(20221009)_01.jpg",
+        "variantName": null,
+        "verified": true
+      },
+      {
+        "altText": null,
+        "caption": "Góc nhìn đuôi xe đèn hậu T-Shape (Wikimedia Commons)",
+        "colorName": null,
+        "isPrimary": false,
+        "kind": "EXTERIOR",
+        "license": "CC BY-SA 4.0",
+        "mediaKey": "mitsubishi-xpander-ext-8.jpg",
+        "photoType": null,
+        "sortOrder": 0,
+        "sourceUrl": "https://commons.wikimedia.org/wiki/File:2022_Mitsubishi_Xpander_GLS_(20221009)_02.jpg",
+        "variantName": null,
+        "verified": true
+      },
+      {
+        "altText": null,
+        "caption": "Khoang nội thất Mitsubishi Xpander tại Việt Nam (Wikimedia Commons)",
+        "colorName": null,
+        "isPrimary": false,
+        "kind": "INTERIOR",
+        "license": "CC BY 3.0",
+        "mediaKey": "mitsubishi-xpander-int-4.jpg",
+        "photoType": null,
+        "sortOrder": 0,
+        "sourceUrl": "https://commons.wikimedia.org/wiki/File:2020_Mitsubishi_Xpander_Cross_interior_(Vietnam).png",
+        "variantName": null,
+        "verified": true
+      }
+    ],
+    "generation": null,
+    "highlights": [
+      "Khoảng sáng gầm 225 mm giúp tự tin leo lề và đi đường ngập nhẹ",
+      "Ba hàng ghế thực dụng cho 7 người lớn, gập phẳng tạo khoang chở đồ lớn",
+      "Phanh tay điện tử & Giữ phanh tự động Auto Hold trên bản AT Premium"
+    ],
+    "id": "2f21fbb7-1e31-45b8-9ee6-a27b6e0ec5c1",
+    "interiorOverview": "Nội thất Horizontal Axis thoáng đạt với 2 tông màu nâu/đen, phanh tay điện tử & Auto Hold, màn hình 9 inch hỗ trợ Apple CarPlay/Android Auto.",
+    "listedPrice": 560000000,
+    "modelLine": null,
+    "modelYear": 2024,
+    "name": "Mitsubishi Xpander",
+    "officialName": null,
+    "origin": "Indonesia / Việt Nam",
+    "recordHash": "ae693b5435e8520e276a73c5",
+    "referenceRentPrice": 850000,
+    "seats": 7,
+    "segment": "MPV 7 chỗ đa dụng",
+    "shortDescription": null,
+    "slug": "mitsubishi-xpander",
+    "sortOrder": 13,
+    "source": "https://www.mitsubishi-motors.com.vn/",
+    "specifications": [
+      {
+        "group": "ENGINE",
+        "label": "Động cơ",
+        "source": "Mitsubishi Motors VN",
+        "value": "1.5L MIVEC (4A91) 4 xi-lanh",
+        "variantName": null
+      },
+      {
+        "group": "ENGINE",
+        "label": "Công suất / Mô-men xoắn",
+        "source": "Mitsubishi Motors VN",
+        "value": "104 PS @ 6.000 rpm · 141 Nm @ 4.000 rpm",
+        "variantName": null
+      },
+      {
+        "group": "ENGINE",
+        "label": "Hộp số",
+        "source": "Mitsubishi Motors VN",
+        "value": "Tự động 4 cấp / Số sàn 5 cấp",
+        "variantName": null
+      },
+      {
+        "group": "DIMENSIONS",
+        "label": "Kích thước (D × R × C)",
+        "source": "Mitsubishi Motors VN",
+        "value": "4.595 × 1.750 × 1.750 mm",
+        "variantName": null
+      },
+      {
+        "group": "DIMENSIONS",
+        "label": "Chiều dài cơ sở / Khoảng sáng gầm",
+        "source": "Mitsubishi Motors VN",
+        "value": "2.775 mm · 225 mm",
+        "variantName": null
+      },
+      {
+        "group": "DIMENSIONS",
+        "label": "Dung tích bình xăng",
+        "source": "Mitsubishi Motors VN",
+        "value": "45 lít",
+        "variantName": null
+      }
+    ],
+    "subCategory": "MPV",
+    "suitableFor": "Gia đình đông người đi du lịch, đưa đón sân bay và di chuyển linh hoạt nhiều hành lý",
+    "transmission": "Tự động 4 cấp / Số sàn 5 cấp",
+    "updatedAt": "2026-11-17T08:11:32.348Z",
+    "usagePurpose": null,
+    "variants": [
+      {
+        "colors": [
+          {
+            "hex": "#f4f4f2",
+            "mediaKey": "mitsubishi-xpander-ext-7.jpg",
+            "name": "Trắng",
+            "sourceUrl": "https://commons.wikimedia.org/wiki/File:2022_Mitsubishi_Xpander_GLS_(20221009)_01.jpg"
+          },
+          {
+            "hex": "#1b1d21",
+            "mediaKey": null,
+            "name": "Đen",
+            "sourceUrl": null
+          }
+        ],
+        "driveType": "Cầu trước (FWD)",
+        "fuelType": "Xăng",
+        "listedPrice": 658000000,
+        "name": "AT Premium",
+        "referenceRentPrice": 850000,
+        "seats": 7,
+        "summary": "Đèn LED T-Shape, phanh tay điện tử, Auto Hold, màn hình 9 inch, camera lùi.",
+        "transmission": "Tự động 4 cấp",
+        "year": 2024
+      }
+    ],
+    "verificationStatus": "VERIFIED",
+    "versionName": null,
+    "visible": true
+  },
+  {
+    "bodyStyle": "CUV / SUV 5+2 chỗ",
+    "brand": "Honda",
+    "category": "CAR",
+    "coverMediaKey": "honda-crv-ext-7.jpg",
+    "defaultDepositSuggestion": null,
+    "description": "Honda CR-V thế hệ thứ 6 sở hữu thiết kế cứng cáp hiện đại hơn, trục cơ sở kéo dài tăng khoảng để chân và trang bị tiêu chuẩn gói an toàn Honda SENSING cùng 8 túi khí trên toàn bộ các phiên bản.",
+    "driveType": "FWD / AWD",
+    "engineOverview": "Động cơ 1.5L VTEC Turbo mạnh mẽ 188 mã lực và 240 Nm mô-men xoắn đạt sớm ngay từ 1.700 rpm, hoặc hệ truyền động Hybrid e:HEV 2.0L tiết kiệm nhiên liệu.",
+    "exteriorOverview": "Lưới tản nhiệt lục giác khỏe khoắn, nắp ca-pô kéo dài lịch lãm, đèn LED thanh mảnh và bộ mâm 18 inch thể thao.",
+    "featured": false,
+    "features": [
+      {
+        "category": "DRIVER_ASSIST",
+        "name": "Gói công nghệ Honda SENSING (CMBS, LKAS, RDM, ACC, AHB)",
+        "status": "EQUIPPED",
+        "variantNote": null
+      },
+      {
+        "category": "SAFETY",
+        "name": "8 túi khí bảo vệ toàn diện",
+        "status": "EQUIPPED",
+        "variantNote": null
+      },
+      {
+        "category": "SAFETY",
+        "name": "Camera quan sát điểm mù LaneWatch / Camera 360",
+        "status": "EQUIPPED",
+        "variantNote": null
+      },
+      {
+        "category": "TECHNOLOGY",
+        "name": "Màn hình 9 inch, sạc không dây & Honda CONNECT",
+        "status": "EQUIPPED",
+        "variantNote": null
+      }
+    ],
+    "fuelType": "Xăng",
+    "gallery": [
+      {
+        "altText": null,
+        "caption": "Honda CR-V thế hệ thứ 6 góc chéo trước (Wikimedia Commons)",
+        "colorName": null,
+        "isPrimary": false,
+        "kind": "EXTERIOR",
+        "license": "CC BY-SA 4.0",
+        "mediaKey": "honda-crv-ext-7.jpg",
+        "photoType": null,
+        "sortOrder": 0,
+        "sourceUrl": "https://commons.wikimedia.org/wiki/File:Honda_CR-V_(6th_generation)_hybrid_1X7A0866.jpg",
+        "variantName": null,
+        "verified": true
+      },
+      {
+        "altText": null,
+        "caption": "Honda CR-V thế hệ thứ 6 góc chéo sau (Wikimedia Commons)",
+        "colorName": null,
+        "isPrimary": false,
+        "kind": "EXTERIOR",
+        "license": "CC BY-SA 4.0",
+        "mediaKey": "honda-crv-ext-8.jpg",
+        "photoType": null,
+        "sortOrder": 0,
+        "sourceUrl": "https://commons.wikimedia.org/wiki/File:Honda_CR-V_(6th_generation)_hybrid_DSC_8550.jpg",
+        "variantName": null,
+        "verified": true
+      },
+      {
+        "altText": null,
+        "caption": "Khoang lái lưới tổ ong thế hệ thứ 6 (Wikimedia Commons)",
+        "colorName": null,
+        "isPrimary": false,
+        "kind": "INTERIOR",
+        "license": "CC BY-SA 4.0",
+        "mediaKey": "honda-crv-int-4.jpg",
+        "photoType": null,
+        "sortOrder": 0,
+        "sourceUrl": "https://commons.wikimedia.org/wiki/File:HONDA_CR-V_PLUG-IN_HYBRID_SIXTH_GENERATION_CHINA_VERSION_INTERIOR_(4).jpg",
+        "variantName": null,
+        "verified": true
+      }
+    ],
+    "generation": null,
+    "highlights": [
+      "Gói an toàn chủ động Honda SENSING tiêu chuẩn trên mọi phiên bản",
+      "Động cơ 1.5L VTEC Turbo 188 mã lực tăng tốc mượt mà",
+      "8 túi khí & Camera quan sát làn đường LaneWatch"
+    ],
+    "id": "b65becdc-4240-49f2-a43c-6a4713fa37b6",
+    "interiorOverview": "Bảng táp-lô nổi bật với họa tiết lưới tổ ong giấu khe gió điều hòa, màn hình giải trí 9 inch, đồng hồ kỹ thuật số 10,2 inch và cửa sổ trời toàn cảnh Panorama (bản L AWD / e:HEV RS).",
+    "listedPrice": 1029000000,
+    "modelLine": null,
+    "modelYear": 2024,
+    "name": "Honda CR-V",
+    "officialName": null,
+    "origin": "Việt Nam / Thái Lan",
+    "recordHash": "2275466421452a3b1ae30935",
+    "referenceRentPrice": 1300000,
+    "seats": 7,
+    "segment": "CUV hạng C cao cấp",
+    "shortDescription": null,
+    "slug": "honda-cr-v",
+    "sortOrder": 14,
+    "source": "https://www.honda.com.vn/o-to",
+    "specifications": [
+      {
+        "group": "ENGINE",
+        "label": "Động cơ",
+        "source": "Honda Việt Nam",
+        "value": "1.5L VTEC Turbo DOHC 4 xi-lanh",
+        "variantName": null
+      },
+      {
+        "group": "ENGINE",
+        "label": "Công suất / Mô-men xoắn",
+        "source": "Honda Việt Nam",
+        "value": "188 hp @ 6.000 rpm · 240 Nm @ 1.700–5.000 rpm",
+        "variantName": null
+      },
+      {
+        "group": "ENGINE",
+        "label": "Hộp số",
+        "source": "Honda Việt Nam",
+        "value": "Vô cấp CVT",
+        "variantName": null
+      },
+      {
+        "group": "DIMENSIONS",
+        "label": "Kích thước (D × R × C)",
+        "source": "Honda Việt Nam",
+        "value": "4.691 × 1.866 × 1.681 mm",
+        "variantName": null
+      },
+      {
+        "group": "DIMENSIONS",
+        "label": "Chiều dài cơ sở / Khoảng sáng gầm",
+        "source": "Honda Việt Nam",
+        "value": "2.701 mm · 198 mm",
+        "variantName": null
+      },
+      {
+        "group": "DIMENSIONS",
+        "label": "Số chỗ ngồi",
+        "source": "Honda Việt Nam",
+        "value": "7 chỗ (5+2) hoặc 5 chỗ (bản e:HEV RS)",
+        "variantName": null
+      }
+    ],
+    "subCategory": "CUV",
+    "suitableFor": "Gia đình hiện đại đề cao công nghệ an toàn chủ động Honda SENSING và vận hành linh hoạt",
+    "transmission": "Vô cấp CVT",
+    "updatedAt": "2026-11-17T08:11:32.398Z",
+    "usagePurpose": null,
+    "variants": [
+      {
+        "colors": [
+          {
+            "hex": "#f4f5f7",
+            "mediaKey": "honda-crv-ext-7.jpg",
+            "name": "Trắng ngọc",
+            "sourceUrl": "https://commons.wikimedia.org/wiki/File:Honda_CR-V_(6th_generation)_hybrid_1X7A0866.jpg"
+          },
+          {
+            "hex": "#5f666d",
+            "mediaKey": "honda-crv-ext-8.jpg",
+            "name": "Xám",
+            "sourceUrl": "https://commons.wikimedia.org/wiki/File:Honda_CR-V_(6th_generation)_hybrid_DSC_8550.jpg"
+          }
+        ],
+        "driveType": "Cầu trước (FWD)",
+        "fuelType": "Xăng",
+        "listedPrice": 1099000000,
+        "name": "1.5L L (FWD)",
+        "referenceRentPrice": 1300000,
+        "seats": 7,
+        "summary": "7 chỗ, màn hình 9 inch, 8 túi khí, Honda SENSING, cốp điện đá chân.",
+        "transmission": "Vô cấp CVT",
+        "year": 2024
+      }
+    ],
+    "verificationStatus": "VERIFIED",
+    "versionName": null,
+    "visible": true
+  },
+  {
+    "bodyStyle": "Sedan hạng B",
+    "brand": "Hyundai",
+    "category": "CAR",
+    "coverMediaKey": "hyundai-accent-ext-7.jpg",
+    "defaultDepositSuggestion": null,
+    "description": "Hyundai Accent là mẫu sedan hạng B trang bị dồi dào tiện nghi trong tầm giá như làm mát hàng ghế trước (thế hệ mới 2024), đề nổ từ xa qua chìa khóa, cửa gió điều hòa sau và vận hành nhẹ nhàng tiết kiệm.",
+    "driveType": "Cầu trước (FWD)",
+    "engineOverview": "Động cơ xăng Smartstream G 1.5L (hoặc 1.4L ở đời 2022–2023) cho khả năng tăng tốc êm ái trong đô thị và tiết kiệm nhiên liệu trên cao tốc.",
+    "exteriorOverview": "Thân xe thanh thoát cân đối với lưới tản nhiệt đặc trưng Hyundai và cụm đèn LED sắc nét.",
+    "featured": false,
+    "features": [
+      {
+        "category": "COMFORT",
+        "name": "Khởi động từ xa bằng chìa khóa thông minh",
+        "status": "EQUIPPED",
+        "variantNote": null
+      },
+      {
+        "category": "TECHNOLOGY",
+        "name": "Màn hình giải trí 8 inch Apple CarPlay / Android Auto",
+        "status": "EQUIPPED",
+        "variantNote": null
+      },
+      {
+        "category": "COMFORT",
+        "name": "Cửa gió điều hòa hàng ghế sau",
+        "status": "EQUIPPED",
+        "variantNote": null
+      },
+      {
+        "category": "SAFETY",
+        "name": "6 túi khí & Camera lùi",
+        "status": "EQUIPPED",
+        "variantNote": "Bản Đặc biệt / Cao cấp"
+      }
+    ],
+    "fuelType": "Xăng",
+    "gallery": [
+      {
+        "altText": null,
+        "caption": "Hyundai Accent góc chéo trước (Wikimedia Commons)",
+        "colorName": null,
+        "isPrimary": false,
+        "kind": "EXTERIOR",
+        "license": "CC BY-SA 4.0",
+        "mediaKey": "hyundai-accent-ext-7.jpg",
+        "photoType": null,
+        "sortOrder": 0,
+        "sourceUrl": "https://commons.wikimedia.org/wiki/File:2020_Hyundai_Accent_Essential_in_Urban_Grey,_Front_Right,_05-23-2023.jpg",
+        "variantName": null,
+        "verified": true
+      },
+      {
+        "altText": null,
+        "caption": "Hyundai Accent góc nhìn thân xe (Wikimedia Commons)",
+        "colorName": null,
+        "isPrimary": false,
+        "kind": "EXTERIOR",
+        "license": "CC BY-SA 4.0",
+        "mediaKey": "hyundai-accent-ext-8.jpg",
+        "photoType": null,
+        "sortOrder": 0,
+        "sourceUrl": "https://commons.wikimedia.org/wiki/File:2020_Hyundai_Accent_Preferred_in_Urban_Grey,_front_left,_2026-08-09.jpg",
+        "variantName": null,
+        "verified": true
+      },
+      {
+        "altText": null,
+        "caption": "Khoang lái và màn hình giải trí trung tâm (Wikimedia Commons)",
+        "colorName": null,
+        "isPrimary": false,
+        "kind": "INTERIOR",
+        "license": "CC BY 3.0",
+        "mediaKey": "hyundai-accent-int-4.jpg",
+        "photoType": null,
+        "sortOrder": 0,
+        "sourceUrl": "https://commons.wikimedia.org/wiki/File:2020_Hyundai_Verna_SX(O)_1.5_Diesel_interior_(India).png",
+        "variantName": null,
+        "verified": true
+      }
+    ],
+    "generation": null,
+    "highlights": [
+      "Khởi động từ xa bằng chìa khóa tiện lợi khi đỗ ngoài nắng",
+      "Cửa gió điều hòa riêng cho hàng ghế sau",
+      "Cân bằng điện tử ESC & Hỗ trợ khởi hành ngang dốc HAC"
+    ],
+    "id": "27686448-356b-4304-8a8b-e758d2f58cb9",
+    "interiorOverview": "Khoang lái thực dụng hiện đại, màn hình giải trí cảm ứng 8 inch kết nối Apple CarPlay/Android Auto, cửa gió hàng ghế sau và cổng sạc USB.",
+    "listedPrice": 439000000,
+    "modelLine": null,
+    "modelYear": 2024,
+    "name": "Hyundai Accent",
+    "officialName": null,
+    "origin": "Việt Nam (Hyundai Thành Công)",
+    "recordHash": "1a64007f7989de60e62cce4f",
+    "referenceRentPrice": 680000,
+    "seats": 5,
+    "segment": "Sedan đô thị 5 chỗ",
+    "shortDescription": null,
+    "slug": "hyundai-accent",
+    "sortOrder": 15,
+    "source": "https://hyundai.thanhcong.vn/",
+    "specifications": [
+      {
+        "group": "ENGINE",
+        "label": "Động cơ",
+        "source": "Hyundai Thành Công",
+        "value": "Smartstream G 1.5L MPI 4 xi-lanh",
+        "variantName": null
+      },
+      {
+        "group": "ENGINE",
+        "label": "Công suất / Mô-men xoắn",
+        "source": "Hyundai Thành Công",
+        "value": "115 PS @ 6.300 rpm · 144 Nm @ 4.500 rpm",
+        "variantName": null
+      },
+      {
+        "group": "ENGINE",
+        "label": "Hộp số",
+        "source": "Hyundai Thành Công",
+        "value": "IVT vô cấp giả lập / Số sàn 6 cấp",
+        "variantName": null
+      },
+      {
+        "group": "DIMENSIONS",
+        "label": "Kích thước (D × R × C)",
+        "source": "Hyundai Thành Công",
+        "value": "4.535 × 1.765 × 1.485 mm",
+        "variantName": null
+      },
+      {
+        "group": "DIMENSIONS",
+        "label": "Chiều dài cơ sở / Khoảng sáng gầm",
+        "source": "Hyundai Thành Công",
+        "value": "2.670 mm · 165 mm",
+        "variantName": null
+      }
+    ],
+    "subCategory": "SEDAN",
+    "suitableFor": "Người thuê xe tự lái đi làm, cặp đôi hoặc gia đình nhỏ cần xe gọn gàng nhiều tiện nghi",
+    "transmission": "Tự động vô cấp IVT / 6MT",
+    "updatedAt": "2026-11-17T08:11:32.449Z",
+    "usagePurpose": null,
+    "variants": [
+      {
+        "colors": [
+          {
+            "hex": "#63686e",
+            "mediaKey": "hyundai-accent-ext-7.jpg",
+            "name": "Xám titan",
+            "sourceUrl": "https://commons.wikimedia.org/wiki/File:2020_Hyundai_Accent_Essential_in_Urban_Grey,_Front_Right,_05-23-2023.jpg"
+          },
+          {
+            "hex": "#f4f4f2",
+            "mediaKey": null,
+            "name": "Trắng",
+            "sourceUrl": null
+          }
+        ],
+        "driveType": "Cầu trước (FWD)",
+        "fuelType": "Xăng",
+        "listedPrice": 529000000,
+        "name": "1.5 AT Đặc biệt",
+        "referenceRentPrice": 680000,
+        "seats": 5,
+        "summary": "Điều hòa tự động, làm mát ghế trước, sạc không dây, 6 túi khí.",
+        "transmission": "Tự động IVT",
+        "year": 2024
+      }
+    ],
+    "verificationStatus": "VERIFIED",
+    "versionName": null,
+    "visible": true
+  },
+  {
+    "bodyStyle": "SUV điện 5 chỗ",
+    "brand": "VinFast",
+    "category": "CAR",
+    "coverMediaKey": "vinfast-vf8-ext-10.jpg",
+    "defaultDepositSuggestion": null,
+    "description": "VinFast VF 8 là mẫu SUV thuần điện cỡ D thiết kế bởi Pininfarina, trang bị hai mô-tơ điện dẫn động 4 bánh toàn thời gian mạnh mẽ tới 402 mã lực (bản Plus), tầm hoạt động công bố 457–471 km WLTP và hỗ trợ sạc nhanh 10–70% trong khoảng 31 phút.",
+    "driveType": "2 cầu toàn thời gian (AWD)",
+    "engineOverview": "Hai mô-tơ điện đặt trục trước/sau với hệ dẫn động AWD cho mô-men xoắn tức thì 500–620 Nm, kết hợp bộ pin 87,7 kWh bảo hành chính hãng 10 năm.",
+    "exteriorOverview": "Ngoại thất tối giản khí động học với dải đèn LED chữ V đặc trưng trước/sau, tay nắm cửa truyền thống và bộ mâm hợp kim 19–20 inch.",
+    "featured": false,
+    "features": [
+      {
+        "category": "TECHNOLOGY",
+        "name": "Màn hình trung tâm 15,6 inch & Màn hình HUD kính lái",
+        "status": "EQUIPPED",
+        "variantNote": null
+      },
+      {
+        "category": "DRIVER_ASSIST",
+        "name": "Trợ lý ảo giọng nói tiếng Việt & ADAS hỗ trợ lái trên cao tốc",
+        "status": "EQUIPPED",
+        "variantNote": null
+      },
+      {
+        "category": "SAFETY",
+        "name": "11 túi khí bảo vệ toàn diện",
+        "status": "EQUIPPED",
+        "variantNote": null
+      },
+      {
+        "category": "COMFORT",
+        "name": "Sưởi và thông gió hàng ghế trước (bản Plus)",
+        "status": "EQUIPPED",
+        "variantNote": "VF 8 Plus"
+      }
+    ],
+    "fuelType": "Điện (EV)",
+    "gallery": [
+      {
+        "altText": null,
+        "caption": "VinFast VF 8 ngoại thất góc chéo trước (Wikimedia Commons)",
+        "colorName": null,
+        "isPrimary": false,
+        "kind": "EXTERIOR",
+        "license": "CC BY-SA 4.0",
+        "mediaKey": "vinfast-vf8-ext-10.jpg",
+        "photoType": null,
+        "sortOrder": 0,
+        "sourceUrl": "https://commons.wikimedia.org/wiki/File:VinFast_VF_8_IAA_2023_1X7A0681.jpg",
+        "variantName": null,
+        "verified": true
+      },
+      {
+        "altText": null,
+        "caption": "Dải đèn định vị LED chữ V đặc trưng (Wikimedia Commons)",
+        "colorName": null,
+        "isPrimary": false,
+        "kind": "EXTERIOR",
+        "license": "CC BY-SA 4.0",
+        "mediaKey": "vinfast-vf8-ext-11.jpg",
+        "photoType": null,
+        "sortOrder": 0,
+        "sourceUrl": "https://commons.wikimedia.org/wiki/File:VinFast_VF_8_DSC_8470.jpg",
+        "variantName": null,
+        "verified": true
+      },
+      {
+        "altText": null,
+        "caption": "Thiết kế đuôi xe SUV điện cỡ D (Wikimedia Commons)",
+        "colorName": null,
+        "isPrimary": false,
+        "kind": "EXTERIOR",
+        "license": "CC BY-SA 4.0",
+        "mediaKey": "vinfast-vf8-ext-12.jpg",
+        "photoType": null,
+        "sortOrder": 0,
+        "sourceUrl": "https://commons.wikimedia.org/wiki/File:VinFast_VF_8_DSC_8568.jpg",
+        "variantName": null,
+        "verified": true
+      },
+      {
+        "altText": null,
+        "caption": "Khoang lái màn hình trung tâm 15,6 inch (Wikimedia Commons)",
+        "colorName": null,
+        "isPrimary": false,
+        "kind": "INTERIOR",
+        "license": "CC BY-SA 4.0",
+        "mediaKey": "vinfast-vf8-int-4.jpg",
+        "photoType": null,
+        "sortOrder": 0,
+        "sourceUrl": "https://commons.wikimedia.org/wiki/File:Interior_of_VinFast_VF8_car.jpg",
+        "variantName": null,
+        "verified": true
+      }
+    ],
+    "generation": null,
+    "highlights": [
+      "Sức mạnh 349–402 mã lực, dẫn động 2 cầu AWD tăng tốc tức thì",
+      "Pin 87,7 kWh di chuyển công bố ~471 km (WLTP, bản Eco)",
+      "Hỗ trợ sạc nhanh DC 10–70% trong khoảng 31 phút chuẩn CCS2",
+      "Miễn 100% lệ phí trước bạ đối với ô tô điện đăng ký mới theo chính sách hiện hành"
+    ],
+    "id": "32c17532-2c4c-4d0e-8b1b-24aea4563e84",
+    "interiorOverview": "Khoang nội thất tối giản loại bỏ cụm đồng hồ sau vô lăng, thay bằng màn hình cảm ứng trung tâm 15,6 inch kết hợp màn hình HUD hắt kính lái, sưởi/làm mát ghế và điều hòa lọc không khí HEPA.",
+    "listedPrice": 1019000000,
+    "modelLine": null,
+    "modelYear": 2024,
+    "name": "VinFast VF 8",
+    "officialName": null,
+    "origin": "Việt Nam (VinFast)",
+    "recordHash": "c4fa6d83c1325a4d8bb01aa0",
+    "referenceRentPrice": 1450000,
+    "seats": 5,
+    "segment": "SUV thuần điện cỡ D",
+    "shortDescription": null,
+    "slug": "vinfast-vf-8",
+    "sortOrder": 16,
+    "source": "https://vinfastauto.com/vn_vi",
+    "specifications": [
+      {
+        "group": "EV",
+        "label": "Hệ truyền động",
+        "source": "VinFast",
+        "value": "2 mô-tơ điện, dẫn động 2 cầu toàn thời gian (AWD)",
+        "variantName": null
+      },
+      {
+        "group": "EV",
+        "label": "Công suất cực đại",
+        "source": "VinFast",
+        "value": "260 kW / 349 hp (Eco) · 300 kW / 402 hp (Plus)",
+        "variantName": null
+      },
+      {
+        "group": "EV",
+        "label": "Mô-men xoắn cực đại",
+        "source": "VinFast",
+        "value": "500 Nm (Eco) · 620 Nm (Plus)",
+        "variantName": null
+      },
+      {
+        "group": "EV",
+        "label": "Dung lượng pin khả dụng",
+        "source": "VinFast",
+        "value": "87,7 kWh",
+        "variantName": null
+      },
+      {
+        "group": "EV",
+        "label": "Quãng đường công bố (WLTP)",
+        "source": "VinFast",
+        "value": "471 km (Eco) · 457 km (Plus)",
+        "variantName": null
+      },
+      {
+        "group": "EV",
+        "label": "Sạc nhanh DC & Chuẩn cổng",
+        "source": "VinFast",
+        "value": "10–70% ~31 phút · Chuẩn CCS2",
+        "variantName": null
+      },
+      {
+        "group": "EV",
+        "label": "Bảo hành xe & pin",
+        "source": "VinFast",
+        "value": "10 năm hoặc 200.000 km (xe) · 10 năm không giới hạn km (pin)",
+        "variantName": null
+      },
+      {
+        "group": "DIMENSIONS",
+        "label": "Kích thước (D × R × C)",
+        "source": "VinFast",
+        "value": "4.750 × 1.934 × 1.667 mm · Cơ sở 2.950 mm",
+        "variantName": null
+      }
+    ],
+    "subCategory": "ELECTRIC_CAR",
+    "suitableFor": "Người yêu công nghệ, trải nghiệm vận hành êm ái không khí thải và mạng lưới trạm sạc phủ rộng",
+    "transmission": "1 cấp (Xe điện)",
+    "updatedAt": "2026-11-17T08:11:32.501Z",
+    "usagePurpose": null,
+    "variants": [
+      {
+        "colors": [
+          {
+            "hex": "#f4f5f7",
+            "mediaKey": "vinfast-vf8-ext-10.jpg",
+            "name": "Trắng Brahminy White",
+            "sourceUrl": "https://commons.wikimedia.org/wiki/File:VinFast_VF_8_IAA_2023_1X7A0681.jpg"
+          },
+          {
+            "hex": "#144c8a",
+            "mediaKey": "vinfast-vf8-ext-11.jpg",
+            "name": "Xanh VinFast Blue",
+            "sourceUrl": "https://commons.wikimedia.org/wiki/File:VinFast_VF_8_DSC_8470.jpg"
+          }
+        ],
+        "driveType": "AWD",
+        "fuelType": "Điện (EV)",
+        "listedPrice": 1199000000,
+        "name": "VF 8S / Eco (Kèm pin)",
+        "referenceRentPrice": 1450000,
+        "seats": 5,
+        "summary": "349 hp, quãng đường 471 km WLTP, ADAS và 11 túi khí.",
+        "transmission": "1 cấp (Xe điện)",
+        "year": 2024
+      },
+      {
+        "colors": [
+          {
+            "hex": "#8c1722",
+            "mediaKey": null,
+            "name": "Đỏ Crimson Red",
+            "sourceUrl": null
+          }
+        ],
+        "driveType": "AWD",
+        "fuelType": "Điện (EV)",
+        "listedPrice": 1389000000,
+        "name": "VF 8 Plus (Kèm pin)",
+        "referenceRentPrice": 1650000,
+        "seats": 5,
+        "summary": "402 hp, 620 Nm, cửa sổ trời toàn cảnh, sưởi/làm mát ghế và cốp điện.",
+        "transmission": "1 cấp (Xe điện)",
+        "year": 2024
+      }
+    ],
+    "verificationStatus": "VERIFIED",
+    "versionName": null,
+    "visible": true
+  },
+  {
+    "bodyStyle": "Sedan hạng sang",
+    "brand": "Mercedes-Benz",
+    "category": "CAR",
+    "coverMediaKey": "mercedes-c300-ext-7.jpg",
+    "defaultDepositSuggestion": null,
+    "description": "Mercedes-Benz C 300 AMG thế hệ W206 được ví như “tiểu S-Class” nhờ khoang lái màn hình dọc 11,9 inch MBUX thế hệ 2, đèn pha DIGITAL LIGHT siêu sắc nét và động cơ 2.0L kết hợp hệ thống Mild-Hybrid 48V EQ Boost.",
+    "driveType": "Cầu sau (RWD)",
+    "engineOverview": "Động cơ I4 2.0L tăng áp tích hợp máy phát điện 48V EQ Boost cho tổng công suất 258 hp (+20 hp bổ trợ) và 400 Nm, tăng tốc 0–100 km/h trong 6,0 giây.",
+    "exteriorOverview": "Gói ngoại thất AMG Line thể thao với lưới tản nhiệt họa tiết ngôi sao ba cánh, mâm AMG 18 inch 5 chấu kép và đèn pha DIGITAL LIGHT.",
+    "featured": false,
+    "features": [
+      {
+        "category": "SAFETY",
+        "name": "Hệ thống đèn pha DIGITAL LIGHT thông minh",
+        "status": "EQUIPPED",
+        "variantNote": null
+      },
+      {
+        "category": "TECHNOLOGY",
+        "name": "MBUX 11,9 inch & Cụm đồng hồ 12,3 inch",
+        "status": "EQUIPPED",
+        "variantNote": null
+      },
+      {
+        "category": "COMFORT",
+        "name": "Âm thanh vòm 15 loa Burmester 3D",
+        "status": "EQUIPPED",
+        "variantNote": null
+      },
+      {
+        "category": "DRIVER_ASSIST",
+        "name": "Cửa sổ trời Panorama & Camera 360 độ",
+        "status": "EQUIPPED",
+        "variantNote": null
+      }
+    ],
+    "fuelType": "Hybrid",
+    "gallery": [
+      {
+        "altText": null,
+        "caption": "Mercedes-Benz C 300 W206 góc chéo trước (Wikimedia Commons)",
+        "colorName": null,
+        "isPrimary": false,
+        "kind": "EXTERIOR",
+        "license": "CC BY 4.0",
+        "mediaKey": "mercedes-c300-ext-7.jpg",
+        "photoType": null,
+        "sortOrder": 0,
+        "sourceUrl": "https://commons.wikimedia.org/wiki/File:Mercedes-Benz_C300_(W206)_Washington_DC_Metro_Area,_USA.jpg",
+        "variantName": null,
+        "verified": true
+      },
+      {
+        "altText": null,
+        "caption": "Mercedes-Benz C-Class W206 phong cách AMG (Wikimedia Commons)",
+        "colorName": null,
+        "isPrimary": false,
+        "kind": "EXTERIOR",
+        "license": "CC BY-SA 4.0",
+        "mediaKey": "mercedes-c300-ext-8.jpg",
+        "photoType": null,
+        "sortOrder": 0,
+        "sourceUrl": "https://commons.wikimedia.org/wiki/File:Mercedes-AMG_C_43_(W206)_1X7A0893.jpg",
+        "variantName": null,
+        "verified": true
+      },
+      {
+        "altText": null,
+        "caption": "Khoang lái W206 với màn hình dọc MBUX (Wikimedia Commons)",
+        "colorName": null,
+        "isPrimary": false,
+        "kind": "INTERIOR",
+        "license": "CC BY-SA 4.0",
+        "mediaKey": "mercedes-c300-int-4.jpg",
+        "photoType": null,
+        "sortOrder": 0,
+        "sourceUrl": "https://commons.wikimedia.org/wiki/File:Mercedes-Benz_C_200_AVANTGARDE_(W206)_interior.jpg",
+        "variantName": null,
+        "verified": true
+      }
+    ],
+    "generation": null,
+    "highlights": [
+      "Công nghệ chiếu sáng thông minh DIGITAL LIGHT 2,6 triệu điểm ảnh",
+      "Hệ thống âm thanh vòm 15 loa Burmester 3D công suất 710 W",
+      "Động cơ Mild-Hybrid 48V EQ Boost tăng tốc 0–100 km/h trong 6,0 giây"
+    ],
+    "id": "e11777e8-d278-4762-9f5b-47ad6ea3f766",
+    "interiorOverview": "Khoang lái ngập tràn công nghệ với bảng đồng hồ 12,3 inch, màn hình trung tâm 11,9 inch hướng về người lái, đèn viền 64 màu, cửa sổ trời Panorama và dàn âm thanh 15 loa Burmester 3D.",
+    "listedPrice": 2099000000,
+    "modelLine": null,
+    "modelYear": 2024,
+    "name": "Mercedes-Benz C 300 AMG",
+    "officialName": null,
+    "origin": "Việt Nam / Đức",
+    "recordHash": "f1d51bd36330d3ed8bd75c4d",
+    "referenceRentPrice": 2800000,
+    "seats": 5,
+    "segment": "Sedan hạng sang cỡ nhỏ (W206)",
+    "shortDescription": null,
+    "slug": "mercedes-benz-c300-amg",
+    "sortOrder": 17,
+    "source": "https://www.mercedes-benz.com.vn/",
+    "specifications": [
+      {
+        "group": "ENGINE",
+        "label": "Động cơ",
+        "source": "Mercedes-Benz VN",
+        "value": "I4 2.0L Tăng áp + Mild-Hybrid 48V EQ Boost",
+        "variantName": null
+      },
+      {
+        "group": "ENGINE",
+        "label": "Công suất / Mô-men xoắn",
+        "source": "Mercedes-Benz VN",
+        "value": "258 hp (+20 hp EQ Boost) · 400 Nm",
+        "variantName": null
+      },
+      {
+        "group": "ENGINE",
+        "label": "Hộp số & Dẫn động",
+        "source": "Mercedes-Benz VN",
+        "value": "9G-TRONIC 9 cấp · Cầu sau (RWD)",
+        "variantName": null
+      },
+      {
+        "group": "ENGINE",
+        "label": "Tăng tốc 0–100 km/h",
+        "source": "Mercedes-Benz VN",
+        "value": "6,0 giây",
+        "variantName": null
+      },
+      {
+        "group": "DIMENSIONS",
+        "label": "Kích thước (D × R × C)",
+        "source": "Mercedes-Benz VN",
+        "value": "4.751 × 1.820 × 1.437 mm",
+        "variantName": null
+      },
+      {
+        "group": "DIMENSIONS",
+        "label": "Chiều dài cơ sở",
+        "source": "Mercedes-Benz VN",
+        "value": "2.865 mm",
+        "variantName": null
+      }
+    ],
+    "subCategory": "SEDAN",
+    "suitableFor": "Đón tiếp VIP, xe cưới sang trọng, công tác cao cấp và trải nghiệm công nghệ xe sang Đức",
+    "transmission": "Tự động 9G-TRONIC",
+    "updatedAt": "2026-11-17T08:11:32.553Z",
+    "usagePurpose": null,
+    "variants": [
+      {
+        "colors": [
+          {
+            "hex": "#f4f4f6",
+            "mediaKey": "mercedes-c300-ext-7.jpg",
+            "name": "Trắng Polar",
+            "sourceUrl": "https://commons.wikimedia.org/wiki/File:Mercedes-Benz_C300_(W206)_Washington_DC_Metro_Area,_USA.jpg"
+          },
+          {
+            "hex": "#141619",
+            "mediaKey": "mercedes-c300-ext-8.jpg",
+            "name": "Đen Obsidian",
+            "sourceUrl": "https://commons.wikimedia.org/wiki/File:Mercedes-AMG_C_43_(W206)_1X7A0893.jpg"
+          }
+        ],
+        "driveType": "Cầu sau (RWD)",
+        "fuelType": "Hybrid",
+        "listedPrice": 2099000000,
+        "name": "C 300 AMG First Edition / CKD (W206)",
+        "referenceRentPrice": 2800000,
+        "seats": 5,
+        "summary": "DIGITAL LIGHT, 15 loa Burmester 3D, MBUX 11,9 inch và gói AMG Line.",
+        "transmission": "9G-TRONIC 9 cấp",
+        "year": 2024
+      }
+    ],
+    "verificationStatus": "VERIFIED",
+    "versionName": null,
+    "visible": true
+  },
+  {
+    "bodyStyle": "Bán tải cao cấp cabin kép",
+    "brand": "Ford",
+    "category": "PICKUP",
+    "coverMediaKey": "ford-ranger-wildtrak-ext-7.jpg",
+    "defaultDepositSuggestion": null,
+    "description": "Ford Ranger Wildtrak thế hệ mới cân bằng xuất sắc giữa tính thực dụng của một chiếc bán tải chở hàng và sự tiện nghi công nghệ của SUV hiện đại với màn hình SYNC 4A 12 inch, phanh tay điện tử và hệ thống hỗ trợ lái nâng cao.",
+    "driveType": "2 cầu gài điện tử (4x4)",
+    "engineOverview": "Động cơ Diesel 2.0L Bi-Turbo 210 PS / 500 Nm kết hợp hộp số tự động 10 cấp và gài cầu điện tử 2H/4H/4L.",
+    "exteriorOverview": "Đèn pha LED Matrix hình chữ C đặc trưng, bậc bước chân tích hợp hông thùng sau tiện lợi và thanh thể thao thùng hàng khí động học.",
+    "featured": false,
+    "features": [
+      {
+        "category": "TECHNOLOGY",
+        "name": "Màn hình cảm ứng dọc 12 inch SYNC 4A",
+        "status": "EQUIPPED",
+        "variantNote": null
+      },
+      {
+        "category": "SAFETY",
+        "name": "Camera 360 độ & Cảm biến trước sau",
+        "status": "EQUIPPED",
+        "variantNote": null
+      },
+      {
+        "category": "DRIVER_ASSIST",
+        "name": "Kiểm soát hành trình thích ứng & Giữ làn đường",
+        "status": "EQUIPPED",
+        "variantNote": null
+      },
+      {
+        "category": "COMFORT",
+        "name": "Bậc bước hông thùng hàng & Ổ cắm điện thùng sau",
+        "status": "EQUIPPED",
+        "variantNote": null
+      }
+    ],
+    "fuelType": "Dầu (Diesel)",
+    "gallery": [
+      {
+        "altText": null,
+        "caption": "Ford Ranger Wildtrak Next-Gen góc chéo trước (Wikimedia Commons)",
+        "colorName": null,
+        "isPrimary": false,
+        "kind": "EXTERIOR",
+        "license": "CC BY-SA 4.0",
+        "mediaKey": "ford-ranger-wildtrak-ext-7.jpg",
+        "photoType": null,
+        "sortOrder": 0,
+        "sourceUrl": "https://commons.wikimedia.org/wiki/File:Ford_Ranger_(T6,_P703)_Wildtrak_IMG_7320.jpg",
+        "variantName": null,
+        "verified": true
+      },
+      {
+        "altText": null,
+        "caption": "Góc nhìn thùng hàng và thanh thể thao Wildtrak (Wikimedia Commons)",
+        "colorName": null,
+        "isPrimary": false,
+        "kind": "EXTERIOR",
+        "license": "CC BY-SA 4.0",
+        "mediaKey": "ford-ranger-wildtrak-ext-8.jpg",
+        "photoType": null,
+        "sortOrder": 0,
+        "sourceUrl": "https://commons.wikimedia.org/wiki/File:Ford_Ranger_(T6,_P703)_Wildtrak_IMG_7323.jpg",
+        "variantName": null,
+        "verified": true
+      }
+    ],
+    "generation": null,
+    "highlights": [
+      "Động cơ 2.0L Bi-Turbo 210 PS mạnh mẽ cùng hộp số 10 cấp",
+      "Bậc lên xuống tích hợp phía sau bánh sau giúp lấy đồ trên thùng dễ dàng",
+      "Màn hình dọc 12 inch SYNC 4A & Camera 360 độ"
+    ],
+    "id": "8658e6b7-203f-4b20-9bfb-e80e8b55a419",
+    "interiorOverview": "Ghế da thêu logo Wildtrak chỉ vàng cam nổi bật, màn hình dọc 12 inch SYNC 4A, phanh tay điện tử và 6 túi khí.",
+    "listedPrice": 979000000,
+    "modelLine": null,
+    "modelYear": 2024,
+    "name": "Ford Ranger Wildtrak",
+    "officialName": null,
+    "origin": "Việt Nam (Ford Việt Nam)",
+    "recordHash": "a2ba8c4a8f3f1a3a8d74a1e1",
+    "referenceRentPrice": 1300000,
+    "seats": 5,
+    "segment": "Bán tải cao cấp 4x4",
+    "shortDescription": null,
+    "slug": "ford-ranger-wildtrak",
+    "sortOrder": 18,
+    "source": "https://www.ford.com.vn/",
+    "specifications": [
+      {
+        "group": "ENGINE",
+        "label": "Động cơ",
+        "source": "Ford Việt Nam",
+        "value": "2.0L Bi-Turbo Diesel I4",
+        "variantName": null
+      },
+      {
+        "group": "ENGINE",
+        "label": "Công suất / Mô-men xoắn",
+        "source": "Ford Việt Nam",
+        "value": "210 PS @ 3.750 rpm · 500 Nm @ 1.750–2.000 rpm",
+        "variantName": null
+      },
+      {
+        "group": "ENGINE",
+        "label": "Hộp số & Dẫn động",
+        "source": "Ford Việt Nam",
+        "value": "Tự động 10 cấp · 2 cầu bán thời gian 4x4",
+        "variantName": null
+      },
+      {
+        "group": "DIMENSIONS",
+        "label": "Kích thước (D × R × C)",
+        "source": "Ford Việt Nam",
+        "value": "5.362 × 1.918 × 1.875 mm",
+        "variantName": null
+      },
+      {
+        "group": "DIMENSIONS",
+        "label": "Chiều dài cơ sở / Khoảng sáng gầm",
+        "source": "Ford Việt Nam",
+        "value": "3.270 mm · 235 mm",
+        "variantName": null
+      },
+      {
+        "group": "PICKUP",
+        "label": "Tải trọng cho phép & Lội nước",
+        "source": "Ford Việt Nam",
+        "value": "~660 kg · Lội nước 800 mm",
+        "variantName": null
+      }
+    ],
+    "subCategory": "PREMIUM_PICKUP",
+    "suitableFor": "Kết hợp công việc di chuyển công trình và gia đình du lịch cuối tuần tiện nghi như SUV",
+    "transmission": "Tự động 10 cấp",
+    "updatedAt": "2026-11-17T08:11:32.606Z",
+    "usagePurpose": null,
+    "variants": [
+      {
+        "colors": [
+          {
+            "hex": "#d89b1c",
+            "mediaKey": "ford-ranger-wildtrak-ext-7.jpg",
+            "name": "Vàng Luxe Yellow",
+            "sourceUrl": "https://commons.wikimedia.org/wiki/File:Ford_Ranger_(T6,_P703)_Wildtrak_IMG_7320.jpg"
+          },
+          {
+            "hex": "#f4f4f2",
+            "mediaKey": null,
+            "name": "Trắng",
+            "sourceUrl": null
+          }
+        ],
+        "driveType": "2 cầu (4x4)",
+        "fuelType": "Dầu (Diesel)",
+        "listedPrice": 979000000,
+        "name": "Wildtrak 2.0L Bi-Turbo 4x4 AT",
+        "referenceRentPrice": 1300000,
+        "seats": 5,
+        "summary": "Động cơ Bi-Turbo 210 PS, hộp số 10AT, đèn Matrix LED và Camera 360.",
+        "transmission": "Tự động 10 cấp",
+        "year": 2024
+      }
+    ],
+    "verificationStatus": "VERIFIED",
+    "versionName": null,
+    "visible": true
+  },
+  {
+    "bodyStyle": "Bán tải cabin kép",
+    "brand": "Toyota",
+    "category": "PICKUP",
+    "coverMediaKey": "toyota-hilux-ext-7.jpg",
+    "defaultDepositSuggestion": null,
+    "description": "Toyota Hilux nổi tiếng toàn cầu về độ bền cơ khí, khung gầm cứng cáp chịu tải cao (~785 kg tùy phiên bản), khoảng sáng gầm 286 mm ấn tượng và gói Toyota Safety Sense trên bản cao cấp 2.8L 4x4 Adventure.",
+    "driveType": "4x2 / 4x4",
+    "engineOverview": "Động cơ dầu 2GD-FTV 2.4L (148 hp / 400 Nm) bền bỉ tiết kiệm hoặc 1GD-FTV 2.8L (201 hp / 500 Nm) trên bản Adventure.",
+    "exteriorOverview": "Thiết kế vuông vức mạnh mẽ với thùng chở hàng rộng rãi, cản trước chắc chắn và khoảng sáng gầm 286 mm.",
+    "featured": false,
+    "features": [
+      {
+        "category": "SAFETY",
+        "name": "7 túi khí & Cân bằng điện tử VSC",
+        "status": "EQUIPPED",
+        "variantNote": null
+      },
+      {
+        "category": "DRIVER_ASSIST",
+        "name": "Kiểm soát lực kéo chủ động A-TRC & Hỗ trợ đổ đèo DAC",
+        "status": "EQUIPPED",
+        "variantNote": "Bản 4x4"
+      },
+      {
+        "category": "TECHNOLOGY",
+        "name": "Màn hình cảm ứng 9 inch Apple CarPlay / Android Auto",
+        "status": "EQUIPPED",
+        "variantNote": null
+      }
+    ],
+    "fuelType": "Dầu (Diesel)",
+    "gallery": [
+      {
+        "altText": null,
+        "caption": "Toyota Hilux góc chéo trước (Wikimedia Commons)",
+        "colorName": null,
+        "isPrimary": false,
+        "kind": "EXTERIOR",
+        "license": "CC BY-SA 4.0",
+        "mediaKey": "toyota-hilux-ext-7.jpg",
+        "photoType": null,
+        "sortOrder": 0,
+        "sourceUrl": "https://commons.wikimedia.org/wiki/File:Toyota_HiLux_GR_Sport_1X7A7281.jpg",
+        "variantName": null,
+        "verified": true
+      },
+      {
+        "altText": null,
+        "caption": "Toyota Hilux phiên bản cabin kép (Wikimedia Commons)",
+        "colorName": null,
+        "isPrimary": false,
+        "kind": "EXTERIOR",
+        "license": "CC0",
+        "mediaKey": "toyota-hilux-ext-8.jpg",
+        "photoType": null,
+        "sortOrder": 0,
+        "sourceUrl": "https://commons.wikimedia.org/wiki/File:2026_Toyota_Hilux_Z.jpg",
+        "variantName": null,
+        "verified": true
+      },
+      {
+        "altText": null,
+        "caption": "Khoang lái Toyota Hilux (Wikimedia Commons)",
+        "colorName": null,
+        "isPrimary": false,
+        "kind": "INTERIOR",
+        "license": "CC BY-SA 4.0",
+        "mediaKey": "toyota-hilux-int-4.jpg",
+        "photoType": null,
+        "sortOrder": 0,
+        "sourceUrl": "https://commons.wikimedia.org/wiki/File:Toyota_Hilux_GUN126_2.8_GR_Sport_-_interior_view.jpg",
+        "variantName": null,
+        "verified": true
+      },
+      {
+        "altText": null,
+        "caption": "Khoang động cơ Diesel Toyota Hilux (Wikimedia Commons)",
+        "colorName": null,
+        "isPrimary": false,
+        "kind": "ENGINE",
+        "license": "CC BY-SA 4.0",
+        "mediaKey": "toyota-hilux-eng-4.jpg",
+        "photoType": null,
+        "sortOrder": 0,
+        "sourceUrl": "https://commons.wikimedia.org/wiki/File:The_engineroom_of_Toyota_HILUX_Z_(QDF-GUN125-DTTHH).jpg",
+        "variantName": null,
+        "verified": true
+      }
+    ],
+    "generation": null,
+    "highlights": [
+      "Độ bền cơ khí hàng đầu cùng chi phí bảo dưỡng tối ưu",
+      "Khoảng sáng gầm 286 mm và thùng hàng dài 1.525 mm",
+      "Hệ thống hỗ trợ đổ đèo DAC & Khóa vi sai cầu sau (bản 4x4)"
+    ],
+    "id": "245b8d68-09a8-43f9-af3b-810f016ed9f6",
+    "interiorOverview": "Khoang cabin thực dụng với nhiều ngăn chứa đồ, màn hình cảm ứng 9 inch (trên các bản 2024 mới), điều hòa làm lạnh nhanh và 7 túi khí.",
+    "listedPrice": 668000000,
+    "modelLine": null,
+    "modelYear": 2024,
+    "name": "Toyota Hilux",
+    "officialName": null,
+    "origin": "Thái Lan (Toyota Việt Nam)",
+    "recordHash": "b8549189aba3022857a01c7f",
+    "referenceRentPrice": 1050000,
+    "seats": 5,
+    "segment": "Bán tải bền bỉ phục vụ công việc",
+    "shortDescription": null,
+    "slug": "toyota-hilux",
+    "sortOrder": 19,
+    "source": "https://www.toyota.com.vn/",
+    "specifications": [
+      {
+        "group": "ENGINE",
+        "label": "Động cơ",
+        "source": "Toyota Việt Nam",
+        "value": "2GD-FTV 2.4L (148 hp) / 1GD-FTV 2.8L (201 hp)",
+        "variantName": null
+      },
+      {
+        "group": "ENGINE",
+        "label": "Mô-men xoắn cực đại",
+        "source": "Toyota Việt Nam",
+        "value": "400 Nm (2.4L) / 500 Nm (2.8L)",
+        "variantName": null
+      },
+      {
+        "group": "DIMENSIONS",
+        "label": "Kích thước (D × R × C)",
+        "source": "Toyota Việt Nam",
+        "value": "5.325 × 1.855 × 1.815 mm",
+        "variantName": null
+      },
+      {
+        "group": "DIMENSIONS",
+        "label": "Chiều dài cơ sở / Khoảng sáng gầm",
+        "source": "Toyota Việt Nam",
+        "value": "3.085 mm · 286 mm",
+        "variantName": null
+      },
+      {
+        "group": "PICKUP",
+        "label": "Kích thước lòng thùng (D × R × C)",
+        "source": "Toyota Việt Nam",
+        "value": "1.525 × 1.540 × 480 mm",
+        "variantName": null
+      },
+      {
+        "group": "PICKUP",
+        "label": "Tải trọng chuyên chở tham khảo",
+        "source": "Toyota Việt Nam",
+        "value": "~785 kg (tùy phiên bản)",
+        "variantName": null
+      }
+    ],
+    "subCategory": "WORK_PICKUP",
+    "suitableFor": "Chở hàng công trình, đi tỉnh xa, khảo sát địa hình cần độ tin cậy và tiết kiệm chi phí",
+    "transmission": "Tự động 6 cấp / Số sàn 6 cấp",
+    "updatedAt": "2026-11-17T08:11:32.661Z",
+    "usagePurpose": null,
+    "variants": [
+      {
+        "colors": [
+          {
+            "hex": "#f4f4f2",
+            "mediaKey": "toyota-hilux-ext-8.jpg",
+            "name": "Trắng ngọc trai",
+            "sourceUrl": "https://commons.wikimedia.org/wiki/File:2026_Toyota_Hilux_Z.jpg"
+          },
+          {
+            "hex": "#8f1b22",
+            "mediaKey": "toyota-hilux-ext-7.jpg",
+            "name": "Đỏ / Đen",
+            "sourceUrl": "https://commons.wikimedia.org/wiki/File:Toyota_HiLux_GR_Sport_1X7A7281.jpg"
+          }
+        ],
+        "driveType": "Cầu sau (4x2)",
+        "fuelType": "Dầu (Diesel)",
+        "listedPrice": 706000000,
+        "name": "2.4L 4x2 AT",
+        "referenceRentPrice": 1050000,
+        "seats": 5,
+        "summary": "Động cơ 2.4L tiết kiệm, màn hình 9 inch, camera lùi và 7 túi khí.",
+        "transmission": "Tự động 6 cấp",
+        "year": 2024
+      }
+    ],
+    "verificationStatus": "VERIFIED",
+    "versionName": null,
+    "visible": true
+  },
+  {
+    "bodyStyle": "Bán tải phổ thông cabin kép",
+    "brand": "Mitsubishi",
+    "category": "PICKUP",
+    "coverMediaKey": "mitsubishi-triton-ext-7.jpg",
+    "defaultDepositSuggestion": null,
+    "description": "Mitsubishi Triton Athlete ghi điểm nhờ thiết kế Dynamic Shield sắc nét, bán kính quay vòng tối thiểu nhỏ hàng đầu phân khúc (5,9–6,2 m) giúp xoay trở linh hoạt trong đô thị cùng hệ dẫn động Super Select 4WD-II danh tiếng.",
+    "driveType": "Super Select 4WD-II / 4x2",
+    "engineOverview": "Động cơ Diesel MIVEC 2.4L bằng hợp kim nhôm nhẹ giúp giảm trọng lượng đầu xe, cho khả năng vào cua cân bằng.",
+    "exteriorOverview": "Phần đầu xe Dynamic Shield kết hợp bộ tem thể thao Athlete, ốp vòm bánh đen và thanh thể thao thùng sau.",
+    "featured": false,
+    "features": [
+      {
+        "category": "DRIVER_ASSIST",
+        "name": "Hệ dẫn động 2 cầu Super Select 4WD-II & Khóa vi sai sau",
+        "status": "EQUIPPED",
+        "variantNote": "Bản 4x4"
+      },
+      {
+        "category": "SAFETY",
+        "name": "7 túi khí & Cảnh báo điểm mù BSM",
+        "status": "EQUIPPED",
+        "variantNote": "Bản Athlete 4x4"
+      },
+      {
+        "category": "COMFORT",
+        "name": "Điều hòa tự động 2 vùng & Cửa gió trần hàng ghế sau",
+        "status": "EQUIPPED",
+        "variantNote": null
+      }
+    ],
+    "fuelType": "Dầu (Diesel)",
+    "gallery": [
+      {
+        "altText": null,
+        "caption": "Mitsubishi Triton Athlete màu Trắng góc chéo trước (Wikimedia Commons)",
+        "colorName": null,
+        "isPrimary": false,
+        "kind": "EXTERIOR",
+        "license": "CC BY-SA 4.0",
+        "mediaKey": "mitsubishi-triton-ext-7.jpg",
+        "photoType": null,
+        "sortOrder": 0,
+        "sourceUrl": "https://commons.wikimedia.org/wiki/File:Mitsubishi_Triton_2.4_Athlete_4WD_White_Diamond_-_front.jpg",
+        "variantName": null,
+        "verified": true
+      },
+      {
+        "altText": null,
+        "caption": "Góc nhìn phía sau và thùng chở hàng (Wikimedia Commons)",
+        "colorName": null,
+        "isPrimary": false,
+        "kind": "EXTERIOR",
+        "license": "CC BY-SA 4.0",
+        "mediaKey": "mitsubishi-triton-ext-8.jpg",
+        "photoType": null,
+        "sortOrder": 0,
+        "sourceUrl": "https://commons.wikimedia.org/wiki/File:Mitsubishi_Triton_2.4_Athlete_4WD_White_Diamond_-_rear.jpg",
+        "variantName": null,
+        "verified": true
+      }
+    ],
+    "generation": null,
+    "highlights": [
+      "Bán kính quay vòng nhỏ gọn hàng đầu phân khúc bán tải (~5,9 m)",
+      "Hệ dẫn động Super Select 4WD-II cho phép chạy 2 cầu ngay trên đường nhựa tốc độ cao",
+      "Hàng ghế sau thiết kế J-Line độ ngả lưng thoải mái cho hành trình dài"
+    ],
+    "id": "8c0e8bdd-3289-4c87-805a-e1c271c99663",
+    "interiorOverview": "Không gian hàng ghế sau có độ ngả lưng tốt nhất phân khúc (J-Line), màn hình giải trí trung tâm và nút xoay chọn chế độ gài cầu 4 chế độ.",
+    "listedPrice": 780000000,
+    "modelLine": null,
+    "modelYear": 2024,
+    "name": "Mitsubishi Triton Athlete",
+    "officialName": null,
+    "origin": "Thái Lan (Mitsubishi Motors VN)",
+    "recordHash": "903dd429d22e1d6c4fdc7129",
+    "referenceRentPrice": 1100000,
+    "seats": 5,
+    "segment": "Bán tải đa dụng cabin kép",
+    "shortDescription": null,
+    "slug": "mitsubishi-triton",
+    "sortOrder": 20,
+    "source": "https://www.mitsubishi-motors.com.vn/",
+    "specifications": [
+      {
+        "group": "ENGINE",
+        "label": "Động cơ",
+        "source": "Mitsubishi Motors VN",
+        "value": "2.4L MIVEC Diesel (181 PS / 430 Nm — thế hệ mới 204 PS)",
+        "variantName": null
+      },
+      {
+        "group": "ENGINE",
+        "label": "Hộp số & Dẫn động",
+        "source": "Mitsubishi Motors VN",
+        "value": "Tự động 6 cấp · Super Select 4WD-II / 4x2",
+        "variantName": null
+      },
+      {
+        "group": "DIMENSIONS",
+        "label": "Bán kính quay vòng tối thiểu",
+        "source": "Mitsubishi Motors VN",
+        "value": "5,9–6,2 m",
+        "variantName": null
+      },
+      {
+        "group": "DIMENSIONS",
+        "label": "Khoảng sáng gầm xe",
+        "source": "Mitsubishi Motors VN",
+        "value": "220–228 mm",
+        "variantName": null
+      },
+      {
+        "group": "PICKUP",
+        "label": "Tải trọng chuyên chở tham khảo",
+        "source": "Mitsubishi Motors VN",
+        "value": "~740 kg (tùy phiên bản)",
+        "variantName": null
+      }
+    ],
+    "subCategory": "STANDARD_PICKUP",
+    "suitableFor": "Di chuyển linh hoạt trong phố nhờ bán kính quay vòng nhỏ và sẵn sàng dã ngoại cuối tuần",
+    "transmission": "Tự động 6 cấp",
+    "updatedAt": "2026-11-17T08:11:32.713Z",
+    "usagePurpose": null,
+    "variants": [
+      {
+        "colors": [
+          {
+            "hex": "#f4f4f6",
+            "mediaKey": "mitsubishi-triton-ext-7.jpg",
+            "name": "Trắng Diamond",
+            "sourceUrl": "https://commons.wikimedia.org/wiki/File:Mitsubishi_Triton_2.4_Athlete_4WD_White_Diamond_-_front.jpg"
+          },
+          {
+            "hex": "#d85b22",
+            "mediaKey": null,
+            "name": "Cam Đen",
+            "sourceUrl": null
+          }
+        ],
+        "driveType": "Cầu sau (4x2)",
+        "fuelType": "Dầu (Diesel)",
+        "listedPrice": 780000000,
+        "name": "Athlete 4x2 AT",
+        "referenceRentPrice": 1100000,
+        "seats": 5,
+        "summary": "Ngoại thất Athlete thể thao, điều hòa 2 vùng, ghế da hai tông màu.",
+        "transmission": "Tự động 6 cấp",
+        "year": 2024
+      }
+    ],
+    "verificationStatus": "VERIFIED",
+    "versionName": null,
+    "visible": true
+  }
+]

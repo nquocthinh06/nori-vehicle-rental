@@ -32,6 +32,7 @@ const MODULES = [
   { key: 'content', label: 'CMS Website' },
   { key: 'posts', label: 'Bài viết' },
   { key: 'reports', label: 'Báo cáo' },
+  { key: 'settings', label: 'Đồng bộ & Hệ thống' },
 ] as const
 
 const ACTIONS = ['read', 'create', 'update', 'delete', 'publish'] as const
@@ -322,6 +323,9 @@ export function AdminsPanel() {
             <option value="review">Đánh giá</option>
             <option value="nori-site">Nội dung website</option>
             <option value="post">Bài viết CMS</option>
+            <option value="media">Hình ảnh Media</option>
+            <option value="data-sync">Đồng bộ Snapshot</option>
+            <option value="backup">Sao lưu & Khôi phục</option>
             <option value="admin">Tài khoản quản trị</option>
           </Select>
         </div>

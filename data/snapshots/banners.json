@@ -1,0 +1,26 @@
+[
+  {
+    "bannerKey": "banner-1",
+    "credit": "Steffen Schmitz · Wikimedia Commons (CC BY-SA 4.0)",
+    "mediaKey": "nori-hero-10.jpg",
+    "order": 1,
+    "recordHash": "1ef11ce33f3ed224da39b5a9",
+    "updatedAt": "2026-11-18T15:14:22.989Z"
+  },
+  {
+    "bannerKey": "banner-2",
+    "credit": "Steffen Schmitz · Wikimedia Commons (CC BY-SA 4.0)",
+    "mediaKey": "nori-hero-11.jpg",
+    "order": 2,
+    "recordHash": "d8dd07260f1125f6a23915ca",
+    "updatedAt": "2026-11-18T15:14:22.989Z"
+  },
+  {
+    "bannerKey": "banner-3",
+    "credit": "Shyamal · Wikimedia Commons (CC BY-SA 4.0)",
+    "mediaKey": "nori-hero-12.jpg",
+    "order": 3,
+    "recordHash": "064c15134262b8e4d34656f1",
+    "updatedAt": "2026-11-18T15:14:22.989Z"
+  }
+]

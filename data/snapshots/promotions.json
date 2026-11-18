@@ -1,0 +1,19 @@
+[
+  {
+    "active": true,
+    "appliesTo": "RENT",
+    "code": "NORIXINCAMON",
+    "description": null,
+    "discountType": "PERCENT",
+    "discountValue": 10,
+    "id": "cd590627-ae5b-4959-8221-03ba5f3fee26",
+    "maxDiscount": 30,
+    "minDays": 10,
+    "name": "Mùa đông không lạnh cùng với Nori",
+    "recordHash": "391b59e356dbda715c22a634",
+    "updatedAt": "2026-11-18T12:04:13.456Z",
+    "usageLimit": 1,
+    "validFrom": "2026-11-17",
+    "validTo": "2026-11-30"
+  }
+]

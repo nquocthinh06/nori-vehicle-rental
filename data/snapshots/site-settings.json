@@ -1,0 +1,70 @@
+{
+  "_status": "published",
+  "aboutSummary": null,
+  "address": "Số 10 Mai Chí Thọ, Khu đô thị Sala, TP. Thủ Đức, TP. Hồ Chí Minh (Điểm giao nhận DEMO)",
+  "ageRequirement": "Từ đủ 21 tuổi (đối với ô tô/bán tải) hoặc từ đủ 18 tuổi (đối với xe máy).",
+  "businessTimezone": "Asia/Ho_Chi_Minh",
+  "cancellationPolicy": "Khách hàng được tự hủy miễn phí khi đơn đang ở trạng thái Chờ xác nhận hoặc Chờ đặt cọc. Các đơn đã xác nhận cần liên hệ hotline NORI trước giờ nhận xe tối thiểu 24 giờ để được hỗ trợ giải phóng lịch và xử lý tiền cọc theo chính sách.",
+  "contactNote": null,
+  "depositHoldHours": 24,
+  "depositPolicy": "Tiền đặt cọc đảm bảo được tách riêng hoàn toàn khỏi tiền thuê xe và sẽ hoàn trả sau khi kiểm tra xe hoàn tất khi trả xe. Xe bàn giao mức nhiên liệu/pin tương ứng khi nhận và hoàn trả ở mức tương đương.",
+  "email": "hotro@nori.vn",
+  "faqs": [],
+  "faviconMediaKey": null,
+  "footerLinks": [],
+  "headerMenu": [],
+  "heroAutoplaySeconds": 6,
+  "holidays": [
+    {
+      "date": "2026-01-01",
+      "name": "Tết Dương lịch"
+    },
+    {
+      "date": "2026-04-30",
+      "name": "Ngày Giải phóng miền Nam"
+    },
+    {
+      "date": "2026-05-01",
+      "name": "Ngày Quốc tế Lao động"
+    },
+    {
+      "date": "2026-09-02",
+      "name": "Ngày Quốc khánh"
+    }
+  ],
+  "homeIntroDescription": null,
+  "homeIntroTitle": null,
+  "id": "4edaeae0-445a-4723-ae49-06a8d1df0c73",
+  "key": "nori-site",
+  "licenseRequirement": "CCCD gắn chip còn hiệu lực và GPLX hạng A1/A2 (xe máy/mô tô) hoặc hạng B1/B2 trở lên (ô tô/bán tải).",
+  "logoMediaKey": null,
+  "lunchBreakEnd": "13:00",
+  "lunchBreakStart": "12:00",
+  "maintenanceBannerEnabled": false,
+  "maintenanceBannerText": null,
+  "maxPendingBookings": 5,
+  "ogImageMediaKey": null,
+  "openingHours": "07:30 – 21:00 (Thứ Hai – Chủ Nhật)",
+  "phone": "1900 636 000",
+  "privacyPolicy": null,
+  "purchasePolicySummary": "Khách hàng có thể xem giá niêm yết tham khảo, giá bán tại NORI, chi phí lăn bánh dự kiến, đăng ký xem xe, lái thử hoặc gửi yêu cầu mua xe. Yêu cầu mua xe sẽ được chuyên viên xác nhận tình trạng xe và lịch hẹn trước khi ký hồ sơ.",
+  "recordHash": "4d2761784b29cc3260687e57",
+  "rentalPolicySummary": "Thuê xe từ 1 đến 30 ngày nguyên (tính từ ngày nhận, không tính thêm tiền ngày trả). Giá thuê cuối cùng được xác nhận từ hệ thống trước khi giữ lịch. Mọi giao dịch thanh toán hiện thực hiện trực tiếp tại điểm bàn giao hoặc theo xác nhận chính thức của NORI.",
+  "seoDescription": null,
+  "seoTitle": null,
+  "showBenefitsSection": true,
+  "showCtaSection": true,
+  "showFeaturedSection": true,
+  "showHeroSection": true,
+  "showHowItWorksSection": true,
+  "showStorySection": true,
+  "siteName": "NORI",
+  "socialLinks": [],
+  "storyImageMediaKey": "nori-story-3.jpg",
+  "tagline": "Your way. Every day.",
+  "termsOfUse": null,
+  "updatedAt": "2026-11-18T15:14:22.989Z",
+  "workEndTime": "17:30",
+  "workingDays": "1,2,3,4,5",
+  "workStartTime": "08:00"
+}

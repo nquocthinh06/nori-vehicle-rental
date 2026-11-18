@@ -16,7 +16,11 @@ const vehicleAudit = auditCollection({
     salePrice: 'Giá bán',
     depositAmount: 'Tiền đặt cọc',
     odometer: 'ODO',
+    version: 'Phiên bản',
+    color: 'Màu sắc',
+    condition: 'Tình trạng thực tế',
     maintenanceHistory: 'Lịch sử bảo dưỡng',
+    photos: 'Hình ảnh phương tiện',
   },
 })
 
