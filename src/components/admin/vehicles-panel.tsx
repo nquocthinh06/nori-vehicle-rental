@@ -1,13 +1,14 @@
 'use client'
 
 import Image from 'next/image'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { api } from '@/lib/client-api'
 import {
   bookingStatusLabels,
   formatDate,
   formatMoney,
+  getPhotoTypeOptions,
   operationStatusLabels,
 } from '@/lib/rental-rules'
 import {
@@ -27,6 +28,18 @@ import { Dialog } from '@/components/ui/dialog'
 import { Icon } from '@/components/ui/icon'
 import { useToast } from './toast'
 
+type VehiclePhotoItem = {
+  imageId: string
+  url: string
+  alt: string
+  caption: string
+  kind: string
+  photoType: string
+  isPrimary: boolean
+  sortOrder: number
+  altText: string
+}
+
 type VehicleRow = {
   id: string
   reference: string
@@ -34,12 +47,15 @@ type VehicleRow = {
   modelId: string
   modelName: string
   modelSlug: string
-  category: string
+  category: 'CAR' | 'MOTORBIKE' | 'PICKUP'
+  fuelType: string | null
   intent: string
   isDemo: boolean
   vehicleConditionType: string
   manufactureYear: number | null
   pricePerDay: number | null
+  weekendSurcharge: number | null
+  deliveryFee: number | null
   salePrice: number | null
   depositAmount: number | null
   odometer: number | null
@@ -48,15 +64,33 @@ type VehicleRow = {
   location: string | null
   pickupLocation: string | null
   condition: string | null
+  exteriorCondition: string | null
+  interiorCondition: string | null
+  engineCondition: string | null
   maintenanceHistory: string | null
   inspectedAt: string | null
   operationStatus: string
   status: string
-  photos: { image: { url: string; alt: string }; imageId: string }[]
+  photos: {
+    image: { url: string; alt: string }
+    imageId: string
+    caption?: string
+    kind?: string
+    photoType?: string
+    isPrimary?: boolean
+    sortOrder?: number
+    altText?: string
+  }[]
   bookings: { id: string; bookingKey: string; status: string; startDate: string; endDate: string }[]
 }
 
-type ModelOption = { id: string; name: string; brand: string; category: string }
+type ModelOption = {
+  id: string
+  name: string
+  brand: string
+  category: 'CAR' | 'MOTORBIKE' | 'PICKUP'
+  fuelType?: string | null
+}
 
 export function VehiclesPanel() {
   const searchParams = useSearchParams()
@@ -91,16 +125,23 @@ export function VehiclesPanel() {
   const [opStatus, setOpStatus] = useState('READY')
   const [bizStatus, setBizStatus] = useState('ACTIVE')
   const [isDemo, setIsDemo] = useState(false)
+  const [manufactureYear, setManufactureYear] = useState('')
   const [pricePerDay, setPricePerDay] = useState('')
+  const [weekendSurcharge, setWeekendSurcharge] = useState('')
+  const [deliveryFee, setDeliveryFee] = useState('')
   const [salePrice, setSalePrice] = useState('')
   const [depositAmount, setDepositAmount] = useState('')
   const [odometer, setOdometer] = useState('')
   const [version, setVersion] = useState('')
   const [color, setColor] = useState('')
   const [location, setLocation] = useState('')
+  const [pickupLocation, setPickupLocation] = useState('')
   const [condition, setCondition] = useState('')
+  const [exteriorCondition, setExteriorCondition] = useState('')
+  const [interiorCondition, setInteriorCondition] = useState('')
+  const [engineCondition, setEngineCondition] = useState('')
   const [maintenanceHistory, setMaintenanceHistory] = useState('')
-  const [photos, setPhotos] = useState<{ imageId: string; url: string; alt: string }[]>([])
+  const [photos, setPhotos] = useState<VehiclePhotoItem[]>([])
 
   useEffect(() => {
     let active = true
@@ -138,6 +179,18 @@ export function VehiclesPanel() {
     }
   }, [page, q, opFilter, statusFilter, intentFilter, sort, retry])
 
+  const selectedModelMeta = useMemo(
+    () => models.find((m) => m.id === modelId) ?? null,
+    [models, modelId],
+  )
+  const activeCategory: 'CAR' | 'MOTORBIKE' | 'PICKUP' =
+    editing?.category ?? selectedModelMeta?.category ?? 'CAR'
+  const isElectricInstance = (editing?.fuelType ?? selectedModelMeta?.fuelType) === 'Điện (EV)'
+  const instancePhotoTypes = useMemo(
+    () => getPhotoTypeOptions(activeCategory, isElectricInstance, true),
+    [activeCategory, isElectricInstance],
+  )
+
   function openCreate() {
     setEditing(null)
     setReference('')
@@ -147,14 +200,21 @@ export function VehiclesPanel() {
     setOpStatus('READY')
     setBizStatus('ACTIVE')
     setIsDemo(false)
+    setManufactureYear('')
     setPricePerDay('')
+    setWeekendSurcharge('')
+    setDeliveryFee('')
     setSalePrice('')
     setDepositAmount('')
     setOdometer('')
     setVersion('')
     setColor('')
     setLocation('')
+    setPickupLocation('')
     setCondition('')
+    setExteriorCondition('')
+    setInteriorCondition('')
+    setEngineCondition('')
     setMaintenanceHistory('')
     setPhotos([])
     setFormError('')
@@ -170,28 +230,49 @@ export function VehiclesPanel() {
     setOpStatus(v.operationStatus)
     setBizStatus(v.status)
     setIsDemo(v.isDemo)
+    setManufactureYear(v.manufactureYear != null ? String(v.manufactureYear) : '')
     setPricePerDay(v.pricePerDay != null ? String(v.pricePerDay) : '')
+    setWeekendSurcharge(v.weekendSurcharge != null ? String(v.weekendSurcharge) : '')
+    setDeliveryFee(v.deliveryFee != null ? String(v.deliveryFee) : '')
     setSalePrice(v.salePrice != null ? String(v.salePrice) : '')
     setDepositAmount(v.depositAmount != null ? String(v.depositAmount) : '')
     setOdometer(v.odometer != null ? String(v.odometer) : '')
     setVersion(v.version ?? '')
     setColor(v.color ?? '')
     setLocation(v.location ?? '')
+    setPickupLocation(v.pickupLocation ?? '')
     setCondition(v.condition ?? '')
+    setExteriorCondition(v.exteriorCondition ?? '')
+    setInteriorCondition(v.interiorCondition ?? '')
+    setEngineCondition(v.engineCondition ?? '')
     setMaintenanceHistory(v.maintenanceHistory ?? '')
-    setPhotos(v.photos.map((p) => ({ imageId: p.imageId, url: p.image.url, alt: p.image.alt })))
+    setPhotos(
+      v.photos.map((p, idx) => ({
+        imageId: p.imageId,
+        url: p.image.url,
+        alt: p.image.alt,
+        caption: p.caption ?? '',
+        kind: p.kind ?? 'ACTUAL',
+        photoType: p.photoType ?? 'ACTUAL',
+        isPrimary: Boolean(p.isPrimary ?? idx === 0),
+        sortOrder: p.sortOrder ?? idx,
+        altText: p.altText ?? p.image.alt,
+      })),
+    )
     setFormError('')
     setEditorOpen(true)
   }
 
-  async function handlePhotoUpload(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    if (!file) return
+  async function handleMultiPhotoUpload(fileList: FileList | File[]) {
+    const files = Array.from(fileList)
+    if (files.length === 0) return
     setUploading(true)
     setFormError('')
     try {
       const form = new FormData()
-      form.append('file', file)
+      for (const f of files) {
+        form.append('files', f)
+      }
       form.append('alt', `${reference || 'Xe thực tế'} - Ảnh thực tế NORI`)
       form.append('mediaCategory', 'ACTUAL_VEHICLE')
       const res = await fetch('/nori-api/dashboard/media', { method: 'POST', body: form })
@@ -199,16 +280,45 @@ export function VehiclesPanel() {
       if (!res.ok || !json.success) {
         throw new Error(json.error?.message || 'Chưa thể tải ảnh lên.')
       }
-      setPhotos((prev) => [
-        ...prev,
-        { imageId: json.data.id, url: json.data.photo?.url || json.data.url, alt: json.data.alt },
-      ])
-      toast('Đã tải ảnh xe thực tế lên hệ thống.')
+      const uploaded = (json.data.uploaded ?? []) as {
+        id: string
+        alt: string
+        url: string | null
+        photo: { url: string; alt: string } | null
+      }[]
+      const failed = (json.data.failed ?? []) as { name: string; reason: string }[]
+      if (uploaded.length > 0) {
+        setPhotos((prev) => {
+          const hasPrimary = prev.some((x) => x.isPrimary)
+          return [
+            ...prev,
+            ...uploaded.map((u, idx) => ({
+              imageId: u.id,
+              url: u.photo?.url || u.url || '',
+              alt: u.alt,
+              caption: `${reference || 'Xe thực tế'} — Ảnh thực tế`,
+              kind: 'ACTUAL',
+              photoType: 'ACTUAL',
+              isPrimary: !hasPrimary && idx === 0,
+              sortOrder: prev.length + idx,
+              altText: u.alt,
+            })),
+          ]
+        })
+      }
+      if (failed.length > 0) {
+        setFormError(
+          `Đã tải ${uploaded.length}/${files.length} ảnh. Tệp bị từ chối: ${failed
+            .map((f) => `${f.name} (${f.reason})`)
+            .join('; ')}`,
+        )
+      } else {
+        toast(`Đã tải lên ${uploaded.length} ảnh xe thực tế.`)
+      }
     } catch (err) {
       setFormError((err as Error).message)
     } finally {
       setUploading(false)
-      e.target.value = ''
     }
   }
 
@@ -223,16 +333,31 @@ export function VehiclesPanel() {
         operationStatus: opStatus,
         status: bizStatus,
         isDemo,
+        manufactureYear: manufactureYear.trim() ? Number(manufactureYear.trim()) : null,
         pricePerDay: pricePerDay.trim() ? Number(pricePerDay.trim()) : null,
+        weekendSurcharge: weekendSurcharge.trim() ? Number(weekendSurcharge.trim()) : null,
+        deliveryFee: deliveryFee.trim() ? Number(deliveryFee.trim()) : null,
         salePrice: salePrice.trim() ? Number(salePrice.trim()) : null,
         depositAmount: depositAmount.trim() ? Number(depositAmount.trim()) : null,
         odometer: odometer.trim() ? Number(odometer.trim()) : null,
         version: version.trim(),
         color: color.trim(),
         location: location.trim(),
+        pickupLocation: pickupLocation.trim(),
         condition: condition.trim(),
+        exteriorCondition: exteriorCondition.trim(),
+        interiorCondition: activeCategory === 'MOTORBIKE' ? '' : interiorCondition.trim(),
+        engineCondition: engineCondition.trim(),
         maintenanceHistory: maintenanceHistory.trim(),
-        photoIds: photos.map((p) => p.imageId),
+        photos: photos.map((p, idx) => ({
+          imageId: p.imageId,
+          kind: p.kind,
+          photoType: p.photoType,
+          isPrimary: p.isPrimary,
+          sortOrder: idx,
+          caption: p.caption,
+          altText: p.altText,
+        })),
       }
       await api('/dashboard/vehicles', {
         method: editing ? 'PATCH' : 'POST',
@@ -483,7 +608,7 @@ export function VehiclesPanel() {
                   <strong>Dòng xe:</strong> {detail.modelName}
                 </p>
                 <p>
-                  <strong>Biển số:</strong> {detail.licensePlate || 'Chưa cập nhật'}
+                  <strong>Biển số (nội bộ Admin):</strong> {detail.licensePlate || 'Chưa cập nhật'}
                 </p>
                 <p>
                   <strong>Phiên bản / Màu:</strong>{' '}
@@ -547,7 +672,7 @@ export function VehiclesPanel() {
         )}
       </Dialog>
 
-      {/* Create / Edit Dialog */}
+      {/* Create / Edit Vehicle Instance Dialog */}
       <Dialog
         open={editorOpen}
         onClose={() => setEditorOpen(false)}
@@ -568,7 +693,7 @@ export function VehiclesPanel() {
             />
             <Input
               id="veh-plate"
-              label="Biển số (nội bộ)"
+              label="Biển số (nội bộ, không công khai)"
               required
               disabled={Boolean(editing)}
               placeholder="51K-123.45"
@@ -624,26 +749,43 @@ export function VehiclesPanel() {
             </Select>
           </div>
 
-          <div className="grid gap-4 sm:grid-cols-4">
+          <div className="grid gap-4 sm:grid-cols-3 lg:grid-cols-6">
+            <Input
+              id="veh-year"
+              label="Năm SX"
+              type="number"
+              min={1990}
+              max={2035}
+              value={manufactureYear}
+              onChange={(e) => setManufactureYear(e.target.value)}
+            />
             <Input
               id="veh-price-day"
-              label="Giá thuê/ngày (VNĐ)"
+              label="Giá thuê/ngày"
               type="number"
               min={1}
               value={pricePerDay}
               onChange={(e) => setPricePerDay(e.target.value)}
             />
             <Input
-              id="veh-sale-price"
-              label="Giá bán (VNĐ)"
+              id="veh-wk-surcharge"
+              label="Phụ phí T7–CN"
               type="number"
-              min={1}
-              value={salePrice}
-              onChange={(e) => setSalePrice(e.target.value)}
+              min={0}
+              value={weekendSurcharge}
+              onChange={(e) => setWeekendSurcharge(e.target.value)}
+            />
+            <Input
+              id="veh-deliv-fee"
+              label="Phí giao xe"
+              type="number"
+              min={0}
+              value={deliveryFee}
+              onChange={(e) => setDeliveryFee(e.target.value)}
             />
             <Input
               id="veh-deposit"
-              label="Tiền đặt cọc (VNĐ)"
+              label="Tiền đặt cọc"
               type="number"
               min={0}
               value={depositAmount}
@@ -659,7 +801,15 @@ export function VehiclesPanel() {
             />
           </div>
 
-          <div className="grid gap-4 sm:grid-cols-3">
+          <div className="grid gap-4 sm:grid-cols-4">
+            <Input
+              id="veh-sale-price"
+              label="Giá bán thực tế (VNĐ)"
+              type="number"
+              min={1}
+              value={salePrice}
+              onChange={(e) => setSalePrice(e.target.value)}
+            />
             <Input
               id="veh-version"
               label="Phiên bản thực tế"
@@ -668,22 +818,52 @@ export function VehiclesPanel() {
             />
             <Input
               id="veh-color"
-              label="Màu sắc"
+              label="Màu sắc thực tế"
               value={color}
               onChange={(e) => setColor(e.target.value)}
             />
             <Input
               id="veh-location"
-              label="Khu vực / Điểm giao nhận"
+              label="Khu vực"
               value={location}
               onChange={(e) => setLocation(e.target.value)}
+            />
+          </div>
+
+          <Input
+            id="veh-pickup-loc"
+            label="Địa điểm nhận & trả xe"
+            value={pickupLocation}
+            onChange={(e) => setPickupLocation(e.target.value)}
+          />
+
+          <div className="grid gap-4 sm:grid-cols-3">
+            <Input
+              id="veh-ext-cond"
+              label="Tình trạng ngoại thất"
+              value={exteriorCondition}
+              onChange={(e) => setExteriorCondition(e.target.value)}
+            />
+            {activeCategory !== 'MOTORBIKE' && (
+              <Input
+                id="veh-int-cond"
+                label="Tình trạng nội thất"
+                value={interiorCondition}
+                onChange={(e) => setInteriorCondition(e.target.value)}
+              />
+            )}
+            <Input
+              id="veh-eng-cond"
+              label="Tình trạng vận hành"
+              value={engineCondition}
+              onChange={(e) => setEngineCondition(e.target.value)}
             />
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2">
             <Textarea
               id="veh-condition"
-              label="Tình trạng thực tế"
+              label="Tình trạng tổng quát"
               rows={2}
               value={condition}
               onChange={(e) => setCondition(e.target.value)}
@@ -697,43 +877,138 @@ export function VehiclesPanel() {
             />
           </div>
 
-          <div className="rounded-control border border-line p-4">
-            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-              <Text className="text-small font-semibold">Ảnh thực tế của xe ({photos.length})</Text>
+          {/* Multi-Image Instance Upload & Ordering */}
+          <div className="rounded-control border border-line p-4 space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <Text className="text-small font-semibold">
+                  Hình ảnh thực tế của cá thể xe này ({photos.length})
+                </Text>
+                <Text className="text-micro text-muted">
+                  Tải nhiều ảnh thực tế (ngoại thất, ODO, tình trạng...) tách biệt khỏi ảnh
+                  Catalogue.
+                </Text>
+              </div>
               <label className="inline-flex min-h-control-sm cursor-pointer items-center gap-2 rounded-control border border-line bg-subtle px-3 py-1.5 text-caption font-semibold hover:border-brand">
                 <Icon name="upload" className="size-4" />
-                {uploading ? 'Đang tải...' : 'Tải ảnh mới'}
+                {uploading ? 'Đang tải...' : 'Tải nhiều ảnh thực tế'}
                 <input
                   type="file"
+                  multiple
                   accept="image/jpeg,image/png,image/webp,image/avif"
                   className="sr-only"
                   disabled={uploading}
-                  onChange={handlePhotoUpload}
+                  onChange={(e) => {
+                    if (e.target.files?.length) void handleMultiPhotoUpload(e.target.files)
+                    e.target.value = ''
+                  }}
                 />
               </label>
             </div>
+
             {photos.length > 0 ? (
-              <div className="grid grid-cols-3 gap-3 sm:grid-cols-5">
+              <div className="grid gap-3 sm:grid-cols-2">
                 {photos.map((p, idx) => (
                   <div
                     key={`${p.imageId}-${idx}`}
-                    className="relative overflow-hidden rounded-control border border-line"
+                    className={`flex gap-3 rounded-control border p-3 ${
+                      p.isPrimary ? 'border-brand bg-soft/40' : 'border-line bg-canvas'
+                    }`}
                   >
                     <Image
                       src={p.url}
                       alt={p.alt}
-                      width={160}
-                      height={104}
-                      className="h-20 w-full object-cover"
+                      width={96}
+                      height={68}
+                      className="h-18 w-24 shrink-0 rounded-xs object-cover"
                     />
-                    <button
-                      type="button"
-                      onClick={() => setPhotos((prev) => prev.filter((_, i) => i !== idx))}
-                      aria-label="Gỡ ảnh"
-                      className="absolute right-1 top-1 rounded-pill bg-night/80 p-1 text-inverse hover:bg-danger"
-                    >
-                      <Icon name="close" className="size-3" />
-                    </button>
+                    <div className="min-w-0 flex-1 space-y-1.5">
+                      <Select
+                        id={`vphoto-type-${idx}`}
+                        label="Loại ảnh"
+                        value={p.photoType}
+                        onChange={(e) => {
+                          const opt = instancePhotoTypes.find((o) => o.value === e.target.value)
+                          setPhotos((prev) =>
+                            prev.map((item, i) =>
+                              i !== idx
+                                ? item
+                                : {
+                                    ...item,
+                                    photoType: e.target.value,
+                                    kind:
+                                      opt?.kind === 'INTERIOR' || opt?.kind === 'ENGINE'
+                                        ? opt.kind
+                                        : 'ACTUAL',
+                                  },
+                            ),
+                          )
+                        }}
+                      >
+                        {instancePhotoTypes.map((opt) => (
+                          <option key={opt.value} value={opt.value}>
+                            {opt.label}
+                          </option>
+                        ))}
+                      </Select>
+                      <Input
+                        id={`vphoto-cap-${idx}`}
+                        label="Chú thích"
+                        value={p.caption}
+                        onChange={(e) =>
+                          setPhotos((prev) =>
+                            prev.map((item, i) =>
+                              i !== idx ? item : { ...item, caption: e.target.value },
+                            ),
+                          )
+                        }
+                      />
+                      <div className="flex flex-wrap gap-1.5 pt-0.5">
+                        {!p.isPrimary && (
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            onClick={() =>
+                              setPhotos((prev) =>
+                                prev.map((item, i) => ({ ...item, isPrimary: i === idx })),
+                              )
+                            }
+                          >
+                            Đặt ảnh chính
+                          </Button>
+                        )}
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          disabled={idx === 0}
+                          onClick={() =>
+                            setPhotos((prev) => {
+                              const copy = [...prev]
+                              const [m] = copy.splice(idx, 1)
+                              copy.splice(idx - 1, 0, m)
+                              return copy
+                            })
+                          }
+                        >
+                          Lên
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="danger"
+                          onClick={() =>
+                            setPhotos((prev) => {
+                              const next = prev.filter((_, i) => i !== idx)
+                              if (p.isPrimary && next.length > 0) {
+                                next[0] = { ...next[0], isPrimary: true }
+                              }
+                              return next
+                            })
+                          }
+                        >
+                          Gỡ
+                        </Button>
+                      </div>
+                    </div>
                   </div>
                 ))}
               </div>

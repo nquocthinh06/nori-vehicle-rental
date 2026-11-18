@@ -1,3 +1,4 @@
+import { appAuth } from '@/lib/app-auth'
 import { getPayloadClient } from '@/lib/payload'
 import {
   addDays,
@@ -30,6 +31,29 @@ export async function GET(request: Request) {
       vehicle.operationStatus === 'RESERVED'
     )
       return fail('Xe đang được giữ chỗ hoặc chưa nhận đặt thuê.', 409, 'VEHICLE_NOT_AVAILABLE')
+
+    const excludeBookingId = (params.get('excludeBookingId') ?? '').trim()
+    let excludeBookingKey: string | null = null
+    let existingBookingPromo: string | null = null
+    if (excludeBookingId) {
+      const user = await appAuth.currentUser()
+      if (user) {
+        const ownBooking = await payload
+          .findByID({
+            collection: 'bookings',
+            id: excludeBookingId,
+            user,
+            overrideAccess: false,
+            depth: 0,
+          })
+          .catch(() => null)
+        if (ownBooking?.bookingKey) {
+          excludeBookingKey = ownBooking.bookingKey
+          existingBookingPromo = ownBooking.promoCode?.trim().toUpperCase() ?? null
+        }
+      }
+    }
+
     const startDate = params.get('startDate')
     const endDate = params.get('endDate')
     if (!startDate && !endDate) {
@@ -48,6 +72,7 @@ export async function GET(request: Request) {
                   less_than: addDays(businessToday(), 121),
                 },
               },
+              ...(excludeBookingKey ? [{ bookingKey: { not_equals: excludeBookingKey } }] : []),
             ],
           },
           select: { day: true },
@@ -85,6 +110,7 @@ export async function GET(request: Request) {
           and: [
             { vehicle: { equals: id } },
             { day: { greater_than_equal: startDate, less_than: endDate } },
+            ...(excludeBookingKey ? [{ bookingKey: { not_equals: excludeBookingKey } }] : []),
           ],
         },
       }),
@@ -130,6 +156,7 @@ export async function GET(request: Request) {
       })
       const promo = promoRes.docs[0]
       const today = businessToday()
+      const alreadyHeldByThisBooking = existingBookingPromo === promoCodeParam
       if (
         !promo ||
         !promo.active ||
@@ -137,7 +164,9 @@ export async function GET(request: Request) {
         (promo.validFrom && today < promo.validFrom) ||
         (promo.validTo && today > promo.validTo) ||
         (promo.minDays && quote.totalDays < promo.minDays) ||
-        (promo.usageLimit != null && (promo.usedCount ?? 0) >= promo.usageLimit)
+        (!alreadyHeldByThisBooking &&
+          promo.usageLimit != null &&
+          (promo.usedCount ?? 0) >= promo.usageLimit)
       ) {
         promoError = 'Mã khuyến mãi không hợp lệ hoặc chưa đủ điều kiện.'
       } else {

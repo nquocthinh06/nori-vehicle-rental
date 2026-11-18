@@ -5,6 +5,7 @@ import { BodyCustomCode, renderHeadCustomCode } from '@/lib/make-custom-code'
 import { makeSiteSettings, sanitizeHtmlAttribute } from '@/lib/make-site-settings'
 import './styles.css'
 import { AuthProvider } from '@/components/auth-provider'
+import { NotificationProvider } from '@/components/booking-notification-center'
 import { FavoritesProvider } from '@/components/favorites-provider'
 import { ConditionalFooter } from '@/components/conditional-footer'
 import { MobileBottomNav } from '@/components/mobile-bottom-nav'
@@ -80,23 +81,25 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         </ExternalLink>
         <div id="root" tabIndex={-1}>
           <AuthProvider>
-            <FavoritesProvider>
-              <PwaManager />
-              {site.maintenanceBannerEnabled && site.maintenanceBannerText && (
-                <div
-                  role="status"
-                  className="bg-warning-soft px-4 py-2 text-center text-caption font-medium text-warning"
-                >
-                  {site.maintenanceBannerText}
-                </div>
-              )}
-              <SiteHeader />
-              {children}
-              <ConditionalFooter>
-                <SiteFooter site={site} />
-              </ConditionalFooter>
-              <MobileBottomNav />
-            </FavoritesProvider>
+            <NotificationProvider>
+              <FavoritesProvider>
+                <PwaManager />
+                {site.maintenanceBannerEnabled && site.maintenanceBannerText && (
+                  <div
+                    role="status"
+                    className="bg-warning-soft px-4 py-2 text-center text-caption font-medium text-warning"
+                  >
+                    {site.maintenanceBannerText}
+                  </div>
+                )}
+                <SiteHeader />
+                {children}
+                <ConditionalFooter>
+                  <SiteFooter site={site} />
+                </ConditionalFooter>
+                <MobileBottomNav />
+              </FavoritesProvider>
+            </NotificationProvider>
           </AuthProvider>
         </div>
         {googleAnalyticsId && (

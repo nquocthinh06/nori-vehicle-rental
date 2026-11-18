@@ -1,60 +1,52 @@
-# BÁO CÁO KẾT QUẢ KIỂM THỬ TOÀN DIỆN (TEST REPORT — NORI FINAL AUDIT)
+# BÁO CÁO KẾT QUẢ KIỂM THỬ & NGHIỆM THU HỆ THỐNG NORI (TEST REPORT — v2.3)
 
-- **Ngày thực thi kiểm toán**: `2026-11-18`
-- **Môi trường thực thi**: Node.js v22.13.1, Next.js 16.4.6 Standalone, Payload CMS 4.0.0-beta.8, SQLite (`nori.db`), Windows 11.
-- **Trạng thái mã nguồn**: Hoàn tất khắc phục Layout Shift CLS (`0.0038`), hỗ trợ sinh trang động (`dynamicParams = true`), chống đặt trùng lịch 409, chống lặp thanh toán 409, Service Worker allowlist an toàn, cách ly draft theo người dùng, và bổ sung test đa nền tảng Mobile WebKit.
-- **Tình trạng cơ sở dữ liệu (`./nori.db`)**: Nguyên vẹn, toàn vẹn (`PRAGMA integrity_check = ok`, `PRAGMA foreign_key_check = []`), 20 dòng xe, 21 xe DEMO, tài khoản Admin `admin@nori.vn`.
-
----
-
-## 1. Bảng Tổng hợp Kết quả Kiểm thử Sau Hoàn thiện
-
-| STT | Hạng mục Kiểm tra                                          | Bộ công cụ                        | Kết quả thực tế                                 | Trạng thái | Ghi chú & Đánh giá                                                                                                               |
-| --: | :--------------------------------------------------------- | :-------------------------------- | :---------------------------------------------- | :--------- | :------------------------------------------------------------------------------------------------------------------------------- |
-|   1 | Kiểm tra chuẩn định dạng mã nguồn                          | `oxfmt 0.73.0` (`pnpm format`)    | **`195/195` tệp đạt chuẩn**                     | `PASS`     | Toàn bộ mã nguồn, cấu hình, test suites và tài liệu markdown                                                                     |
-|   2 | Phân tích cú pháp tĩnh & bảo mật (Linter)                  | `scripts/static-lint.mjs` (AST)   | **`140/140` tệp (`0` lỗi)**                     | `PASS`     | Không rò rỉ secret, 100% mutation API được bảo vệ bởi `assertOrigin()`                                                           |
-|   3 | Kiểm tra kiểu dữ liệu TypeScript                           | `tsc --noEmit` (`TypeScript 6`)   | **Exit code `0` (`0` lỗi)**                     | `PASS`     | Đồng bộ tuyệt đối kiểu dữ liệu giữa Payload, Server Actions và Client Components                                                 |
-|   4 | Build sản xuất (Production Build)                          | `payload build` (`Next.js 16`)    | **`71/71` trang tĩnh (`○`/`●`)**                | `PASS`     | Đầy đủ 13 route Dashboard (`○`), `/favorites`, `/offline`, `/manifest.webmanifest`, các API routes là `ƒ (Dynamic)`              |
-|   5 | Kiểm thử đơn vị nghiệp vụ (Unit Tests)                     | `node --test` (Node Test Runner)  | **`205/205 PASS` (`209ms`)**                    | `PASS`     | Kiểm tra toàn diện công thức tính giá ngày/tuần/tháng, phụ phí, ma trận 9×9 trạng thái, voucher, kiểm tra hết hạn cọc            |
-|   6 | Kiểm thử DB cô lập Admin                                   | `scripts/test-admin-isolated.mjs` | **`ISOLATED_ADMIN_TEST_PASS`**                  | `PASS`     | Kiểm tra tính lũy kế (idempotency) của seed dữ liệu trên bản sao DB tạm thời, bảo vệ dữ liệu sản xuất                            |
-|   7 | Playwright E2E Core Suite                                  | Playwright Chromium Desktop       | **`43/43 PASS` (`2.2m`)**                       | `PASS`     | Toàn trình tìm xe, giỏ hàng, đặt cọc, duyệt đơn, bàn giao xe, kiểm duyệt đánh giá, xuất báo cáo CSV, WCAG 2.2 AA (`0` vi phạm)   |
-|   8 | Playwright Responsive & PWA Suite                          | Playwright Chromium Mobile        | **`7/7 PASS` (`29.2s`)**                        | `PASS`     | Kiểm tra 11 breakpoints, Bottom Navigation (5 mục, safe area), Bottom Sheet Filter, Offline Fallback, SW Scope, Viewport 375px   |
-|   9 | Playwright Data Sync & Security Suite                      | Playwright Chromium               | **`8/8 PASS` (`12.7s`)**                        | `PASS`     | Dynamic slug rendering ngoài build time, Payload hooks revalidate, Backend price validation, Race 409, Duplicate payment 409, SW |
-|  10 | Playwright Mobile WebKit Suite                             | Playwright Real Mobile WebKit     | **`5/5 PASS` (`11.6s`)**                        | `PASS`     | Mô phỏng iPhone 14 Safari WebKit: Tìm xe, lọc chip, đặt thuê xe, tư vấn mua xe, quản lý tài khoản                                |
-|  11 | **TỔNG CỘNG TEST AUTOMATION**                              | **Unit + E2E Suites**             | **`268 / 268 PASS` (`100%`)**                   | **PASS**   | **Toàn bộ 268 kịch bản kiểm thử tự động đều vượt qua thành công**                                                                |
-|  12 | Đo lường hiệu năng Core Web Vitals (Production)            | Performance Timeline API          | **CLS = `0.0038`, LCP = `516ms`, INP = `40ms`** | `PASS`     | Khắc phục triệt để lỗi CLS `0.1327` trên trang chi tiết Toyota Fortuner; Mobile Throttled 4x CPU đạt CLS `0.0003`                |
-|  13 | Cơ chế sao lưu & phục hồi dữ liệu SQLite                   | `scripts/backup-db.mjs`           | **`PRAGMA integrity_check = ok`**               | `PASS`     | Sao lưu trực tuyến an toàn qua `VACUUM INTO` mà không cần ngắt máy chủ; script phục hồi sẵn sàng                                 |
-|  14 | Cloud Deploy Verification (`figma make verify-deploy`)     | Figma Platform CLI                | **Chưa hỗ trợ shell Windows cục bộ**            | `NOT_RUN`  | Thiếu binary `figma` CLI trên máy tính phát triển cục bộ                                                                         |
-|  15 | Kiểm thử PWA trên thiết bị iPhone/Android vật lý qua HTTPS | Thiết bị thật của người dùng      | **Yêu cầu thiết lập HTTPS tunnel**              | `NOT_RUN`  | Đã cung cấp tài liệu hướng dẫn chi tiết tại `docs/PWA.md`                                                                        |
+- **Ngày kiểm thử**: `2026-11-18`
+- **Môi trường**: Windows · Node.js `v24.22.3` · Next.js `16.4.6` (Production Build & `next start`) · Payload CMS `4.0.0-beta.8` · SQLite (`./nori.db`) · Google Chrome (Playwright `1.65.1` + `@axe-core/playwright` `4.14.0`).
+- **Sao lưu CSDL trước nâng cấp**: `backups/nori-backup-2026-11-17T21-26-01-443Z.db` (`PRAGMA integrity_check = ok`).
 
 ---
 
-## 2. Kết quả Đo lường Hiệu năng & Core Web Vitals Chi tiết
+## 1. Tổng hợp Kết quả Thực thi Lệnh Kiểm định
 
-Đo lường trực tiếp trên máy chủ **Production Build Standalone** (`node .next/standalone/server.js`):
-
-| Tuyến đường (Route)                      | Thiết bị / Môi trường              | CLS Thực tế  | LCP Thực tế | INP / FID | Trạng thái Web Vitals           |
-| :--------------------------------------- | :--------------------------------- | :----------- | :---------- | :-------- | :------------------------------ |
-| `/vehicles/toyota-fortuner` (Trọng điểm) | Desktop (1440×900)                 | **`0.0038`** | `516 ms`    | `40 ms`   | **ĐẠT (Tốt)** (Chuẩn CLS ≤ 0.1) |
-| `/vehicles/honda-pcx`                    | Desktop (1440×900)                 | **`0.0026`** | `516 ms`    | `40 ms`   | **ĐẠT (Tốt)**                   |
-| `/vehicles/ford-ranger-raptor`           | Desktop (1440×900)                 | **`0.0031`** | `580 ms`    | `32 ms`   | **ĐẠT (Tốt)**                   |
-| `/` (Trang chủ)                          | Mobile (390×844)                   | **`0.0000`** | `544 ms`    | `0 ms`    | **ĐẠT (Tốt)**                   |
-| `/vehicles` (Catalogue)                  | Mobile (390×844)                   | **`0.0000`** | `488 ms`    | `24 ms`   | **ĐẠT (Tốt)**                   |
-| `/vehicles/toyota-fortuner`              | Mobile Throttled (4x CPU, Slow 4G) | **`0.0003`** | `1240 ms`   | `48 ms`   | **ĐẠT (Tốt)**                   |
-
-_Ghi chú_: Điểm CLS của `/vehicles/toyota-fortuner` ban đầu là `0.1327` (và có lúc đạt `0.1824` trong điều kiện không có skeleton chuẩn). Sau khi triển khai `VehicleDetailSkeleton` đồng bộ kích thước và khởi tạo giá/cờ demo tại SSR, hiện tượng giật layout đã giảm **97%**, đạt `0.0038`.
+| Bộ kiểm thử                      | Lệnh thực thi                                  |  Tổng số ca   |   PASS   | FAIL  |                BLOCKED / NOT_RUN                | Thời gian |
+| :------------------------------- | :--------------------------------------------- | :-----------: | :------: | :---: | :---------------------------------------------: | :-------: |
+| **Code Formatting**              | `pnpm format:check`                            |    211 tệp    |   211    |   0   |                        0                        |  `~60ms`  |
+| **TypeScript Strict Check**      | `pnpm typecheck`                               |  Toàn dự án   |   PASS   |   0   |                        0                        |  `~4.5s`  |
+| **AST Security & CSRF Lint**     | `pnpm lint`                                    |    149 tệp    |   149    |   0   |                        0                        |  `~0.4s`  |
+| **Domain Unit Tests**            | `pnpm test`                                    |    **225**    | **225**  | **0** |                        0                        | `210.8ms` |
+| **Isolated Admin Auth & FK**     | `pnpm test:admin`                              |    1 suite    | **PASS** |   0   |                        0                        |  `~2.1s`  |
+| **Production Build & SSG**       | `pnpm build`                                   | 74 trang tĩnh |  **74**  |   0   |                        0                        |  `~12s`   |
+| **Playwright E2E & WCAG 2.2 AA** | `pnpm exec playwright test --project=chromium` |    **62**     |  **62**  | **0** |                        0                        |  `2.5m`   |
+| **Figma Sandbox Deploy Check**   | `figma make verify-deploy`                     |       1       |    0     |   0   | **1 (`BLOCKED` — thiếu binary `figma` cục bộ)** |     —     |
 
 ---
 
-## 3. Xác minh 10 Hạng mục Nghiệp vụ & Bảo mật Trọng yếu
+## 2. Kết quả Chi tiết Theo Nhóm Chức năng Nâng cấp
 
-1. **Khắc phục lỗi Dynamic Slug Routes**: Thêm `export const dynamicParams = true` tại `vehicles/[slug]/page.tsx`, giúp người quản trị tạo xe mới trên Admin và khách hàng xem được ngay mà không phải build lại.
-2. **Khắc phục đồng bộ dữ liệu tĩnh**: Payload hooks kích hoạt `revalidateTag` bóc tách slug dòng xe từ xe cụ thể để xóa đúng tag `nori-model-${slug}` và `nori-catalogue-v3`.
-3. **Chống đặt xe trùng lịch đồng thời**: Hai request đồng thời gửi lên cùng khoảng ngày được xử lý trong transaction; một đơn thành công `201`, đơn còn lại trả `409 Conflict`.
-4. **Chống gọi thanh toán lặp**: Cơ chế Idempotency guard 30 giây trong `/nori-api/dashboard/payments` phát hiện request trùng lặp và từ chối với `HTTP 409 DUPLICATE_PAYMENT`.
-5. **Kiểm soát phân quyền RBAC**: 13 route Dashboard và toàn bộ API `/nori-api/dashboard/*` từ chối `403` với tài khoản khách hàng thông thường (`users`).
-6. **Bảo mật Service Worker**: Chỉ cache tài nguyên công khai tĩnh theo danh sách cho phép (Allowlist), chặn 100% việc cache cookie, auth, API và các trang thông tin cá nhân.
-7. **Dọn sạch Cache khi Đăng xuất**: Gửi message `CLEAR_CACHES` xóa sạch runtime caches của Service Worker ngay khi người dùng đăng xuất.
-8. **Cách ly Checkout Draft**: Bản nháp giỏ hàng được gán mã `userId` trong `sessionStorage`, xóa sạch khi đăng xuất nhằm bảo đảm không rò rỉ dữ liệu cá nhân sang tài khoản khác.
-9. **Kiểm thử Đa nền tảng WebKit**: Chạy thành công 5 kịch bản Playwright trên engine WebKit (Mobile Safari iPhone 14), kiểm tra đầy đủ tìm xe, lọc danh mục, đặt thuê xe, tư vấn mua xe và quản lý tài khoản.
-10. **Sao lưu trực tuyến SQLite**: Triển khai `scripts/backup-db.mjs` sử dụng lệnh SQLite chuẩn `VACUUM INTO`, tạo bản sao lưu nhất quán (2.18 MB) với `PRAGMA integrity_check = ok` mà không làm gián đoạn hệ thống.
+1. **Phần A – Chỉnh sửa đơn thuê đang chờ duyệt (`BK-01..BK-24`)**: **`24/24 PASS`**
+   - Cho phép xem chi tiết, chỉnh sửa thông tin thuê và hủy đơn khi `status === 'PENDING'` và chưa có giao dịch `payments`.
+   - Loại trừ chính `bookingKey` đang chỉnh sửa khi kiểm tra trùng lịch nhưng chặn `HTTP 409` nếu trùng với đơn của khách khác hoặc lịch bảo trì.
+   - Chặn giả mạo `totalPrice`/`status` (`HTTP 400`), chặn sửa chéo tài khoản IDOR (`HTTP 403`), chặn sửa khi có giao dịch đối soát (`HTTP 409`), và chặn xung đột khi Admin duyệt đơn đồng thời bằng Optimistic Locking `revision` (`HTTP 409` kèm thông báo hướng dẫn chuẩn).
+   - Lưu đầy đủ `modificationHistory` và `AuditLogs`, hiển thị đồng bộ trên cả `/my-bookings` và `/dashboard/bookings`.
+
+2. **Phần B – Thông báo xác nhận đơn & Quy trình liên hệ tư vấn (`NT-01..NT-18`)**: **`18/18 PASS`**
+   - Tự động tạo idempotent `Notifications` (`eventKey` duy nhất) và `Consultations` ngay khi Admin duyệt đơn sang `CONFIRMED`.
+   - Hiển thị Popup `"Đơn thuê của bạn đã được xác nhận!"` đúng 01 lần cho khách hàng sở hữu đơn (không bật lại sau khi bấm `"Tôi đã hiểu"` và tải lại trang; xem lại mọi lúc qua Chuông thông báo trên Header), che số điện thoại nhạy cảm (`098***4321`) và ghi rõ xác nhận đơn chưa bao gồm xác nhận đã thanh toán.
+   - Tính chính xác ngày làm việc kế tiếp (`calculateNextContactSlot`) bỏ qua Thứ Bảy/Chủ Nhật và ngày nghỉ lễ cấu hình từ Admin; tự động gắn nhãn `Đơn thuê gấp` khi lịch nhận xe diễn ra trước khung giờ liên hệ dự kiến; tự động ẩn popup (`superseded = true`) nếu đơn bị hủy trước khi khách đọc.
+   - Nhân viên cập nhật kết quả cuộc gọi và lọc trạng thái tư vấn tại `/dashboard/bookings` độc lập hoàn toàn với trạng thái thanh toán/hợp đồng.
+
+3. **Phần C – Hero Carousel phương tiện & Responsive (`HR-01..HR-20`)**: **`20/20 PASS`**
+   - Đã khắc phục lỗi mảng `heroImages` phong cảnh ghi đè ảnh xe và lỗi dừng autoplay khi chuột nằm trong vùng Hero rộng.
+   - Chuẩn hóa 5 slide phương tiện sắc nét (`1280×826`) quản trị từ `/dashboard/content` (`NoriSite.heroSlides`), tự động chuyển slide mượt, hỗ trợ Next/Prev, Pause/Resume, vuốt cảm ứng, bảo toàn 100% dữ liệu `<SearchBar />`, đạt `0` tràn ngang trên 9 độ rộng (`320px`–`1920px`) và `0` lỗi `axe-core` WCAG 2.2 AA (`target-size >= 28×28px`).
+
+4. **Phần D, E, F, G – Bảo mật Media, Quản trị Phương tiện 10 Tab & Đồng bộ Dữ liệu (`MD-01..18`, `VH-01..20`)**: **`38/38 PASS`**
+   - API `/nori-api/dashboard/media` kiểm tra chữ ký nhị phân magic-byte, kích thước thực qua `sharp`, tải nhiều ảnh một lần, chặn khách thường tải ảnh (`403`), chặn tệp giả mạo/quá cỡ (`400`) và chặn xóa ảnh đang được tham chiếu (`409`).
+   - Không gian `/dashboard/models` 10 tab và `/vehicles/[slug]` tự động thích ứng cho Ô tô, Xe máy, Bán tải và Xe điện; hoàn thiện đầy đủ hồ sơ xác thực cho `VinFast Evo Max` (`vinfast-evo-max`); sắp xếp deterministic `reference` trên `/nori-api/fleet`; đảm bảo đổi giá Admin cập nhật tức thì trang công khai nhưng giữ nguyên snapshot giá của các đơn đã xác nhận.
+
+---
+
+## 3. Kiểm tra Toàn vẹn Cơ sở Dữ liệu Sau Kiểm thử
+
+- `PRAGMA integrity_check` = `'ok'`
+- `PRAGMA foreign_key_check` = `[]` (`0` vi phạm khóa ngoại)
+- Toàn bộ tài khoản và dữ liệu kiểm thử tạm thời của Playwright đã được dọn sạch hoàn toàn.

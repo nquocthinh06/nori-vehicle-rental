@@ -17,9 +17,34 @@ export type Photo = {
   colorName?: string | null
   variantName?: string | null
 }
+
+export type HeroSlideView = {
+  id: string
+  titleFirst: string
+  titleSecond: string | null
+  eyebrow: string | null
+  categoryBadge: string | null
+  description: string | null
+  ctaText: string
+  ctaHref: string
+  secondaryText: string | null
+  secondaryHref: string | null
+  desktopImage: Photo | null
+  mobileImage: Photo | null
+  relatedCategory: Category | null
+  credit: string | null
+  sourceUrl: string | null
+  durationSeconds: number | null
+  order: number
+}
+
 export type ModelView = {
   id: VehicleModel['id']
   name: string
+  officialName: string | null
+  modelLine: string | null
+  versionName: string | null
+  generation: string | null
   slug: string
   brand: string
   category: Category
@@ -34,13 +59,21 @@ export type ModelView = {
   driveType: string | null
   listedPrice: number | null
   referenceRentPrice: number | null
+  defaultDepositSuggestion: number | null
   suitableFor: string | null
+  usagePurpose: string | null
+  shortDescription: string | null
   description: string | null
   exteriorOverview: string | null
   interiorOverview: string | null
   engineOverview: string | null
   highlights: string[]
-  features: { name: string; category: string; variantNote: string | null }[]
+  features: {
+    name: string
+    category: string
+    status: string
+    variantNote: string | null
+  }[]
   cover: Photo | null
   source: string | null
   verificationStatus: string
@@ -48,6 +81,10 @@ export type ModelView = {
   gallery: {
     image: Photo
     kind: GalleryKind
+    photoType: string | null
+    isPrimary: boolean
+    sortOrder: number
+    altText: string | null
     caption: string | null
     variantName: string | null
     colorName: string | null
@@ -126,9 +163,43 @@ function modelView(model: VehicleModel, fleet: Vehicle[]): ModelView {
     if (item.color) colorSet.add(item.color)
   }
 
+  const galleryMapped = (model.gallery ?? [])
+    .map((g, idx) => {
+      const image = photo(g.image)
+      if (!image) return null
+      if (g.altText && g.altText.trim()) {
+        image.alt = g.altText.trim()
+      }
+      return {
+        image,
+        kind: g.kind as GalleryKind,
+        photoType: g.photoType ?? null,
+        isPrimary: Boolean(g.isPrimary),
+        sortOrder: typeof g.sortOrder === 'number' ? g.sortOrder : idx,
+        altText: g.altText ?? null,
+        caption: g.caption ?? null,
+        variantName: g.variantName ?? null,
+        colorName: g.colorName ?? null,
+        sourceUrl: g.sourceUrl ?? image.sourceUrl ?? null,
+        license: g.license ?? image.license ?? null,
+      }
+    })
+    .filter((item): item is NonNullable<typeof item> => item !== null)
+    .sort((a, b) => a.sortOrder - b.sortOrder)
+
+  const resolvedCover =
+    photo(model.cover) ??
+    galleryMapped.find((g) => g.isPrimary)?.image ??
+    galleryMapped[0]?.image ??
+    null
+
   return {
     id: model.id,
     name: model.name,
+    officialName: model.officialName ?? null,
+    modelLine: model.modelLine ?? null,
+    versionName: model.versionName ?? null,
+    generation: model.generation ?? null,
     slug: model.slug,
     brand: model.brand,
     category: model.category,
@@ -143,7 +214,10 @@ function modelView(model: VehicleModel, fleet: Vehicle[]): ModelView {
     driveType: model.driveType ?? null,
     listedPrice: model.listedPrice ?? null,
     referenceRentPrice: model.referenceRentPrice ?? null,
+    defaultDepositSuggestion: model.defaultDepositSuggestion ?? null,
     suitableFor: model.suitableFor ?? null,
+    usagePurpose: model.usagePurpose ?? null,
+    shortDescription: model.shortDescription ?? null,
     description: model.description ?? null,
     exteriorOverview: model.exteriorOverview ?? null,
     interiorOverview: model.interiorOverview ?? null,
@@ -152,28 +226,14 @@ function modelView(model: VehicleModel, fleet: Vehicle[]): ModelView {
     features: (model.features ?? []).map((f) => ({
       name: f.name,
       category: f.category ?? 'COMFORT',
+      status: f.status ?? 'EQUIPPED',
       variantNote: f.variantNote ?? null,
     })),
-    cover: photo(model.cover),
+    cover: resolvedCover,
     source: model.source ?? null,
     verificationStatus: model.verificationStatus ?? 'VERIFIED',
     featured: !!model.featured,
-    gallery: (model.gallery ?? []).flatMap((g) => {
-      const image = photo(g.image)
-      return image
-        ? [
-            {
-              image,
-              kind: g.kind as GalleryKind,
-              caption: g.caption ?? null,
-              variantName: g.variantName ?? null,
-              colorName: g.colorName ?? null,
-              sourceUrl: g.sourceUrl ?? image.sourceUrl ?? null,
-              license: g.license ?? image.license ?? null,
-            },
-          ]
-        : []
-    }),
+    gallery: galleryMapped,
     specifications: (model.specifications ?? []).map((s) => ({
       group: s.group ?? 'OVERVIEW',
       label: s.label,
@@ -253,6 +313,31 @@ export const getSiteContent = unstable_cache(
   async () => {
     const payload = await getPayloadClient()
     const site = await payload.findGlobal({ slug: 'nori-site', overrideAccess: false, depth: 1 })
+    const rawSlides = site.heroSlides ?? []
+    const hasConfiguredSlides = rawSlides.length > 0
+    const activeSlides: HeroSlideView[] = rawSlides
+      .filter((s) => s.active !== false)
+      .map((s, idx) => ({
+        id: s.id ?? `slide-${idx + 1}`,
+        titleFirst: s.titleFirst,
+        titleSecond: s.titleSecond ?? null,
+        eyebrow: s.eyebrow ?? null,
+        categoryBadge: s.categoryBadge ?? null,
+        description: s.description ?? null,
+        ctaText: s.ctaText,
+        ctaHref: s.ctaHref,
+        secondaryText: s.secondaryText ?? null,
+        secondaryHref: s.secondaryHref ?? null,
+        desktopImage: photo(s.desktopImage),
+        mobileImage: photo(s.mobileImage),
+        relatedCategory: (s.relatedCategory as Category | null) ?? null,
+        credit: s.credit ?? null,
+        sourceUrl: s.sourceUrl ?? null,
+        durationSeconds: typeof s.durationSeconds === 'number' ? s.durationSeconds : null,
+        order: typeof s.order === 'number' ? s.order : idx,
+      }))
+      .sort((a, b) => a.order - b.order)
+
     return {
       siteName: site.siteName ?? 'NORI',
       tagline: site.tagline ?? 'Your way. Every day.',
@@ -261,6 +346,9 @@ export const getSiteContent = unstable_cache(
       seoTitle: site.seoTitle ?? null,
       seoDescription: site.seoDescription ?? null,
       ogImage: photo(site.ogImage),
+      heroAutoplaySeconds: site.heroAutoplaySeconds ?? 6,
+      hasConfiguredHeroSlides: hasConfiguredSlides,
+      heroSlides: activeSlides,
       heroImages: (site.heroImages ?? []).flatMap((h) => {
         const image = photo(h.image)
         return image ? [{ image, credit: h.credit ?? '' }] : []
@@ -282,6 +370,16 @@ export const getSiteContent = unstable_cache(
       phone: site.phone ?? null,
       email: site.email ?? null,
       openingHours: site.openingHours ?? null,
+      businessTimezone: site.businessTimezone ?? 'Asia/Ho_Chi_Minh',
+      workingDays: site.workingDays ?? '1,2,3,4,5',
+      workStartTime: site.workStartTime ?? null,
+      workEndTime: site.workEndTime ?? null,
+      lunchBreakStart: site.lunchBreakStart ?? null,
+      lunchBreakEnd: site.lunchBreakEnd ?? null,
+      holidays: (site.holidays ?? []).map((h) => ({
+        date: h.date,
+        name: h.name,
+      })),
       contactNote: site.contactNote ?? null,
       rentalPolicySummary: site.rentalPolicySummary ?? null,
       purchasePolicySummary: site.purchasePolicySummary ?? null,
@@ -298,7 +396,7 @@ export const getSiteContent = unstable_cache(
       maintenanceBannerText: site.maintenanceBannerText ?? null,
     }
   },
-  ['nori-site-v4'],
+  ['nori-site-v5'],
   { tags: ['nori-site'] },
 )
 

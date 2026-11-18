@@ -1,7 +1,7 @@
-# CÁC VẤN ĐỀ TỒN ĐỌNG (KNOWN ISSUES)
+# CÁC VẤN ĐỀ TỒN ĐỌNG & GIỚI HẠN MÔI TRƯỜNG (KNOWN ISSUES)
 
-1. **Dữ liệu Demo (`21` xe & liên hệ `NoriSite`)**: Toàn bộ `21` xe thực tế hiện mang cờ `isDemo = true` và `NoriSite` chứa thông tin liên hệ mẫu `(DEMO)`. Cần thay thế bằng tài sản thật qua `/dashboard/vehicles` và `/dashboard/content` trước khi Go-Live thương mại.
-2. **Thanh toán trực tuyến (`VNPay`/`MoMo`/`Stripe`)**: Chưa tích hợp webhook thanh toán tự động; hiện dùng sổ thu/chi xác nhận ngoại tuyến tại `/dashboard/payments`.
-3. **Email / SMS Adapter**: Chưa cấu hình SMTP/Resend nên chưa hỗ trợ gửi email đặt lại mật khẩu hoặc thông báo tự động qua email.
-4. **Thuê theo giờ (`pricePerHour` / `bufferHours`)**: Chưa kích hoạt đặt thuê theo giờ; lịch khả dụng khóa theo ngày (`YYYY-MM-DD`).
-5. **Cloud Deploy Verification (`figma make verify-deploy`)**: Không thể chạy trên shell Windows cục bộ vì thiếu `figma` CLI.
+1. **Dữ liệu Đội xe Minh họa (`isDemo = true`)**: Toàn bộ `21` cá thể xe thực tế trong bảng `vehicles` hiện mang cờ `isDemo = true` và `NoriSite` hiển thị địa chỉ liên hệ mẫu `(DEMO)`; mẫu dòng xe mới `VinFast Evo Max` (`vinfast-evo-max`) được hoàn thiện đầy đủ hồ sơ Catalogue xác thực nhưng chủ động giữ `0` cá thể xe thực tế cho đến khi đơn vị vận hành nhập xe thật vào kho tại `/dashboard/vehicles`.
+2. **Thanh toán trực tuyến (`VNPay` / `MoMo` / `Stripe`)**: Chưa đấu nối cổng thanh toán tự động; hiện sử dụng quy trình nhân viên liên hệ tư vấn sau duyệt đơn và sổ thu/chi đối soát tại `/dashboard/payments` (kèm khóa không cho khách tự sửa đơn khi đã phát sinh giao dịch chờ đối soát).
+3. **Email / SMS Adapter thực tế**: Chưa cấu hình SMTP/SMS nhà mạng bên ngoài; hệ thống thông báo xác nhận đơn thuê hiện hoạt động thời gian thực trong ứng dụng (In-App Confirmation Popup + Chuông thông báo Header + mục Thông báo tại `/account`), không giả lập tuyên bố đã gửi SMS/Email thật.
+4. **Thuê theo giờ (`pricePerHour` / `bufferHours`)**: Giá theo giờ được hiển thị ở mức tham khảo; việc giữ lịch `rental_days` và hợp đồng đặt thuê trực tuyến hiện tính theo ngày nguyên (`YYYY-MM-DD`).
+5. **Cloud Deploy Verification (`figma make verify-deploy`)**: Không thể thực thi trên môi trường Windows cục bộ (`NOT_RUN` / `BLOCKED` do không có binary `figma` của sandbox Figma Make); đã thay thế kiểm chứng bằng `pnpm build` (toàn bộ `74/74` trang tĩnh prerender thành công) và chạy trọn bộ `62/62` bài kiểm thử E2E trên máy chủ sản xuất `next start`.

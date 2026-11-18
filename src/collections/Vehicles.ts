@@ -332,6 +332,11 @@ export const Vehicles: CollectionConfig = {
           options: ['EXTERIOR', 'INTERIOR', 'ENGINE', 'ACTUAL'],
           defaultValue: 'EXTERIOR',
         },
+        { name: 'photoType', label: 'Phân loại góc chụp thực tế', type: 'text' },
+        { name: 'isPrimary', label: 'Ảnh chính của xe', type: 'checkbox', defaultValue: false },
+        { name: 'sortOrder', label: 'Thứ tự hiển thị', type: 'number', defaultValue: 0 },
+        { name: 'altText', label: 'Alt text riêng', type: 'text' },
+        { name: 'sourceName', label: 'Nguồn chụp / Người cập nhật', type: 'text' },
       ],
     },
     {

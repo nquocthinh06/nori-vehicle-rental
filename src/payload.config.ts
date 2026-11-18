@@ -8,9 +8,11 @@ import { fileURLToPath } from 'url'
 import { Admins } from './collections/Admins'
 import { AuditLogs } from './collections/AuditLogs'
 import { Bookings } from './collections/Bookings'
+import { Consultations } from './collections/Consultations'
 import { Folders } from './collections/Folders'
 import { MaintenanceSchedules } from './collections/MaintenanceSchedules'
 import { Media } from './collections/Media'
+import { Notifications } from './collections/Notifications'
 import { Payments } from './collections/Payments'
 import { Posts } from './collections/Posts'
 import { Promotions } from './collections/Promotions'
@@ -72,6 +74,8 @@ export default buildConfig({
     MaintenanceSchedules,
     RentalDays,
     Bookings,
+    Consultations,
+    Notifications,
     SalesInquiries,
     Promotions,
     Payments,

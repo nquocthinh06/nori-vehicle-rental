@@ -94,10 +94,10 @@ Breakpoints: mobile <768px, tablet 768–1023px, desktop ≥1024px; xl ≥1280px
 
 ### 3.5 Motion
 
-- Standard transition: 180ms; image hover: 500ms; entrance: 450ms.
+- Standard transition: 180ms; image hover: 500ms; entrance: 450ms; Hero crossfade: 700ms kèm zoom tinh tế `scale-[1.03]` trong `6s`.
 - Easing: `cubic-bezier(.2,.7,.2,1)`.
-- Hero chỉ đổi khi người dùng thao tác.
-- `prefers-reduced-motion: reduce` must tắt animation và smooth scrolling không thiết yếu.
+- Hero Carousel tự động chuyển đổi 5 slide phương tiện quản trị từ CMS (`NoriSite.heroSlides`), tạm dừng khi người dùng bấm Pause, chạm cảm ứng, focus điều khiển hoặc khi tab trình duyệt ẩn (`visibilitychange`). Mọi nút chỉ số & điều hướng Hero đạt tối thiểu `28×28px` (`min-w-7 min-h-7`, vượt chuẩn WCAG 2.2 SC 2.5.8 `24×24px`).
+- `prefers-reduced-motion: reduce` must tắt tự động chuyển slide, tắt animation không thiết yếu và smooth scrolling.
 
 ### 3.6 Mobile-first & PWA UI Patterns
 

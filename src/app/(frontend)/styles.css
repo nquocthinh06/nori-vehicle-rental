@@ -96,6 +96,15 @@
   }
 }
 
+@keyframes noriHeroProgress {
+  from {
+    width: 0%;
+  }
+  to {
+    width: 100%;
+  }
+}
+
 @layer base {
   :root {
     color-scheme: light;
@@ -184,6 +193,13 @@
 }
 
 @layer utilities {
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
   .hero-shade {
     background:
       linear-gradient(

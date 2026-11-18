@@ -71,6 +71,10 @@ function buildModelPayloadData(spec: SeedModelSpec, mediaIds: Map<string, string
   const coverId = mediaIds.get(spec.coverKey)
   return {
     name: spec.name,
+    officialName: spec.officialName,
+    modelLine: spec.modelLine,
+    versionName: spec.versionName,
+    generation: spec.generation,
     slug: spec.slug,
     brand: spec.brand,
     category: spec.category,
@@ -85,6 +89,9 @@ function buildModelPayloadData(spec: SeedModelSpec, mediaIds: Map<string, string
     driveType: spec.driveType,
     listedPrice: spec.listedPrice,
     referenceRentPrice: spec.referenceRentPrice,
+    defaultDepositSuggestion: spec.defaultDepositSuggestion,
+    usagePurpose: spec.usagePurpose,
+    shortDescription: spec.shortDescription,
     suitableFor: spec.suitableFor,
     description: spec.description,
     exteriorOverview: spec.exteriorOverview,
@@ -197,7 +204,10 @@ export async function seedNoriIfEmpty(payload: Payload): Promise<void> {
     payload.findGlobal({ slug: 'nori-site', overrideAccess: true, depth: 0 }),
   ])
 
-  const needsSiteUpgrade = !siteDoc.address || !siteDoc.rentalPolicySummary
+  const needsSiteUpgrade =
+    !siteDoc.address ||
+    !siteDoc.rentalPolicySummary ||
+    !(siteDoc.heroSlides && siteDoc.heroSlides.length > 0)
   if (
     modelCount.totalDocs >= SEED_MODELS.length &&
     vehicleCount.totalDocs >= SEED_DEMO_FLEET.length &&
@@ -206,7 +216,17 @@ export async function seedNoriIfEmpty(payload: Payload): Promise<void> {
     return
   }
 
-  const allKeys = new Set<string>(['nori-hero-1', 'nori-hero-2', 'nori-hero-3', 'nori-story'])
+  const allKeys = new Set<string>([
+    'nori-hero-1',
+    'nori-hero-2',
+    'nori-hero-3',
+    'nori-story',
+    'vinfast-vf8-ext-1',
+    'honda-crv-ext-1',
+    'mercedes-c300-ext-2',
+    'honda-sh350i-ext-2',
+    'ford-ranger-raptor-ext-2',
+  ])
   for (const m of SEED_MODELS) {
     allKeys.add(m.coverKey)
     for (const g of m.gallery) allKeys.add(g.mediaKey)
@@ -348,14 +368,120 @@ export async function seedNoriIfEmpty(payload: Payload): Promise<void> {
       hero3 ? { image: hero3, credit: 'Shyamal · Wikimedia Commons (CC BY-SA 4.0)' } : null,
     ].filter((item): item is { image: string; credit: string } => item !== null)
 
+    const heroSlides = [
+      {
+        titleFirst: 'Mọi hành trình.',
+        titleSecond: 'Luôn có NORI.',
+        eyebrow: 'TỰ DO KHỞI HÀNH · TRỌN VẸN HÀNH TRÌNH',
+        categoryBadge: 'Trải nghiệm hành trình',
+        description:
+          'Đặt thuê theo ngày với báo giá rõ ràng từng khoản hoặc tham khảo hồ sơ xe thực tế kèm ODO xác thực trước khi nhận xe.',
+        ctaText: 'Khám phá phương tiện',
+        ctaHref: '/vehicles',
+        secondaryText: 'Cách NORI hoạt động',
+        secondaryHref: '/about#how-it-works',
+        desktopImage: mediaIds.get('vinfast-vf8-ext-1'),
+        relatedCategory: 'CAR' as const,
+        relatedModel: modelIdBySlug.get('vinfast-vf-8'),
+        credit: 'VinFast VF 8 · Wikimedia Commons (CC BY-SA 4.0)',
+        sourceUrl: 'https://commons.wikimedia.org/wiki/File:VinFast_VF_8_IAA_2023_1X7A0681.jpg',
+        durationSeconds: 6,
+        order: 0,
+        active: true,
+      },
+      {
+        titleFirst: 'Một lựa chọn.',
+        titleSecond: 'Vững vàng đường xa.',
+        eyebrow: '4 ĐẾN 7 CHỖ · ĐÔ THỊ & GIA ĐÌNH',
+        categoryBadge: 'Ô tô phổ thông & SUV',
+        description:
+          'Đa dạng các dòng Sedan, CUV, SUV và MPV từ Toyota Vios, Mazda CX-5 đến Fortuner và Honda CR-V cho gia đình và công tác.',
+        ctaText: 'Khám phá ô tô',
+        ctaHref: '/vehicles?type=CAR',
+        secondaryText: 'Cách NORI hoạt động',
+        secondaryHref: '/about#how-it-works',
+        desktopImage: mediaIds.get('honda-crv-ext-1'),
+        relatedCategory: 'CAR' as const,
+        relatedModel: modelIdBySlug.get('honda-cr-v'),
+        credit: 'Honda CR-V · Wikimedia Commons (CC BY-SA 4.0)',
+        sourceUrl:
+          'https://commons.wikimedia.org/wiki/File:Honda_CR-V_(6th_generation)_hybrid_1X7A0866.jpg',
+        durationSeconds: 6,
+        order: 1,
+        active: true,
+      },
+      {
+        titleFirst: 'Chạm ước mơ.',
+        titleSecond: 'Dấu ấn đẳng cấp.',
+        eyebrow: 'PHONG THÁI HIỆN ĐẠI · DẤU ẤN SANG TRỌNG',
+        categoryBadge: 'Xe cao cấp & Hạng sang',
+        description:
+          'Mercedes-Benz C 300 AMG với khoang lái tinh tế, thiết kế thể thao sang trọng cho các sự kiện và hành trình quan trọng.',
+        ctaText: 'Khám phá xe cao cấp',
+        ctaHref: '/vehicles?type=CAR&search=Mercedes',
+        secondaryText: 'Liên hệ tư vấn',
+        secondaryHref: '/support',
+        desktopImage: mediaIds.get('mercedes-c300-ext-2'),
+        relatedCategory: 'CAR' as const,
+        relatedModel: modelIdBySlug.get('mercedes-benz-c300-amg'),
+        credit: 'Mercedes-Benz C-Class · Wikimedia Commons (CC BY-SA 4.0)',
+        sourceUrl: 'https://commons.wikimedia.org/wiki/File:Mercedes-AMG_C_43_(W206)_1X7A0893.jpg',
+        durationSeconds: 6,
+        order: 2,
+        active: true,
+      },
+      {
+        titleFirst: 'Linh hoạt phố thị.',
+        titleSecond: 'Tự do khám phá.',
+        eyebrow: 'TAY GA · CÔN TAY · XE MÁY ĐIỆN',
+        categoryBadge: 'Xe máy & Xe điện',
+        description:
+          'Từ xe tay ga Honda SH, PCX, xe máy điện VinFast Evo đến mô tô phân khối lớn, gọn nhẹ và chủ động trên từng góc phố.',
+        ctaText: 'Khám phá xe máy',
+        ctaHref: '/vehicles?type=MOTORBIKE',
+        secondaryText: 'Liên hệ tư vấn',
+        secondaryHref: '/support',
+        desktopImage: mediaIds.get('honda-sh350i-ext-2'),
+        relatedCategory: 'MOTORBIKE' as const,
+        relatedModel: modelIdBySlug.get('honda-sh350i'),
+        credit: 'Honda SH350i · Wikimedia Commons (CC BY-SA 4.0)',
+        sourceUrl: 'https://commons.wikimedia.org/wiki/File:Honda_SH_350i_2025_EICMA_2024.jpg',
+        durationSeconds: 6,
+        order: 3,
+        active: true,
+      },
+      {
+        titleFirst: 'Vượt cung đường xa.',
+        titleSecond: 'Chở trọn hành trang.',
+        eyebrow: 'CABIN KÉP · DẪN ĐỘNG 2 CẦU',
+        categoryBadge: 'Xe bán tải & Khám phá',
+        description:
+          'Ford Ranger Raptor, Wildtrak, Toyota Hilux và Mitsubishi Triton sẵn sàng cho chuyến dã ngoại thiên nhiên và công tác thực địa.',
+        ctaText: 'Khám phá xe bán tải',
+        ctaHref: '/vehicles?type=PICKUP',
+        secondaryText: 'Cách NORI hoạt động',
+        secondaryHref: '/about#how-it-works',
+        desktopImage: mediaIds.get('ford-ranger-raptor-ext-2'),
+        relatedCategory: 'PICKUP' as const,
+        relatedModel: modelIdBySlug.get('ford-ranger-raptor'),
+        credit: 'Ford Ranger Raptor · Wikimedia Commons (CC BY-SA 4.0)',
+        sourceUrl: 'https://commons.wikimedia.org/wiki/File:Ford_Ranger_Raptor_(P703)_1X7A6776.jpg',
+        durationSeconds: 6,
+        order: 4,
+        active: true,
+      },
+    ].filter((s) => Boolean(s.desktopImage))
+
     await payload.updateGlobal({
       slug: 'nori-site',
       overrideAccess: true,
       context: { skipRevalidate: true },
       data: {
         ...(heroImages.length ? { heroImages } : {}),
+        ...(heroSlides.length ? { heroSlides } : {}),
         ...(story ? { storyImage: story } : {}),
         ...SEED_SITE_INFO,
+        _status: 'published',
       },
     })
   }

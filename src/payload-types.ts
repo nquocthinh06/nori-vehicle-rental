@@ -168,6 +168,8 @@ export interface Config {
     'maintenance-schedules': MaintenanceSchedule;
     'rental-days': RentalDay;
     bookings: Booking;
+    consultations: Consultation;
+    notifications: Notification;
     'sales-inquiries': SalesInquiry;
     promotions: Promotion;
     payments: Payment;
@@ -192,6 +194,8 @@ export interface Config {
     'maintenance-schedules': MaintenanceSchedulesSelect<false> | MaintenanceSchedulesSelect<true>;
     'rental-days': RentalDaysSelect<false> | RentalDaysSelect<true>;
     bookings: BookingsSelect<false> | BookingsSelect<true>;
+    consultations: ConsultationsSelect<false> | ConsultationsSelect<true>;
+    notifications: NotificationsSelect<false> | NotificationsSelect<true>;
     'sales-inquiries': SalesInquiriesSelect<false> | SalesInquiriesSelect<true>;
     promotions: PromotionsSelect<false> | PromotionsSelect<true>;
     payments: PaymentsSelect<false> | PaymentsSelect<true>;
@@ -540,8 +544,12 @@ export interface Tag {
 export interface VehicleModel {
   id: string;
   name: string;
+  officialName?: string | null;
   slug: string;
   brand: string;
+  modelLine?: string | null;
+  versionName?: string | null;
+  generation?: string | null;
   category: 'CAR' | 'MOTORBIKE' | 'PICKUP';
   subCategory?:
     | (
@@ -574,7 +582,10 @@ export interface VehicleModel {
   driveType?: string | null;
   listedPrice?: number | null;
   referenceRentPrice?: number | null;
+  defaultDepositSuggestion?: number | null;
   suitableFor?: string | null;
+  usagePurpose?: string | null;
+  shortDescription?: string | null;
   description?: string | null;
   exteriorOverview?: string | null;
   interiorOverview?: string | null;
@@ -589,6 +600,7 @@ export interface VehicleModel {
     | {
         name: string;
         category: 'COMFORT' | 'SAFETY' | 'DRIVER_ASSIST' | 'TECHNOLOGY';
+        status?: ('EQUIPPED' | 'NOT_EQUIPPED' | 'UNVERIFIED' | 'NOT_APPLICABLE') | null;
         variantNote?: string | null;
         id?: string | null;
       }[]
@@ -598,11 +610,16 @@ export interface VehicleModel {
     | {
         image: string | Media;
         kind: 'OVERVIEW' | 'EXTERIOR' | 'INTERIOR' | 'ENGINE' | 'FEATURE';
+        photoType?: string | null;
+        isPrimary?: boolean | null;
+        sortOrder?: number | null;
+        altText?: string | null;
         caption?: string | null;
         variantName?: string | null;
         colorName?: string | null;
         sourceUrl?: string | null;
         license?: string | null;
+        verified?: boolean | null;
         id?: string | null;
       }[]
     | null;
@@ -715,6 +732,11 @@ export interface Vehicle {
         image: string | Media;
         caption?: string | null;
         kind?: ('EXTERIOR' | 'INTERIOR' | 'ENGINE' | 'ACTUAL') | null;
+        photoType?: string | null;
+        isPrimary?: boolean | null;
+        sortOrder?: number | null;
+        altText?: string | null;
+        sourceName?: string | null;
         id?: string | null;
       }[]
     | null;
@@ -814,6 +836,7 @@ export interface RentalDay {
 export interface Booking {
   id: string;
   bookingKey?: string | null;
+  revision?: number | null;
   customer?: (string | null) | User;
   vehicle: string | Vehicle;
   startDate: string;
@@ -821,9 +844,11 @@ export interface Booking {
   pickupTime?: string | null;
   returnTime?: string | null;
   pickupLocation?: string | null;
+  returnLocation?: string | null;
   deliveryRequested?: boolean | null;
   addonServices?: string | null;
   customerPhone?: string | null;
+  customerEmail?: string | null;
   driverLicenseNumber?: string | null;
   note?: string | null;
   totalDays?: number | null;
@@ -841,12 +866,38 @@ export interface Booking {
   depositSnapshot?: number | null;
   initialPaymentDue?: number | null;
   remainingAmount?: number | null;
+  expectedContactDate?: string | null;
+  workingHoursSnapshot?: string | null;
+  isUrgentApproval?: boolean | null;
   handoverNote?: string | null;
   extraFee?: number | null;
   extraFeeNote?: string | null;
   contractNumber?: string | null;
   returnOdometer?: number | null;
   returnCondition?: string | null;
+  modificationHistory?:
+    | {
+        modifiedAt: string;
+        modifiedBy?: string | null;
+        actorType?: string | null;
+        statusAtChange?: string | null;
+        reason?: string | null;
+        previousTotalPrice?: number | null;
+        newTotalPrice?: number | null;
+        previousDeposit?: number | null;
+        newDeposit?: number | null;
+        changes?:
+          | {
+              field: string;
+              label: string;
+              before?: string | null;
+              after?: string | null;
+              id?: string | null;
+            }[]
+          | null;
+        id?: string | null;
+      }[]
+    | null;
   statusHistory?:
     | {
         status: string;
@@ -869,6 +920,114 @@ export interface Booking {
         | 'REJECTED'
       )
     | null;
+  createdBy?:
+    | ({
+        relationTo: 'admins';
+        value: string | Admin;
+      } | null)
+    | ({
+        relationTo: 'users';
+        value: string | User;
+      } | null);
+  updatedBy?:
+    | ({
+        relationTo: 'admins';
+        value: string | Admin;
+      } | null)
+    | ({
+        relationTo: 'users';
+        value: string | User;
+      } | null);
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "consultations".
+ */
+export interface Consultation {
+  id: string;
+  consultationKey?: string | null;
+  booking: string | Booking;
+  customer?: (string | null) | User;
+  bookingKeySnapshot?: string | null;
+  customerNameSnapshot?: string | null;
+  customerPhoneSnapshot?: string | null;
+  customerEmailSnapshot?: string | null;
+  vehicleNameSnapshot?: string | null;
+  startDateSnapshot?: string | null;
+  endDateSnapshot?: string | null;
+  approvedAt: string;
+  approvedBy?: string | null;
+  expectedContactDate: string;
+  workingHoursWindow?: string | null;
+  isUrgent?: boolean | null;
+  assignedStaff?: (string | null) | Admin;
+  assignedStaffName?: string | null;
+  status:
+    'PENDING_CONTACT' | 'CONTACTING' | 'NO_ANSWER' | 'CALLBACK_SCHEDULED' | 'CONSULTED' | 'COMPLETED' | 'CANCELLED';
+  callbackScheduledAt?: string | null;
+  internalNote?: string | null;
+  contactLogs?:
+    | {
+        contactedAt: string;
+        staffName?: string | null;
+        outcome: string;
+        note?: string | null;
+        nextCallbackAt?: string | null;
+        id?: string | null;
+      }[]
+    | null;
+  createdBy?:
+    | ({
+        relationTo: 'admins';
+        value: string | Admin;
+      } | null)
+    | ({
+        relationTo: 'users';
+        value: string | User;
+      } | null);
+  updatedBy?:
+    | ({
+        relationTo: 'admins';
+        value: string | Admin;
+      } | null)
+    | ({
+        relationTo: 'users';
+        value: string | User;
+      } | null);
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "notifications".
+ */
+export interface Notification {
+  id: string;
+  eventKey?: string | null;
+  customer: string | User;
+  booking?: (string | null) | Booking;
+  type: 'BOOKING_CONFIRMED' | 'BOOKING_UPDATED' | 'CONSULTATION_UPDATE' | 'SYSTEM';
+  title: string;
+  message: string;
+  bookingKey?: string | null;
+  vehicleName?: string | null;
+  startDate?: string | null;
+  endDate?: string | null;
+  pickupTime?: string | null;
+  returnTime?: string | null;
+  expectedContactDate?: string | null;
+  workingHoursLabel?: string | null;
+  customerPhoneMasked?: string | null;
+  hotline?: string | null;
+  isUrgent?: boolean | null;
+  paymentConfirmed?: boolean | null;
+  superseded?: boolean | null;
+  isRead?: boolean | null;
+  readAt?: string | null;
+  popupDismissed?: boolean | null;
+  popupDismissedAt?: string | null;
   createdBy?:
     | ({
         relationTo: 'admins';
@@ -1432,8 +1591,12 @@ export interface UsersSelect<T extends boolean = true> {
  */
 export interface VehicleModelsSelect<T extends boolean = true> {
   name?: T;
+  officialName?: T;
   slug?: T;
   brand?: T;
+  modelLine?: T;
+  versionName?: T;
+  generation?: T;
   category?: T;
   subCategory?: T;
   bodyStyle?: T;
@@ -1446,7 +1609,10 @@ export interface VehicleModelsSelect<T extends boolean = true> {
   driveType?: T;
   listedPrice?: T;
   referenceRentPrice?: T;
+  defaultDepositSuggestion?: T;
   suitableFor?: T;
+  usagePurpose?: T;
+  shortDescription?: T;
   description?: T;
   exteriorOverview?: T;
   interiorOverview?: T;
@@ -1462,6 +1628,7 @@ export interface VehicleModelsSelect<T extends boolean = true> {
     | {
         name?: T;
         category?: T;
+        status?: T;
         variantNote?: T;
         id?: T;
       };
@@ -1471,11 +1638,16 @@ export interface VehicleModelsSelect<T extends boolean = true> {
     | {
         image?: T;
         kind?: T;
+        photoType?: T;
+        isPrimary?: T;
+        sortOrder?: T;
+        altText?: T;
         caption?: T;
         variantName?: T;
         colorName?: T;
         sourceUrl?: T;
         license?: T;
+        verified?: T;
         id?: T;
       };
   specifications?:
@@ -1571,6 +1743,11 @@ export interface VehiclesSelect<T extends boolean = true> {
         image?: T;
         caption?: T;
         kind?: T;
+        photoType?: T;
+        isPrimary?: T;
+        sortOrder?: T;
+        altText?: T;
+        sourceName?: T;
         id?: T;
       };
   status?: T;
@@ -1618,6 +1795,7 @@ export interface RentalDaysSelect<T extends boolean = true> {
  */
 export interface BookingsSelect<T extends boolean = true> {
   bookingKey?: T;
+  revision?: T;
   customer?: T;
   vehicle?: T;
   startDate?: T;
@@ -1625,9 +1803,11 @@ export interface BookingsSelect<T extends boolean = true> {
   pickupTime?: T;
   returnTime?: T;
   pickupLocation?: T;
+  returnLocation?: T;
   deliveryRequested?: T;
   addonServices?: T;
   customerPhone?: T;
+  customerEmail?: T;
   driverLicenseNumber?: T;
   note?: T;
   totalDays?: T;
@@ -1645,12 +1825,38 @@ export interface BookingsSelect<T extends boolean = true> {
   depositSnapshot?: T;
   initialPaymentDue?: T;
   remainingAmount?: T;
+  expectedContactDate?: T;
+  workingHoursSnapshot?: T;
+  isUrgentApproval?: T;
   handoverNote?: T;
   extraFee?: T;
   extraFeeNote?: T;
   contractNumber?: T;
   returnOdometer?: T;
   returnCondition?: T;
+  modificationHistory?:
+    | T
+    | {
+        modifiedAt?: T;
+        modifiedBy?: T;
+        actorType?: T;
+        statusAtChange?: T;
+        reason?: T;
+        previousTotalPrice?: T;
+        newTotalPrice?: T;
+        previousDeposit?: T;
+        newDeposit?: T;
+        changes?:
+          | T
+          | {
+              field?: T;
+              label?: T;
+              before?: T;
+              after?: T;
+              id?: T;
+            };
+        id?: T;
+      };
   statusHistory?:
     | T
     | {
@@ -1661,6 +1867,79 @@ export interface BookingsSelect<T extends boolean = true> {
         id?: T;
       };
   status?: T;
+  createdBy?: T;
+  updatedBy?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "consultations_select".
+ */
+export interface ConsultationsSelect<T extends boolean = true> {
+  consultationKey?: T;
+  booking?: T;
+  customer?: T;
+  bookingKeySnapshot?: T;
+  customerNameSnapshot?: T;
+  customerPhoneSnapshot?: T;
+  customerEmailSnapshot?: T;
+  vehicleNameSnapshot?: T;
+  startDateSnapshot?: T;
+  endDateSnapshot?: T;
+  approvedAt?: T;
+  approvedBy?: T;
+  expectedContactDate?: T;
+  workingHoursWindow?: T;
+  isUrgent?: T;
+  assignedStaff?: T;
+  assignedStaffName?: T;
+  status?: T;
+  callbackScheduledAt?: T;
+  internalNote?: T;
+  contactLogs?:
+    | T
+    | {
+        contactedAt?: T;
+        staffName?: T;
+        outcome?: T;
+        note?: T;
+        nextCallbackAt?: T;
+        id?: T;
+      };
+  createdBy?: T;
+  updatedBy?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "notifications_select".
+ */
+export interface NotificationsSelect<T extends boolean = true> {
+  eventKey?: T;
+  customer?: T;
+  booking?: T;
+  type?: T;
+  title?: T;
+  message?: T;
+  bookingKey?: T;
+  vehicleName?: T;
+  startDate?: T;
+  endDate?: T;
+  pickupTime?: T;
+  returnTime?: T;
+  expectedContactDate?: T;
+  workingHoursLabel?: T;
+  customerPhoneMasked?: T;
+  hotline?: T;
+  isUrgent?: T;
+  paymentConfirmed?: T;
+  superseded?: T;
+  isRead?: T;
+  readAt?: T;
+  popupDismissed?: T;
+  popupDismissedAt?: T;
   createdBy?: T;
   updatedBy?: T;
   updatedAt?: T;
@@ -1853,6 +2132,30 @@ export interface NoriSite {
   seoTitle?: string | null;
   seoDescription?: string | null;
   ogImage?: (string | null) | Media;
+  heroAutoplaySeconds?: number | null;
+  heroSlides?:
+    | {
+        titleFirst: string;
+        titleSecond?: string | null;
+        eyebrow?: string | null;
+        categoryBadge?: string | null;
+        description?: string | null;
+        ctaText: string;
+        ctaHref: string;
+        secondaryText?: string | null;
+        secondaryHref?: string | null;
+        desktopImage?: (string | null) | Media;
+        mobileImage?: (string | null) | Media;
+        relatedCategory?: ('CAR' | 'MOTORBIKE' | 'PICKUP') | null;
+        relatedModel?: (string | null) | VehicleModel;
+        credit?: string | null;
+        sourceUrl?: string | null;
+        durationSeconds?: number | null;
+        order?: number | null;
+        active?: boolean | null;
+        id?: string | null;
+      }[]
+    | null;
   heroImages?:
     | {
         image: string | Media;
@@ -1897,6 +2200,19 @@ export interface NoriSite {
   phone?: string | null;
   email?: string | null;
   openingHours?: string | null;
+  businessTimezone?: string | null;
+  workingDays?: string | null;
+  workStartTime?: string | null;
+  workEndTime?: string | null;
+  lunchBreakStart?: string | null;
+  lunchBreakEnd?: string | null;
+  holidays?:
+    | {
+        date: string;
+        name: string;
+        id?: string | null;
+      }[]
+    | null;
   contactNote?: string | null;
   rentalPolicySummary?: string | null;
   purchasePolicySummary?: string | null;
@@ -1952,6 +2268,30 @@ export interface NoriSiteSelect<T extends boolean = true> {
   seoTitle?: T;
   seoDescription?: T;
   ogImage?: T;
+  heroAutoplaySeconds?: T;
+  heroSlides?:
+    | T
+    | {
+        titleFirst?: T;
+        titleSecond?: T;
+        eyebrow?: T;
+        categoryBadge?: T;
+        description?: T;
+        ctaText?: T;
+        ctaHref?: T;
+        secondaryText?: T;
+        secondaryHref?: T;
+        desktopImage?: T;
+        mobileImage?: T;
+        relatedCategory?: T;
+        relatedModel?: T;
+        credit?: T;
+        sourceUrl?: T;
+        durationSeconds?: T;
+        order?: T;
+        active?: T;
+        id?: T;
+      };
   heroImages?:
     | T
     | {
@@ -1996,6 +2336,19 @@ export interface NoriSiteSelect<T extends boolean = true> {
   phone?: T;
   email?: T;
   openingHours?: T;
+  businessTimezone?: T;
+  workingDays?: T;
+  workStartTime?: T;
+  workEndTime?: T;
+  lunchBreakStart?: T;
+  lunchBreakEnd?: T;
+  holidays?:
+    | T
+    | {
+        date?: T;
+        name?: T;
+        id?: T;
+      };
   contactNote?: T;
   rentalPolicySummary?: T;
   purchasePolicySummary?: T;
@@ -2062,6 +2415,8 @@ export interface CollectionQueryWidget {
       | 'vehicles'
       | 'maintenance-schedules'
       | 'bookings'
+      | 'consultations'
+      | 'notifications'
       | 'sales-inquiries'
       | 'promotions'
       | 'payments'
@@ -2100,6 +2455,8 @@ export interface ActivityWidget {
           | 'vehicles'
           | 'maintenance-schedules'
           | 'bookings'
+          | 'consultations'
+          | 'notifications'
           | 'sales-inquiries'
           | 'promotions'
           | 'payments'

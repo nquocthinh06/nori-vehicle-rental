@@ -37,12 +37,78 @@ export const NoriSite: GlobalConfig = {
       relationTo: 'media',
     },
 
-    // Home & Storytelling
+    // Hero Carousel Management
+    {
+      name: 'heroAutoplaySeconds',
+      label: 'Thời gian tự động chuyển slide Hero (giây)',
+      type: 'number',
+      min: 3,
+      max: 20,
+      defaultValue: 6,
+    },
+    {
+      name: 'heroSlides',
+      label: 'Danh sách Slide Hero Carousel',
+      type: 'array',
+      maxRows: 12,
+      fields: [
+        { name: 'titleFirst', label: 'Tiêu đề dòng 1', type: 'text', required: true },
+        { name: 'titleSecond', label: 'Tiêu đề dòng 2 (nhấn mạnh)', type: 'text' },
+        { name: 'eyebrow', label: 'Dòng phụ đề trên (Eyebrow)', type: 'text' },
+        { name: 'categoryBadge', label: 'Nhãn danh mục', type: 'text' },
+        { name: 'description', label: 'Mô tả slide', type: 'textarea', maxLength: 600 },
+        { name: 'ctaText', label: 'Nhãn nút CTA chính', type: 'text', required: true },
+        { name: 'ctaHref', label: 'Đường dẫn điều hướng CTA', type: 'text', required: true },
+        { name: 'secondaryText', label: 'Nhãn nút phụ', type: 'text' },
+        { name: 'secondaryHref', label: 'Đường dẫn nút phụ', type: 'text' },
+        {
+          name: 'desktopImage',
+          label: 'Ảnh nền Desktop',
+          type: 'upload',
+          relationTo: 'media',
+        },
+        {
+          name: 'mobileImage',
+          label: 'Ảnh nền Mobile (tùy chọn)',
+          type: 'upload',
+          relationTo: 'media',
+        },
+        {
+          name: 'relatedCategory',
+          label: 'Danh mục phương tiện liên quan',
+          type: 'select',
+          options: [
+            { label: 'Ô tô', value: 'CAR' },
+            { label: 'Xe máy', value: 'MOTORBIKE' },
+            { label: 'Bán tải', value: 'PICKUP' },
+          ],
+        },
+        {
+          name: 'relatedModel',
+          label: 'Dòng xe liên quan',
+          type: 'relationship',
+          relationTo: 'vehicle-models',
+        },
+        { name: 'credit', label: 'Nguồn tham chiếu / Tác giả ảnh', type: 'text' },
+        { name: 'sourceUrl', label: 'URL nguồn tham chiếu', type: 'text' },
+        {
+          name: 'durationSeconds',
+          label: 'Thời gian hiển thị riêng (giây)',
+          type: 'number',
+          min: 3,
+          max: 30,
+        },
+        { name: 'order', label: 'Thứ tự hiển thị', type: 'number', defaultValue: 0 },
+        { name: 'active', label: 'Hiển thị slide', type: 'checkbox', defaultValue: true },
+      ],
+    },
+
+    // Legacy Hero Images & Storytelling
     {
       name: 'heroImages',
-      label: 'Ảnh cảm hứng hành trình (không phải kho xe)',
+      label: 'Ảnh cảm hứng hành trình (dự phòng)',
       type: 'array',
-      maxRows: 3,
+      maxRows: 5,
       fields: [
         { name: 'image', type: 'upload', relationTo: 'media', required: true },
         { name: 'credit', label: 'Tác giả / nguồn', type: 'text' },
@@ -124,12 +190,37 @@ export const NoriSite: GlobalConfig = {
       ],
     },
 
-    // About & Contact
+    // About, Contact & Business Hours Configuration
     { name: 'aboutSummary', label: 'Giới thiệu NORI', type: 'textarea', maxLength: 3000 },
     { name: 'address', label: 'Địa chỉ nhận/trả xe đã xác nhận', type: 'textarea' },
     { name: 'phone', label: 'Hotline đã xác nhận', type: 'text' },
     { name: 'email', label: 'Email hỗ trợ đã xác nhận', type: 'email' },
-    { name: 'openingHours', label: 'Giờ làm việc', type: 'text' },
+    { name: 'openingHours', label: 'Giờ mở cửa bãi xe / hiển thị chung', type: 'text' },
+    {
+      name: 'businessTimezone',
+      label: 'Múi giờ hoạt động',
+      type: 'text',
+      defaultValue: 'Asia/Ho_Chi_Minh',
+    },
+    {
+      name: 'workingDays',
+      label: 'Các ngày làm việc hành chính tư vấn (0=CN, 1=T2..6=T7)',
+      type: 'text',
+      defaultValue: '1,2,3,4,5',
+    },
+    { name: 'workStartTime', label: 'Giờ bắt đầu hành chính (HH:MM)', type: 'text' },
+    { name: 'workEndTime', label: 'Giờ kết thúc hành chính (HH:MM)', type: 'text' },
+    { name: 'lunchBreakStart', label: 'Giờ bắt đầu nghỉ trưa (HH:MM)', type: 'text' },
+    { name: 'lunchBreakEnd', label: 'Giờ kết thúc nghỉ trưa (HH:MM)', type: 'text' },
+    {
+      name: 'holidays',
+      label: 'Danh sách ngày nghỉ lễ cấu hình bổ sung',
+      type: 'array',
+      fields: [
+        { name: 'date', label: 'Ngày nghỉ (YYYY-MM-DD)', type: 'text', required: true },
+        { name: 'name', label: 'Tên kỳ nghỉ lễ', type: 'text', required: true },
+      ],
+    },
     {
       name: 'contactNote',
       label: 'Nội dung liên hệ & hướng dẫn hỗ trợ',

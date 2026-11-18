@@ -7,6 +7,8 @@ import type { GalleryKind, ModelView, SiteContent } from '@/lib/catalogue'
 import type { FleetView, Quote, ReviewView } from '@/lib/domain-types'
 import { api, RequestError } from '@/lib/client-api'
 import {
+  CAR_PICKUP_PHOTO_TYPES,
+  MOTORBIKE_PHOTO_TYPES,
   RENTAL_ADDONS,
   addDays,
   businessToday,
@@ -14,6 +16,7 @@ import {
   formatDate,
   formatMoney,
   inquiryTypeLabels,
+  isSpecApplicable,
   operationStatusLabels,
   subCategoryLabels,
   validateRentalDates,
@@ -47,7 +50,15 @@ import {
 import { Icon } from './ui/icon'
 import { Dialog } from './ui/dialog'
 
-type DetailTab = 'overview' | 'specs' | 'features' | 'fleet' | 'pricing' | 'reviews'
+type DetailTab =
+  | 'overview'
+  | 'specs'
+  | 'features'
+  | 'fleet'
+  | 'pricing'
+  | 'availability'
+  | 'reviews'
+  | 'support'
 type ReviewsPayload = {
   reviews: ReviewView[]
   eligibleBookings: {
@@ -61,13 +72,17 @@ type ReviewsPayload = {
 
 const specGroupLabels: Record<string, string> = {
   OVERVIEW: 'Thông tin tổng quan',
-  ENGINE: 'Động cơ & Vận hành',
+  ENGINE: 'Động cơ & Hiệu suất vận hành',
   DIMENSIONS: 'Kích thước & Trọng lượng',
-  CHASSIS: 'Khung gầm, Phanh & Lốp',
-  PICKUP: 'Thông số riêng xe bán tải',
-  MOTORBIKE: 'Thông số riêng xe máy',
-  EV: 'Thông số xe thuần điện (EV)',
+  CHASSIS: 'Khung gầm, Hệ thống phanh & Lốp',
+  PICKUP: 'Thông số chuyên biệt xe bán tải',
+  MOTORBIKE: 'Thông số chuyên biệt xe máy',
+  EV: 'Pin, Năng lượng & Sạc (Xe điện)',
 }
+
+const photoTypeLabelMap: Record<string, string> = Object.fromEntries(
+  [...CAR_PICKUP_PHOTO_TYPES, ...MOTORBIKE_PHOTO_TYPES].map((o) => [o.value, o.label]),
+)
 
 const featureCategoryLabels: Record<string, string> = {
   COMFORT: 'Tiện nghi nội thất & Sử dụng',
@@ -111,7 +126,8 @@ export function VehicleDetail({
   const queryEndDate = params.get('endDate') ?? ''
 
   const [intent, setIntent] = useState<'rent' | 'buy'>('rent')
-  const [kind, setKind] = useState<GalleryKind>('EXTERIOR')
+  const [galleryScope, setGalleryScope] = useState<'catalogue' | 'instance'>('catalogue')
+  const [kind, setKind] = useState<GalleryKind | 'ALL'>('ALL')
   const [imageIndex, setImageIndex] = useState(0)
   const [galleryOpen, setGalleryOpen] = useState(false)
   const [zoomed, setZoomed] = useState(false)
@@ -243,6 +259,7 @@ export function VehicleDetail({
             {
               image: model.cover,
               kind: 'EXTERIOR' as GalleryKind,
+              photoType: 'OVERVIEW' as string | null,
               caption: `${model.name} — Ảnh đại diện catalogue`,
               sourceUrl: model.cover.sourceUrl ?? model.source ?? null,
               license: model.cover.license ?? null,
@@ -252,30 +269,53 @@ export function VehicleDetail({
       ...model.gallery,
     ]
     return combined.filter(
-      (g, index, all) =>
-        index === all.findIndex((v) => v.image.url === g.image.url && v.kind === g.kind),
+      (g, index, all) => index === all.findIndex((v) => v.image.url === g.image.url),
     )
   }, [model.cover, model.gallery, model.name, model.source])
 
-  const hasEnginePhotos = catalogueImages.some((g) => g.kind === 'ENGINE')
-  const hasFeaturePhotos = catalogueImages.some((g) => g.kind === 'FEATURE')
+  const instanceImages = useMemo(() => {
+    if (!selectedVehicle || !selectedVehicle.photos.length) return []
+    return selectedVehicle.photos.map((p) => ({
+      image: p.image,
+      kind: (p.kind === 'INTERIOR' || p.kind === 'ENGINE' ? p.kind : 'EXTERIOR') as GalleryKind,
+      photoType: p.photoType ?? 'ACTUAL',
+      caption:
+        p.caption ||
+        `Xe ${selectedVehicle.reference}${selectedVehicle.color ? ` (${selectedVehicle.color})` : ''} — Ảnh thực tế`,
+      sourceUrl: p.image.sourceUrl ?? null,
+      license: p.image.license ?? null,
+    }))
+  }, [selectedVehicle])
+
+  const effectiveScope =
+    galleryScope === 'instance' && instanceImages.length > 0 ? 'instance' : 'catalogue'
+  const baseScopedImages = effectiveScope === 'instance' ? instanceImages : catalogueImages
+
+  const hasOverviewPhotos = baseScopedImages.some((g) => g.kind === 'OVERVIEW')
+  const hasInteriorPhotos = baseScopedImages.some((g) => g.kind === 'INTERIOR')
+  const hasEnginePhotos = baseScopedImages.some((g) => g.kind === 'ENGINE')
+  const hasFeaturePhotos = baseScopedImages.some((g) => g.kind === 'FEATURE')
 
   const selectedVariant = variantIndex >= 0 ? model.variants[variantIndex] : null
   const variantColor = selectedVariant?.colors[colorIndex] ?? null
 
-  const images = variantColor
-    ? variantColor.image
-      ? [
-          {
-            image: variantColor.image,
-            kind: 'EXTERIOR' as GalleryKind,
-            caption: `${selectedVariant?.name ?? ''} · Màu ${variantColor.name}`,
-            sourceUrl: variantColor.sourceUrl ?? variantColor.image.sourceUrl ?? null,
-            license: variantColor.image.license ?? null,
-          },
-        ]
-      : []
-    : catalogueImages.filter((g) => g.kind === kind)
+  const images =
+    effectiveScope === 'catalogue' && variantColor
+      ? variantColor.image
+        ? [
+            {
+              image: variantColor.image,
+              kind: 'EXTERIOR' as GalleryKind,
+              photoType: 'EXTERIOR' as string | null,
+              caption: `${selectedVariant?.name ?? ''} · Màu ${variantColor.name}`,
+              sourceUrl: variantColor.sourceUrl ?? variantColor.image.sourceUrl ?? null,
+              license: variantColor.image.license ?? null,
+            },
+          ]
+        : []
+      : kind === 'ALL'
+        ? baseScopedImages
+        : baseScopedImages.filter((g) => g.kind === kind)
 
   const safeIndex = images.length ? imageIndex % images.length : 0
   const currentItem = images[safeIndex] ?? null
@@ -324,16 +364,18 @@ export function VehicleDetail({
   const groupedSpecs = useMemo(() => {
     const groups = new Map<string, typeof model.specifications>()
     for (const s of model.specifications) {
+      if (!isSpecApplicable(s.label, model.fuelType)) continue
       const list = groups.get(s.group) ?? []
       list.push(s)
       groups.set(s.group, list)
     }
     return [...groups.entries()]
-  }, [model.specifications])
+  }, [model.specifications, model.fuelType])
 
   const groupedFeatures = useMemo(() => {
     const groups = new Map<string, typeof model.features>()
     for (const f of model.features) {
+      if (f.status && f.status !== 'EQUIPPED') continue
       const list = groups.get(f.category) ?? []
       list.push(f)
       groups.set(f.category, list)
@@ -522,11 +564,16 @@ export function VehicleDetail({
               {model.hasDemoFleet && <Badge tone="brand">Có xe thực tế (DEMO)</Badge>}
             </div>
             <Heading as="h1" size="display">
-              {model.name}
+              {model.officialName || model.name}
             </Heading>
-            {(model.segment || model.origin) && (
+            {(model.versionName || model.generation || model.segment || model.origin) && (
               <Text className="mt-2 text-small text-muted">
-                {[model.segment, model.origin ? `Xuất xứ: ${model.origin}` : null]
+                {[
+                  model.versionName ? `Phiên bản: ${model.versionName}` : null,
+                  model.generation ? `Thế hệ: ${model.generation}` : null,
+                  model.segment,
+                  model.origin ? `Xuất xứ: ${model.origin}` : null,
+                ]
                   .filter(Boolean)
                   .join(' · ')}
               </Text>
@@ -614,10 +661,19 @@ export function VehicleDetail({
                     </Text>
                   </div>
                 )}
-                <Badge tone="inverse" className="absolute left-4 top-4">
-                  <Icon name="info" className="size-3" />
-                  Ảnh catalogue, không phải xe thực tế
+                <Badge tone="inverse" className="absolute left-4 top-4 max-w-[calc(100%-6rem)]">
+                  <Icon name="info" className="size-3 shrink-0" />
+                  <span className="truncate">
+                    {effectiveScope === 'instance' && selectedVehicle
+                      ? `Ảnh thực tế xe ${selectedVehicle.reference}${selectedVehicle.isDemo ? ' (DEMO)' : ''}`
+                      : 'Ảnh Catalogue – không phải hình ảnh của cá thể xe đang cho thuê.'}
+                  </span>
                 </Badge>
+                {currentItem?.photoType && photoTypeLabelMap[currentItem.photoType] && (
+                  <Badge tone="inverse" className="absolute bottom-4 left-4">
+                    {photoTypeLabelMap[currentItem.photoType]}
+                  </Badge>
+                )}
                 <FavoriteButton
                   slug={model.slug}
                   name={model.name}
@@ -638,13 +694,51 @@ export function VehicleDetail({
                 )}
               </div>
 
+              {instanceImages.length > 0 && selectedVehicle && (
+                <div className="mt-3 flex flex-wrap items-center gap-2 rounded-control bg-subtle p-2">
+                  <Button
+                    size="sm"
+                    variant={effectiveScope === 'catalogue' ? 'primary' : 'ghost'}
+                    onClick={() => {
+                      setGalleryScope('catalogue')
+                      setKind('ALL')
+                      setImageIndex(0)
+                    }}
+                  >
+                    Ảnh Catalogue ({catalogueImages.length})
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant={effectiveScope === 'instance' ? 'primary' : 'ghost'}
+                    onClick={() => {
+                      setGalleryScope('instance')
+                      setKind('ALL')
+                      setImageIndex(0)
+                    }}
+                  >
+                    Ảnh thực tế xe {selectedVehicle.reference} ({instanceImages.length})
+                  </Button>
+                </div>
+              )}
+
               <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
                 <div className="flex flex-wrap gap-2">
                   {(
                     [
+                      ['ALL', `Tất cả (${baseScopedImages.length})`],
+                      ...(hasOverviewPhotos ? ([['OVERVIEW', 'Tổng thể']] as const) : []),
                       ['EXTERIOR', 'Ngoại thất'],
-                      ['INTERIOR', 'Nội thất'],
-                      ...(hasEnginePhotos ? ([['ENGINE', 'Động cơ']] as const) : []),
+                      ...(model.category !== 'MOTORBIKE' || hasInteriorPhotos
+                        ? ([['INTERIOR', 'Nội thất']] as const)
+                        : []),
+                      ...(hasEnginePhotos
+                        ? ([
+                            [
+                              'ENGINE',
+                              model.fuelType === 'Điện (EV)' ? 'Pin & Động cơ' : 'Động cơ',
+                            ],
+                          ] as const)
+                        : []),
                       ...(hasFeaturePhotos ? ([['FEATURE', 'Chi tiết']] as const) : []),
                     ] as const
                   ).map(([k, label]) => (
@@ -657,7 +751,7 @@ export function VehicleDetail({
                         setImageIndex(0)
                         setColorIndex(-1)
                       }}
-                      className="min-h-control-sm px-4 py-2 text-caption"
+                      className="min-h-control-sm px-3.5 py-2 text-caption"
                     >
                       {label}
                     </Button>
@@ -816,33 +910,42 @@ export function VehicleDetail({
               )}
             </div>
 
-            {/* Detail Section Tabs */}
-            <div
-              role="tablist"
-              aria-label="Nội dung chi tiết phương tiện"
-              className="mt-8 flex gap-5 overflow-x-auto border-b border-line"
-            >
-              {(
-                [
-                  ['overview', 'overview', 'Tổng quan & Thiết kế'],
-                  ['specs', 'specifications', 'Thông số kỹ thuật'],
-                  ['features', 'features-safety', 'Công nghệ & An toàn'],
-                  ['fleet', 'actual-condition', `Xe thực tế & ODO (${fleet.length})`],
-                  ['pricing', 'pricing-policy', 'Giá & Chính sách'],
-                  ['reviews', 'reviews', `Đánh giá (${reviewsData.reviews.length})`],
-                ] as const
-              ).map(([tabKey, panelId, tabLabel]) => (
-                <TabButton
-                  key={tabKey}
-                  id={`tab-${tabKey}`}
-                  aria-controls={activeTab === tabKey ? panelId : undefined}
-                  selected={activeTab === tabKey}
-                  onClick={() => setActiveTab(tabKey)}
-                  className="shrink-0 whitespace-nowrap"
-                >
-                  {tabLabel}
-                </TabButton>
-              ))}
+            {/* Detail Section Tabs - Sticky bar with elegant styling & no crude scrollbars */}
+            <div className="sticky top-[4.75rem] z-20 -mx-5 mb-2 bg-canvas/95 px-5 py-2 backdrop-blur-md transition-all sm:mx-0 sm:px-0">
+              <div
+                role="tablist"
+                aria-label="Nội dung chi tiết phương tiện"
+                className="flex items-center gap-1.5 overflow-x-auto no-scrollbar border-b border-line pb-px scroll-smooth"
+              >
+                {(
+                  [
+                    ['overview', 'overview', 'Tổng quan & Thiết kế'],
+                    ['specs', 'specifications', 'Thông số kỹ thuật'],
+                    ['features', 'features-safety', 'Công nghệ & An toàn'],
+                    ['fleet', 'actual-condition', `Xe thực tế & ODO (${fleet.length})`],
+                    ['pricing', 'pricing-policy', 'Giá & Chính sách'],
+                    ['availability', 'availability', 'Lịch khả dụng'],
+                    ['reviews', 'reviews', `Đánh giá (${reviewsData.reviews.length})`],
+                    ['support', 'support', 'Liên hệ & Hỗ trợ'],
+                  ] as const
+                ).map(([tabKey, panelId, tabLabel]) => (
+                  <TabButton
+                    key={tabKey}
+                    id={`tab-${tabKey}`}
+                    aria-controls={activeTab === tabKey ? panelId : undefined}
+                    selected={activeTab === tabKey}
+                    onClick={() => setActiveTab(tabKey)}
+                    className={cn(
+                      'shrink-0 whitespace-nowrap rounded-t-control px-3.5 py-3 text-caption sm:text-small font-semibold transition-all',
+                      activeTab === tabKey
+                        ? 'border-b-2 border-brand bg-brand-soft/60 text-brand'
+                        : 'border-b-2 border-transparent text-muted hover:bg-subtle hover:text-ink',
+                    )}
+                  >
+                    {tabLabel}
+                  </TabButton>
+                ))}
+              </div>
             </div>
 
             {/* Tab 1: Overview & Design */}
@@ -858,12 +961,26 @@ export function VehicleDetail({
                   {model.description || 'Thông tin giới thiệu đang được cập nhật.'}
                 </Text>
 
-                {model.suitableFor && (
-                  <div className="mt-5 rounded-control bg-soft p-4">
-                    <Text className="text-caption font-semibold uppercase tracking-wider text-brand">
-                      Đối tượng & nhu cầu phù hợp
-                    </Text>
-                    <Text className="mt-1 text-small text-ink">{model.suitableFor}</Text>
+                {(model.suitableFor || model.usagePurpose || model.colorsSummary) && (
+                  <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                    {(model.suitableFor || model.usagePurpose) && (
+                      <div className="rounded-control bg-soft p-4">
+                        <Text className="text-caption font-semibold uppercase tracking-wider text-brand">
+                          Đối tượng & nhu cầu phù hợp
+                        </Text>
+                        <Text className="mt-1 text-small text-ink">
+                          {[model.suitableFor, model.usagePurpose].filter(Boolean).join(' · ')}
+                        </Text>
+                      </div>
+                    )}
+                    {model.colorsSummary && (
+                      <div className="rounded-control bg-subtle p-4">
+                        <Text className="text-caption font-semibold uppercase tracking-wider text-muted">
+                          Bảng màu tiêu chuẩn
+                        </Text>
+                        <Text className="mt-1 text-small text-ink">{model.colorsSummary}</Text>
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -889,7 +1006,9 @@ export function VehicleDetail({
                 <div className="mt-6 grid gap-4 md:grid-cols-3">
                   {[
                     ['Ngoại thất', model.exteriorOverview],
-                    ['Nội thất & Tiện nghi', model.interiorOverview],
+                    model.category === 'MOTORBIKE'
+                      ? ['Thiết kế yên & tiện ích', model.interiorOverview]
+                      : ['Nội thất & Tiện nghi', model.interiorOverview],
                     ['Động cơ & Vận hành', model.engineOverview],
                   ].map(
                     ([heading, text]) =>
@@ -1125,7 +1244,10 @@ export function VehicleDetail({
                           {[
                             ['Tình trạng tổng quát', selectedVehicle.condition],
                             ['Ngoại thất', selectedVehicle.exteriorCondition],
-                            ['Nội thất', selectedVehicle.interiorCondition],
+                            [
+                              model.category === 'MOTORBIKE' ? 'Yên & thân vỏ' : 'Nội thất',
+                              selectedVehicle.interiorCondition,
+                            ],
                             ['Động cơ & vận hành', selectedVehicle.engineCondition],
                             ['Lịch sử bảo dưỡng', selectedVehicle.maintenanceHistory],
                             ['Điểm nhận & trả xe', selectedVehicle.pickupLocation],
@@ -1322,7 +1444,86 @@ export function VehicleDetail({
               </section>
             )}
 
-            {/* Tab 6: Reviews */}
+            {/* Tab 6: Availability Calendar */}
+            {activeTab === 'availability' && (
+              <section
+                id="availability"
+                role="tabpanel"
+                aria-labelledby="tab-availability"
+                className="py-7 space-y-6"
+              >
+                <div>
+                  <Heading size="title">Lịch khả dụng & Tình trạng sẵn sàng</Heading>
+                  <Text className="mt-2 text-small text-muted">
+                    Kiểm tra lịch xe trống, ngày đang có chuyến thuê và lịch bảo dưỡng kỹ thuật định
+                    kỳ theo thời gian thực.
+                  </Text>
+                </div>
+
+                {rentable && selectedVehicle ? (
+                  <div className="rounded-card border border-line bg-canvas p-5 space-y-5 shadow-xs">
+                    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line pb-4">
+                      <div className="flex items-center gap-3">
+                        <div className="flex size-10 items-center justify-center rounded-control bg-brand-soft text-brand">
+                          <Icon name="car" className="size-5" />
+                        </div>
+                        <div>
+                          <Text className="font-semibold text-ink">
+                            Xe {selectedVehicle.reference}
+                          </Text>
+                          <Text className="text-caption text-muted">
+                            {selectedVehicle.version || model.name} ·{' '}
+                            {selectedVehicle.color || 'Màu tiêu chuẩn'} · ODO:{' '}
+                            {selectedVehicle.odometer?.toLocaleString('vi-VN')} km
+                          </Text>
+                        </div>
+                      </div>
+                      <StatusBadge status={selectedVehicle.operationStatus} />
+                    </div>
+
+                    <div className="max-w-xl">
+                      <AvailabilityCalendar
+                        vehicle={selectedVehicle.id}
+                        startDate={startDate}
+                        endDate={endDate}
+                        onChange={datesChanged}
+                        operationStatus={selectedVehicle.operationStatus}
+                      />
+                    </div>
+
+                    <div className="grid gap-3 sm:grid-cols-3 border-t border-line/60 pt-4 text-caption">
+                      <div className="flex items-center gap-2">
+                        <span className="size-3 rounded-pill bg-brand" />
+                        <span className="text-ink font-medium">Khoảng ngày bạn chọn</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="size-3 rounded-pill bg-danger-soft border border-danger/30" />
+                        <span className="text-muted">Đang có khách thuê (Kín)</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="size-3 rounded-pill bg-warning-soft border border-warning/30" />
+                        <span className="text-muted">Đang bảo dưỡng định kỳ</span>
+                      </div>
+                    </div>
+
+                    <div className="rounded-control bg-subtle p-4 text-small">
+                      <Text className="font-semibold text-ink">Lưu ý khi đặt xe:</Text>
+                      <Text className="mt-1 text-muted text-caption leading-relaxed">
+                        NORI áp dụng thời gian chuẩn bị kỹ thuật giữa hai lượt thuê để vệ sinh và
+                        kiểm tra an toàn phương tiện trước khi bàn giao. Nếu cần nhận xe gấp, vui
+                        lòng liên hệ hotline để được hỗ trợ điều phối.
+                      </Text>
+                    </div>
+                  </div>
+                ) : (
+                  <Notice>
+                    Vui lòng chọn một chiếc xe thực tế ở cột bên phải để xem lịch khả dụng chi tiết.
+                  </Notice>
+                )}
+              </section>
+            )}
+
+            {/* Tab 7: Reviews */}
             {activeTab === 'reviews' && (
               <section id="reviews" role="tabpanel" aria-labelledby="tab-reviews" className="py-7">
                 <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
@@ -1428,6 +1629,130 @@ export function VehicleDetail({
                     description="NORI không tạo đánh giá giả. Đánh giá thật sẽ hiển thị sau khi khách hàng hoàn thành giao dịch."
                   />
                 )}
+              </section>
+            )}
+
+            {/* Tab 8: Support & Contact */}
+            {activeTab === 'support' && (
+              <section
+                id="support"
+                role="tabpanel"
+                aria-labelledby="tab-support"
+                className="py-7 space-y-6"
+              >
+                <div>
+                  <Heading size="title">Liên hệ tư vấn & Hỗ trợ khách hàng</Heading>
+                  <Text className="mt-2 text-small text-muted">
+                    Đội ngũ chuyên viên NORI sẵn sàng giải đáp thắc mắc về thủ tục thuê xe, thông số
+                    kỹ thuật và chính sách giao nhận 24/7.
+                  </Text>
+                </div>
+
+                <div className="grid gap-5 sm:grid-cols-2">
+                  <div className="rounded-card border border-line bg-subtle p-5 space-y-3">
+                    <div className="flex items-center gap-3 text-brand">
+                      <Icon name="phone" className="size-5" />
+                      <Heading as="h3" size="subtitle">
+                        Tổng đài hỗ trợ 24/7
+                      </Heading>
+                    </div>
+                    <Text className="text-title font-bold text-ink">
+                      {site?.phone || '1900 8888 (Miễn cước)'}
+                    </Text>
+                    <Text className="text-caption text-muted">
+                      Hỗ trợ khẩn cấp trên đường, cứu hộ và đổi lịch trình thuê xe.
+                    </Text>
+                  </div>
+
+                  <div className="rounded-card border border-line bg-subtle p-5 space-y-3">
+                    <div className="flex items-center gap-3 text-brand">
+                      <Icon name="mail" className="size-5" />
+                      <Heading as="h3" size="subtitle">
+                        Hòm thư tiếp nhận
+                      </Heading>
+                    </div>
+                    <Text className="text-title font-bold text-ink">
+                      {site?.email || 'support@nori.vn'}
+                    </Text>
+                    <Text className="text-caption text-muted">
+                      Giải đáp thủ tục hợp đồng, xuất hóa đơn VAT và phản hồi dịch vụ.
+                    </Text>
+                  </div>
+
+                  <div className="rounded-card border border-line bg-subtle p-5 space-y-3 sm:col-span-2">
+                    <div className="flex items-center gap-3 text-brand">
+                      <Icon name="pin" className="size-5" />
+                      <Heading as="h3" size="subtitle">
+                        Điểm giao nhận & Showroom NORI
+                      </Heading>
+                    </div>
+                    <Text className="text-body font-semibold text-ink">
+                      {site?.address ||
+                        'Khu Công Nghệ Cao, TP. Thủ Đức, TP. Hồ Chí Minh · Hà Nội · Đà Nẵng'}
+                    </Text>
+                    <Text className="text-caption text-muted">
+                      Giờ mở cửa bãi xe:{' '}
+                      {site?.openingHours ||
+                        '07:00 – 21:00 hàng ngày (kể cả Thứ 7, Chủ nhật và Lễ Tết)'}
+                    </Text>
+                    {site?.workStartTime && site?.workEndTime && (
+                      <Text className="text-caption text-muted">
+                        Giờ hành chính tư vấn:{' '}
+                        <strong>
+                          {site.workStartTime} – {site.workEndTime}
+                        </strong>
+                        {site.lunchBreakStart && site.lunchBreakEnd
+                          ? ` (Nghỉ trưa ${site.lunchBreakStart} – ${site.lunchBreakEnd})`
+                          : ''}
+                      </Text>
+                    )}
+                    <div className="pt-2">
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => openInquiryModal('CONSULTATION')}
+                      >
+                        Yêu cầu nhân viên tư vấn dòng xe này
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="rounded-card border border-line p-5 space-y-4">
+                  <Heading as="h3" size="subtitle">
+                    Câu hỏi thường gặp về dòng xe {model.name}
+                  </Heading>
+                  <div className="space-y-3 text-small">
+                    <div className="rounded-control bg-subtle p-4">
+                      <Text className="font-semibold text-ink">
+                        1. Cần chuẩn bị những giấy tờ gì khi nhận xe?
+                      </Text>
+                      <Text className="mt-1 text-muted text-caption">
+                        {site?.licenseRequirement ||
+                          'Quý khách chỉ cần chuẩn bị CCCD gắn chip (hoặc Hộ chiếu) và Giấy phép lái xe hợp lệ tương ứng với phân hạng xe.'}
+                      </Text>
+                    </div>
+                    <div className="rounded-control bg-subtle p-4">
+                      <Text className="font-semibold text-ink">
+                        2. Tiền đặt cọc được thanh toán và hoàn trả như thế nào?
+                      </Text>
+                      <Text className="mt-1 text-muted text-caption">
+                        {site?.depositPolicy ||
+                          'Tiền đặt cọc được tạm giữ độc lập khi nhận xe. Sau khi kiểm tra đối soát hoàn tất và không phát sinh hư hỏng, NORI sẽ hoàn cọc ngay lập tức qua chuyển khoản ngân hàng.'}
+                      </Text>
+                    </div>
+                    <div className="rounded-control bg-subtle p-4">
+                      <Text className="font-semibold text-ink">
+                        3. Có dịch vụ giao xe tận nơi tại sân bay hoặc khách sạn không?
+                      </Text>
+                      <Text className="mt-1 text-muted text-caption">
+                        NORI hỗ trợ giao nhận xe tận nơi 24/7 theo yêu cầu. Bạn chỉ cần tick chọn
+                        "Giao xe tận nơi" tại bước đặt xe.
+                      </Text>
+                    </div>
+                  </div>
+                </div>
               </section>
             )}
 
@@ -1845,7 +2170,7 @@ export function VehicleDetail({
 
       {/* Lightbox Dialog */}
       <Dialog
-        title={`${model.name} — ${galleryKindLabels[kind]}`}
+        title={`${model.name} — ${kind === 'ALL' ? 'Bộ sưu tập ảnh' : galleryKindLabels[kind]}`}
         open={galleryOpen}
         onClose={() => {
           setGalleryOpen(false)

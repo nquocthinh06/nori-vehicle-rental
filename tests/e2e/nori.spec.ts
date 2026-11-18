@@ -82,10 +82,51 @@ function cleanupE2ERecords({
           db.prepare('DELETE FROM payload_locked_documents_rels WHERE rental_days_id = ?').run(d.id)
         }
         db.prepare('DELETE FROM rental_days WHERE booking_key = ?').run(b.booking_key)
+        const bConsults = db
+          .prepare('SELECT id FROM consultations WHERE booking_id = ?')
+          .all(b.id) as { id: string }[]
+        for (const c of bConsults) {
+          db.prepare('DELETE FROM consultations_contact_logs WHERE _parent_id = ?').run(c.id)
+          db.prepare('DELETE FROM consultations_rels WHERE parent_id = ?').run(c.id)
+          db.prepare('DELETE FROM consultations WHERE id = ?').run(c.id)
+        }
+        const bNotifs = db
+          .prepare('SELECT id FROM notifications WHERE booking_id = ?')
+          .all(b.id) as { id: string }[]
+        for (const n of bNotifs) {
+          db.prepare('DELETE FROM notifications_rels WHERE parent_id = ?').run(n.id)
+          db.prepare('DELETE FROM notifications WHERE id = ?').run(n.id)
+        }
+        const bMods = db
+          .prepare('SELECT id FROM bookings_modification_history WHERE _parent_id = ?')
+          .all(b.id) as { id: string }[]
+        for (const m of bMods) {
+          db.prepare('DELETE FROM bookings_modification_history_changes WHERE _parent_id = ?').run(
+            m.id,
+          )
+        }
+        db.prepare('DELETE FROM bookings_modification_history WHERE _parent_id = ?').run(b.id)
         db.prepare('DELETE FROM payload_locked_documents_rels WHERE bookings_id = ?').run(b.id)
         db.prepare('DELETE FROM bookings_rels WHERE parent_id = ?').run(b.id)
         db.prepare('DELETE FROM bookings WHERE id = ?').run(b.id)
       }
+      const uConsults = db
+        .prepare('SELECT id FROM consultations WHERE customer_id = ?')
+        .all(user.id) as { id: string }[]
+      for (const c of uConsults) {
+        db.prepare('DELETE FROM consultations_contact_logs WHERE _parent_id = ?').run(c.id)
+        db.prepare('DELETE FROM consultations_rels WHERE parent_id = ?').run(c.id)
+        db.prepare('DELETE FROM consultations WHERE id = ?').run(c.id)
+      }
+      const uNotifs = db
+        .prepare('SELECT id FROM notifications WHERE customer_id = ?')
+        .all(user.id) as { id: string }[]
+      for (const n of uNotifs) {
+        db.prepare('DELETE FROM notifications_rels WHERE parent_id = ?').run(n.id)
+        db.prepare('DELETE FROM notifications WHERE id = ?').run(n.id)
+      }
+      db.prepare('DELETE FROM consultations_rels WHERE users_id = ?').run(user.id)
+      db.prepare('DELETE FROM notifications_rels WHERE users_id = ?').run(user.id)
       for (const inq of inquiries) {
         db.prepare('DELETE FROM payload_locked_documents_rels WHERE sales_inquiries_id = ?').run(
           inq.id,
@@ -207,13 +248,13 @@ test('search dates prefill detail calendar and live rental quote works cleanly',
   await expect(page.getByRole('link', { name: /Tiếp tục đặt thuê/ })).toBeVisible()
 })
 
-test('catalogue search (with unaccented Vietnamese), empty state and reset work across 20 models', async ({
+test('catalogue search (with unaccented Vietnamese), empty state and reset work across 21 models', async ({
   page,
 }) => {
   await page.goto('/vehicles')
   await expect(page.locator('article')).toHaveCount(12)
   await expect(
-    page.getByRole('region', { name: 'Kết quả tìm kiếm' }).getByText('20 dòng xe'),
+    page.getByRole('region', { name: 'Kết quả tìm kiếm' }).getByText('21 dòng xe'),
   ).toBeVisible()
 
   const search = page.getByRole('searchbox')
@@ -223,15 +264,16 @@ test('catalogue search (with unaccented Vietnamese), empty state and reset work 
   await expect(page.locator('main')).toContainText('Honda CR-V')
 
   await search.fill('xe dien')
-  await expect(page.locator('article')).toHaveCount(2)
+  await expect(page.locator('article')).toHaveCount(3)
   await expect(page.locator('main')).toContainText('VinFast VF 8')
   await expect(page.locator('main')).toContainText('VinFast Evo200')
+  await expect(page.locator('main')).toContainText('VinFast Evo Max')
 
   await search.fill('no-vehicle-with-this-name')
   await expect(page.getByRole('heading', { name: 'Chưa tìm thấy xe phù hợp' })).toBeVisible()
   await page.getByRole('button', { name: 'Xóa bộ lọc' }).click()
   await expect(
-    page.getByRole('region', { name: 'Kết quả tìm kiếm' }).getByText('20 dòng xe'),
+    page.getByRole('region', { name: 'Kết quả tìm kiếm' }).getByText('21 dòng xe'),
   ).toBeVisible()
   await expect(page.locator('article')).toHaveCount(12)
 })
@@ -266,12 +308,12 @@ test('catalogue category, brand, subcategory and fuel filters affect results', a
 test('invalid category query degrades safely, list view and sorting work', async ({ page }) => {
   await page.goto('/vehicles?type=unrecognized')
   await expect(
-    page.getByRole('region', { name: 'Kết quả tìm kiếm' }).getByText('20 dòng xe'),
+    page.getByRole('region', { name: 'Kết quả tìm kiếm' }).getByText('21 dòng xe'),
   ).toBeVisible()
   await expect(page.locator('article')).toHaveCount(12)
 
   await page.getByRole('button', { name: 'Trang sau', exact: true }).click()
-  await expect(page.locator('article')).toHaveCount(8)
+  await expect(page.locator('article')).toHaveCount(9)
   await page.getByRole('button', { name: 'Trang trước', exact: true }).click()
   await expect(page.locator('article')).toHaveCount(12)
 
@@ -292,13 +334,12 @@ test('invalid category query degrades safely, list view and sorting work', async
   await expect(page.locator('article h3').nth(2)).toHaveText('Honda CR-V')
 })
 
-test('detail distinguishes missing interior photography on PCX and renders full tabs on Fortuner', async ({
+test('detail hides misleading interior filter on motorbike PCX and renders full tabs on Fortuner', async ({
   page,
 }) => {
   await page.goto('/vehicles/honda-pcx', { waitUntil: 'networkidle' })
   await expect(page.getByText('Có xe thực tế (DEMO)')).toBeVisible()
-  await page.getByRole('button', { name: 'Nội thất', exact: true }).click()
-  await expect(page.getByText('Chưa cập nhật ảnh nội thất', { exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Nội thất', exact: true })).toHaveCount(0)
   await page.getByRole('button', { name: 'Ngoại thất', exact: true }).click()
   await page.getByRole('button', { name: 'Xem ảnh lớn' }).click()
   await expect(page.getByRole('dialog')).toBeVisible()
@@ -594,6 +635,23 @@ test('admin dashboard lifecycle, handover note, customer notifications, password
   const newPassword = `NoriPass2!${tag}`
   const { email: adminEmail, password: adminPassword } = readAdminCredentials()
   let adminContext: Awaited<ReturnType<typeof browser.newContext>> | null = null
+  let priorViosOpStatus = 'READY'
+  {
+    const prepDb = new DatabaseSync('./nori.db')
+    try {
+      const row = prepDb
+        .prepare("SELECT operation_status FROM vehicles WHERE reference = 'NR-OT-VIOS01'")
+        .get() as { operation_status?: string } | undefined
+      if (row?.operation_status) priorViosOpStatus = row.operation_status
+      prepDb
+        .prepare(
+          "UPDATE vehicles SET operation_status = 'READY', status = 'ACTIVE' WHERE reference = 'NR-OT-VIOS01'",
+        )
+        .run()
+    } finally {
+      prepDb.close()
+    }
+  }
 
   try {
     // 1. Customer registers, checks RBAC hiding admin nav & blocking admin API, then creates booking on Toyota Vios
@@ -766,6 +824,11 @@ test('admin dashboard lifecycle, handover note, customer notifications, password
 
     // 6. Customer verifies In-App Notifications & Password Change UI on /account
     await page.goto('/account', { waitUntil: 'networkidle' })
+    const confirmPopupBtn = page.getByRole('button', { name: 'Tôi đã hiểu', exact: true })
+    if (await confirmPopupBtn.isVisible()) {
+      await confirmPopupBtn.click()
+      await expect(confirmPopupBtn).toBeHidden()
+    }
     await expect(page.getByRole('heading', { name: 'Thông báo trạng thái gần đây' })).toBeVisible()
     await expect(page.locator('#pwd-current')).toBeVisible()
     await page.locator('#pwd-current').fill(customerPassword)
@@ -811,5 +874,15 @@ test('admin dashboard lifecycle, handover note, customer notifications, password
       customerEmails: [customerEmail],
       resetVehicleReferences: ['NR-OT-VIOS01'],
     })
+    if (priorViosOpStatus !== 'READY') {
+      const restoreDb = new DatabaseSync('./nori.db')
+      try {
+        restoreDb
+          .prepare("UPDATE vehicles SET operation_status = ? WHERE reference = 'NR-OT-VIOS01'")
+          .run(priorViosOpStatus)
+      } finally {
+        restoreDb.close()
+      }
+    }
   }
 })

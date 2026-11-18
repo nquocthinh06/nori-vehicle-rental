@@ -523,3 +523,11 @@ export function StatusBadge({ status }: { status: string }) {
     </Badge>
   )
 }
+
+export {
+  SearchableSelect,
+  type SelectOption,
+  type SearchableSelectProps,
+} from './searchable-select'
+export { ConfirmDialog } from './confirm-dialog'
+export { Dialog } from './dialog'

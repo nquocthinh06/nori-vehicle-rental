@@ -4,7 +4,17 @@ import { useEffect, useMemo, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import type { Category, ModelView } from '@/lib/catalogue'
 import { formatDate, subCategoryLabels } from '@/lib/rental-rules'
-import { Button, EmptyState, Heading, IconButton, Input, Select, Text, cn } from './ui'
+import {
+  Button,
+  EmptyState,
+  Heading,
+  IconButton,
+  Input,
+  SearchableSelect,
+  Select,
+  Text,
+  cn,
+} from './ui'
 import { Icon } from './ui/icon'
 import { VehicleCard, categoryIcons, categoryLabels } from './vehicle-card'
 

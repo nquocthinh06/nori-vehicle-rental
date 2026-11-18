@@ -1,5 +1,106 @@
 # NHẬT KÝ THAY ĐỔI VÀ NÂNG CẤP HỆ THỐNG NORI (CHANGELOG)
 
+## [Phiên bản 2.3.0] — 2026-11-18: Chỉnh Sửa Đơn Chờ Duyệt, Thông Báo & Tư Vấn Sau Duyệt, Hero Carousel CMS & Quản Trị Phương Tiện Động
+
+### 1. Nghiệp vụ Chỉnh sửa Đơn thuê Đang Chờ Duyệt (`PENDING`)
+
+- Bổ sung thao tác **Xem chi tiết** và **Chỉnh sửa thông tin thuê** tại `/my-bookings` kèm bảng đối chiếu **Trước / Sau** và chênh lệch chi phí thời gian thực.
+- Khóa chỉnh sửa nghiêm ngặt tại Backend (`PUT /nori-api/bookings`) theo chủ sở hữu, trạng thái `PENDING`, giao dịch `payments` chưa phát sinh, và cơ chế `revision` chống ghi đè khi Admin duyệt đơn đồng thời (`HTTP 409 CONFLICT`).
+- Hoán đổi lịch giữ chỗ `rental_days` nguyên tử (loại trừ chính đơn đang sửa qua `excludeBookingId`), lưu đầy đủ `modificationHistory` và `AuditLogs`.
+
+### 2. Thông báo Popup Sau Duyệt & Quy trình Nhân viên Liên hệ Tư vấn
+
+- Bổ sung 2 collections `Notifications` và `Consultations`; tự động kích hoạt idempotent ngay khi đơn chuyển sang `CONFIRMED`.
+- Xây dựng `NotificationProvider` + Popup xác nhận đơn thuê (chỉ tự bật 1 lần/sự kiện duyệt, xem lại mọi lúc qua Chuông thông báo trên Header, nêu rõ xác nhận đơn chưa bao gồm thanh toán, tự ẩn nếu đơn bị hủy trước khi đọc).
+- Bổ sung bộ tính lịch làm việc kế tiếp (`calculateNextContactSlot`) theo giờ hành chính, ngày làm việc trong tuần và ngày nghỉ lễ cấu hình từ Admin (`Asia/Ho_Chi_Minh`); tự động phát hiện và gắn nhãn `Đơn thuê gấp` cùng bộ lọc trạng thái tư vấn tại `/dashboard/bookings`.
+
+### 3. Chuẩn hóa Hero Carousel Phương tiện & Đồng bộ CMS (`NoriSite`)
+
+- Khắc phục triệt để lỗi ghi đè ảnh phong cảnh và lỗi dừng autoplay do vùng hover quá rộng; chuẩn hóa 5 slide phương tiện sắc nét quản trị trực tiếp từ `/dashboard/content`, đạt chuẩn tiếp cận WCAG 2.2 AA (`target-size >= 28×28px`), giữ nguyên dữ liệu `<SearchBar />` khi chuyển slide.
+
+### 4. Bảo mật Tải Đa Ảnh, Không Gian Quản Trị Dòng Xe 10 Tab & Làm Giàu Dữ Liệu
+
+- Nâng cấp `/nori-api/dashboard/media`: xác thực chữ ký magic-byte (JPEG/PNG/WebP/AVIF), kiểm tra kích thước thực bằng `sharp`, tải nhiều ảnh đồng thời kèm báo cáo từng tệp, và chặn xóa ảnh đang được tham chiếu (`HTTP 409`).
+- Nâng cấp `/dashboard/models` thành Workspace 10 tab thích ứng động theo `CAR` / `MOTORBIKE` / `PICKUP` / `Điện (EV)` cùng quản lý đa ảnh cá thể tại `/dashboard/vehicles` và bộ chuyển nguồn ảnh Catalogue / Xe thực tế trên `/vehicles/[slug]`.
+- Chuẩn hóa và bổ sung đầy đủ thông số kỹ thuật xác thực cho mẫu xe máy điện `VinFast Evo Max` (`vinfast-evo-max`) và sắp xếp deterministic `reference` trên `/nori-api/fleet`.
+- Nâng tổng số bài kiểm thử tự động lên **225 Unit Tests** + **62 Playwright E2E Tests** + **Isolated Admin Test**.
+
+---
+
+## [Phiên bản 2.2.0] — 2026-11-18: Nâng Cấp Toàn Diện UI/UX, Design System, Hero Carousel, Sticky Header, Category Cards & 8 Tabs Chi Tiết Xe
+
+### 1. Nâng cấp Hero Banner & Carousel Tự động (`src/components/home/hero.tsx`)
+
+- **Hệ thống Carousel 5 Slide đại diện cho đầy đủ 5 phân khúc phương tiện**:
+  1. Xe Ô tô Phổ thông & SUV (Toyota Vios, Fortuner, Mazda CX-5).
+  2. Xe Ô tô Hạng sang (Mercedes-Benz C300 AMG).
+  3. Xe Máy & Mô tô Phân khối lớn (Honda SH350i, PCX 160, Kawasaki Z650).
+  4. Xe Bán tải Địa hình 4x4 & Hiệu năng cao (Ford Ranger Raptor, Triton Athlete).
+  5. Xe Thuần điện Thông minh (VinFast VF 8 EV, VinFast Evo200).
+- **Hành vi thông minh & Tiếp cận (Accessibility)**:
+  - Tự động chuyển slide sau 6 giây mượt mà với hiệu ứng cross-fade.
+  - Hỗ trợ cử chỉ vuốt chạm (Touch Swipe) trên mobile với ngưỡng dịch chuyển 50px.
+  - Tự động tạm dừng khi rê chuột (Hover), chạm màn hình (Touch) hoặc nhận tiêu điểm (Focus).
+  - Tích hợp nút Tạm dừng / Tiếp tục (Play/Pause accessible toggle) có nhãn ARIA rõ ràng.
+  - Tự động nhận diện và tuân thủ `prefers-reduced-motion` của hệ điều hành.
+  - Không gây cuộn trang ngoài ý muốn; bảo toàn 100% dữ liệu biểu mẫu tìm kiếm xe khi banner chuyển đổi.
+
+### 2. Cố định & Nâng cấp Thanh điều hướng Header (`src/components/site-header.tsx`)
+
+- **Sticky Header đa nền tảng (Desktop, Tablet, Mobile)**:
+  - Thiết lập `sticky top-0 z-40 bg-canvas/95 backdrop-blur-md`.
+  - Thanh tiện ích phía trên (Top utility bar) tự động thu gọn êm ái khi cuộn trang (`scrollY > 24px`) giúp tiết kiệm tối đa không gian màn hình.
+  - Tự động chuyển sang hiệu ứng đổ bóng mờ sang trọng (`shadow-card border-b border-line/90`) khi ở trạng thái dính.
+- **Tối ưu hóa Giao diện Mobile**:
+  - Menu di động dạng Drawer trượt xuống hỗ trợ khóa cuộn trang nền (`document.body.style.overflow = 'hidden'`) tránh cuộn lồng nhau.
+  - Tương thích hoàn hảo với vùng an toàn `env(safe-area-inset-top)`.
+  - Phân tầng Z-index chuẩn hóa: Header (`z-40`), Mobile Bottom Navigation (`z-50`), Dialog/Modal (`z-50`/`z-60`).
+
+### 3. Chuẩn hóa Dropdown, Form Controls & Searchable Select (`src/components/ui/*`)
+
+- **Component `SearchableSelect` mới (`src/components/ui/searchable-select.tsx`)**:
+  - Dropdown tùy biến hoàn chỉnh theo Design System NORI, loại bỏ giao diện mặc định thô của hệ điều hành.
+  - Tích hợp thanh tìm kiếm nhanh bên trong dropdown, hỗ trợ lọc tức thì danh sách dài (thương hiệu, kiểu dáng, địa điểm).
+  - Điều hướng bằng bàn phím (ArrowUp, ArrowDown, Enter, Escape).
+  - Tự động đóng khi nhấn phím Escape hoặc nhấn ngoài vùng hiển thị.
+  - Áp dụng trực tiếp vào bộ lọc thương hiệu và phân loại xe trên Catalogue (`src/components/catalogue.tsx`).
+- **Component `ConfirmDialog` mới (`src/components/ui/confirm-dialog.tsx`)**:
+  - Hộp thoại xác nhận thao tác nghiệp vụ quan trọng (hủy đơn, duyệt thanh toán, hoàn cọc).
+- **CSS Utility `.no-scrollbar` (`src/app/(frontend)/styles.css`)**:
+  - Ẩn thanh cuộn ngang/dọc mặc định của trình duyệt trong khi vẫn bảo toàn 100% khả năng cuộn mượt mà trên chuột và cảm ứng.
+
+### 4. Thẻ Danh Mục Phương Tiện Nâng Cấp (`src/components/home/featured.tsx`)
+
+- **Category Cards với Hình ảnh Chân thực**:
+  - Thay thế danh mục icon thô bằng 4 thẻ hình ảnh phương tiện thực tế sắc nét (Ô tô, Xe máy, Bán tải, Xe điện xanh).
+  - Hiển thị số lượng dòng xe khả dụng thời gian thực (`X dòng xe khả dụng`).
+  - Danh sách huy hiệu kiểu dáng chi tiết (Sedan, SUV, CUV, MPV, Tay ga, Côn tay, PKL, 4x4, ADAS).
+  - Toàn bộ card có thể nhấn chuyển hướng trực tiếp đến danh mục xe đã áp dụng bộ lọc tương ứng.
+
+### 5. Nâng cấp 8 Nhóm Tab Trang Chi Tiết Xe (`src/components/vehicle-detail.tsx`)
+
+- **Tổ chức nội dung thành 8 nhóm chuyên biệt**:
+  1. _Tổng quan & Thiết kế_: Đoạn giới thiệu, đối tượng phù hợp, các điểm nhấn thiết kế.
+  2. _Thông số kỹ thuật_: Bảng thông số kỹ thuật nhóm theo Động cơ, Kích thước, Khung gầm, EV/Bán tải.
+  3. _Công nghệ & An toàn_: Danh mục tiện nghi, giải trí, hỗ trợ lái ADAS và an toàn.
+  4. _Xe thực tế & ODO_: Danh sách từng xe thực tế trong đội xe (biển số, màu sắc, ODO, kiểm định, lịch sử bảo dưỡng).
+  5. _Giá & Chính sách_: Bảng giá thuê, biểu phí phụ trội km/giờ, bảng tính giá lăn bánh tham khảo, điều kiện thuê xe.
+  6. _Lịch khả dụng (Tab mới)_: Giao diện lịch trực quan chuyên biệt, hiển thị rõ ràng ngày trống, ngày đã có khách thuê, ngày bảo dưỡng kỹ thuật định kỳ.
+  7. _Đánh giá_: Điểm trung bình và nhận xét từ khách hàng đã hoàn thành đơn thuê.
+  8. _Liên hệ & Hỗ trợ (Tab mới)_: Hotline tổng đài 24/7, email hỗ trợ, địa chỉ showroom/bãi xe, giờ làm việc và bộ giải đáp thắc mắc thường gặp.
+- **Thanh Tab bám dính (Sticky Tab Bar)**:
+  - Bám dính bên dưới Header (`sticky top-[4.75rem] z-20`) kèm hiệu ứng mờ hậu cảnh `backdrop-blur-md`.
+  - Triệt tiêu hoàn toàn scrollbar thô với class `no-scrollbar`.
+  - Chuyển tab tức thì ở client, không reload toàn trang, giữ nguyên trạng thái đặt xe ở sidebar.
+
+### 6. Bổ sung Kịch bản Kiểm thử Nghiệp vụ & Chất lượng
+
+- **`tests/rental-rules.test.mjs`**:
+  - Bổ sung 8 test cases chuyên sâu kiểm thử tính giá lăn bánh xe điện 0% thuế trước bạ (`SALE`), thuế trước bạ bán tải 6%, xe máy 2%, xe ô tô lướt 2%, phân tách tiền cọc độc lập với tiền thuê (`DEP`), phụ phí giao xe tận nơi và kiểm tra dữ liệu dịch vụ bổ sung (`RENT`).
+  - Nâng tổng số unit test từ **205 lên 213 tests PASS (100%)**.
+
+---
+
 ## [Phiên bản 2.1.0] — 2026-11-18: Kiểm định & Hoàn thiện Responsive, PWA, Hiệu năng & Đồng bộ Dữ liệu
 
 ### 1. Đồng bộ Dữ liệu & Dynamic Routing

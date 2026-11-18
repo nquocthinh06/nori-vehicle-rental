@@ -4,11 +4,14 @@ import { useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { api } from '@/lib/client-api'
 import {
+  CONSULTATION_STATUSES,
   bookingStatusLabels,
   canTransition,
+  consultationStatusLabels,
   formatDate,
   formatMoney,
   type BookingStatus,
+  type ConsultationStatus,
 } from '@/lib/rental-rules'
 import type { BookingView } from '@/lib/domain-types'
 import {
@@ -39,6 +42,15 @@ const actionLabels: Record<string, string> = {
   COMPLETED: 'Hoàn thành & giải phóng lịch',
 }
 
+const consultFilterOptions = [
+  { value: '', label: 'Tất cả lịch tư vấn' },
+  { value: 'PENDING_CONTACT', label: 'Đơn chờ liên hệ' },
+  { value: 'DUE_TODAY', label: 'Đơn cần xử lý hôm nay' },
+  { value: 'OVERDUE', label: 'Đơn quá hạn liên hệ' },
+  { value: 'URGENT', label: 'Đơn thuê gấp ưu tiên' },
+  { value: 'CONSULTED', label: 'Đơn đã tư vấn' },
+]
+
 export function BookingsPanel() {
   const searchParams = useSearchParams()
   const { toast } = useToast()
@@ -47,6 +59,7 @@ export function BookingsPanel() {
   const [page, setPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
   const [status, setStatus] = useState(searchParams.get('status') || '')
+  const [consultFilter, setConsultFilter] = useState(searchParams.get('consultFilter') || '')
   const [q, setQ] = useState(searchParams.get('q') || '')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -65,6 +78,14 @@ export function BookingsPanel() {
   const [busy, setBusy] = useState(false)
   const [actionError, setActionError] = useState('')
 
+  // Consultation staff form inside Detail modal
+  const [consultStatus, setConsultStatus] = useState<ConsultationStatus>('PENDING_CONTACT')
+  const [consultOutcome, setConsultOutcome] = useState('')
+  const [consultCallNote, setConsultCallNote] = useState('')
+  const [consultCallbackAt, setConsultCallbackAt] = useState('')
+  const [consultInternalNote, setConsultInternalNote] = useState('')
+  const [consultSaving, setConsultSaving] = useState(false)
+
   useEffect(() => {
     let active = true
     setLoading(true)
@@ -72,6 +93,7 @@ export function BookingsPanel() {
     const sp = new URLSearchParams({
       page: String(page),
       ...(status ? { status } : {}),
+      ...(consultFilter ? { consultFilter } : {}),
       ...(q.trim() ? { q: q.trim() } : {}),
     })
     api<{ items: BookingView[]; totalDocs: number; page: number; totalPages: number }>(
@@ -82,6 +104,17 @@ export function BookingsPanel() {
         setItems(res.items)
         setTotalDocs(res.totalDocs)
         setTotalPages(res.totalPages)
+        if (detail) {
+          const refreshed = res.items.find((x) => x.id === detail.id)
+          if (refreshed) {
+            setDetail(refreshed)
+            if (refreshed.consultation) {
+              setConsultStatus(refreshed.consultation.status as ConsultationStatus)
+              setConsultCallbackAt(refreshed.consultation.callbackScheduledAt ?? '')
+              setConsultInternalNote(refreshed.consultation.internalNote ?? '')
+            }
+          }
+        }
       })
       .catch((e) => {
         if (active) setError((e as Error).message)
@@ -92,7 +125,48 @@ export function BookingsPanel() {
     return () => {
       active = false
     }
-  }, [page, status, q, retry])
+  }, [page, status, consultFilter, q, retry])
+
+  function openDetailModal(b: BookingView) {
+    setDetail(b)
+    if (b.consultation) {
+      setConsultStatus(b.consultation.status as ConsultationStatus)
+      setConsultCallbackAt(b.consultation.callbackScheduledAt ?? '')
+      setConsultInternalNote(b.consultation.internalNote ?? '')
+      setConsultOutcome('')
+      setConsultCallNote('')
+    }
+  }
+
+  async function saveConsultationUpdate(extra?: {
+    claim?: boolean
+    overrideStatus?: ConsultationStatus
+  }) {
+    if (!detail?.consultation) return
+    setConsultSaving(true)
+    try {
+      await api('/dashboard/consultations', {
+        method: 'PATCH',
+        body: JSON.stringify({
+          id: detail.consultation.id,
+          ...(extra?.claim ? { claim: true } : {}),
+          status: extra?.overrideStatus ?? consultStatus,
+          ...(consultOutcome.trim() ? { outcome: consultOutcome.trim() } : {}),
+          ...(consultCallNote.trim() ? { callNote: consultCallNote.trim() } : {}),
+          callbackScheduledAt: consultCallbackAt.trim(),
+          internalNote: consultInternalNote.trim(),
+        }),
+      })
+      toast('Đã lưu cập nhật theo dõi tư vấn khách hàng.')
+      setConsultOutcome('')
+      setConsultCallNote('')
+      setRetry((r) => r + 1)
+    } catch (err) {
+      toast((err as Error).message, 'error')
+    } finally {
+      setConsultSaving(false)
+    }
+  }
 
   async function confirmTransition() {
     if (!transition) return
@@ -134,7 +208,7 @@ export function BookingsPanel() {
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-4 rounded-card border border-line bg-canvas p-4">
-        <div className="grid flex-1 gap-3 sm:grid-cols-2 lg:max-w-xl">
+        <div className="grid flex-1 gap-3 sm:grid-cols-3 lg:max-w-3xl">
           <Input
             id="booking-search"
             label="Tìm kiếm đơn thuê"
@@ -158,6 +232,21 @@ export function BookingsPanel() {
             {Object.entries(bookingStatusLabels).map(([k, label]) => (
               <option key={k} value={k}>
                 {label}
+              </option>
+            ))}
+          </Select>
+          <Select
+            id="booking-consult-filter"
+            label="Bộ lọc tư vấn khách hàng"
+            value={consultFilter}
+            onChange={(e) => {
+              setPage(1)
+              setConsultFilter(e.target.value)
+            }}
+          >
+            {consultFilterOptions.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
               </option>
             ))}
           </Select>
@@ -189,7 +278,7 @@ export function BookingsPanel() {
         <EmptyState
           icon="calendar"
           title="Không có đơn thuê phù hợp"
-          description="Thử thay đổi bộ lọc trạng thái hoặc từ khóa tìm kiếm."
+          description="Thử thay đổi bộ lọc trạng thái, bộ lọc tư vấn hoặc từ khóa tìm kiếm."
         />
       ) : (
         <div className="space-y-3">
@@ -212,6 +301,26 @@ export function BookingsPanel() {
                         {b.modelName} ({b.reference})
                       </Heading>
                       <StatusBadge status={b.status} />
+                      {b.isUrgentApproval &&
+                        !['CANCELLED', 'REJECTED', 'COMPLETED'].includes(b.status) && (
+                          <Badge tone="warning">Đơn thuê gấp</Badge>
+                        )}
+                      {b.consultation && (
+                        <Badge
+                          tone={
+                            ['CONSULTED', 'COMPLETED'].includes(b.consultation.status)
+                              ? 'brand'
+                              : 'muted'
+                          }
+                        >
+                          Tư vấn:{' '}
+                          {consultationStatusLabels[b.consultation.status as ConsultationStatus] ??
+                            b.consultation.status}
+                        </Badge>
+                      )}
+                      {b.modificationHistory && b.modificationHistory.length > 0 && (
+                        <Badge tone="muted">Đã chỉnh sửa ({b.modificationHistory.length})</Badge>
+                      )}
                       {b.depositExpired && <Badge tone="danger">Quá hạn đặt cọc (&gt;24h)</Badge>}
                     </div>
                     <Text className="text-small text-muted">
@@ -223,6 +332,17 @@ export function BookingsPanel() {
                       Thời gian: {formatDate(b.startDate)} ({b.pickupTime}) →{' '}
                       {formatDate(b.endDate)} ({b.returnTime}) · {b.totalDays} ngày
                     </Text>
+                    {b.consultation && (
+                      <Text className="text-caption text-muted">
+                        Lịch liên hệ dự kiến:{' '}
+                        <strong className="text-ink">
+                          {formatDate(b.consultation.expectedContactDate)}
+                        </strong>
+                        {b.consultation.assignedStaffName
+                          ? ` · Phụ trách: ${b.consultation.assignedStaffName}`
+                          : ' · Chưa phân công nhân viên'}
+                      </Text>
+                    )}
                     {b.handoverNote && (
                       <Text className="text-caption text-brand">
                         Ghi chú bàn giao: {b.handoverNote}
@@ -241,9 +361,9 @@ export function BookingsPanel() {
                 </div>
 
                 <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-line pt-3">
-                  <Button variant="ghost" size="sm" onClick={() => setDetail(b)}>
+                  <Button variant="ghost" size="sm" onClick={() => openDetailModal(b)}>
                     <Icon name="eye" className="size-4" />
-                    Xem chi tiết & lịch sử
+                    Xem chi tiết, Tư vấn & Lịch sử
                   </Button>
                   <div className="flex flex-wrap gap-2">
                     {legalActions.map((target) => (
@@ -303,7 +423,7 @@ export function BookingsPanel() {
         </div>
       )}
 
-      {/* Detail Modal */}
+      {/* Detail & Consultation Modal */}
       <Dialog
         open={Boolean(detail)}
         onClose={() => setDetail(null)}
@@ -311,7 +431,7 @@ export function BookingsPanel() {
         wide
       >
         {detail && (
-          <div className="space-y-5 text-small">
+          <div className="space-y-6 text-small">
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="rounded-control bg-subtle p-4">
                 <Text className="mb-2 font-semibold text-ink">Thông tin khách hàng</Text>
@@ -332,7 +452,11 @@ export function BookingsPanel() {
                 <p>
                   Trả xe: {formatDate(detail.endDate)} lúc {detail.returnTime}
                 </p>
-                <p>Địa điểm: {detail.pickupLocation || 'Tại điểm giao nhận NORI'}</p>
+                <p>Điểm nhận: {detail.pickupLocation || 'Tại điểm giao nhận NORI'}</p>
+                <p>
+                  Điểm trả:{' '}
+                  {detail.returnLocation || detail.pickupLocation || 'Tại điểm giao nhận NORI'}
+                </p>
                 <p>Giao tận nơi: {detail.deliveryRequested ? 'Có' : 'Không'}</p>
               </div>
             </div>
@@ -344,7 +468,12 @@ export function BookingsPanel() {
                 <p>Phụ phí cuối tuần/lễ: {formatMoney(detail.weekendSurchargeTotal)}</p>
                 <p>Phí giao nhận: {formatMoney(detail.deliveryFeeSnapshot)}</p>
                 <p>Dịch vụ bổ sung: {formatMoney(detail.addonFeeTotal)}</p>
-                <p>Chiết khấu: {formatMoney(detail.discountAmount)}</p>
+                <p>Chiết khấu dài ngày: {formatMoney(detail.discountAmount)}</p>
+                {(detail.promoDiscountAmount ?? 0) > 0 && (
+                  <p>
+                    Mã KM ({detail.promoCode}): -{formatMoney(detail.promoDiscountAmount)}
+                  </p>
+                )}
                 <p>Phụ phí phát sinh: {formatMoney(detail.extraFee)}</p>
                 <p className="font-semibold text-ink">
                   Tổng dự kiến: {formatMoney(detail.totalPrice)}
@@ -358,6 +487,203 @@ export function BookingsPanel() {
                 </Text>
               )}
             </div>
+
+            {/* Section 10: Customer Consultation Tracking Panel */}
+            <div className="rounded-card border border-brand/30 bg-soft/60 p-4 space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <Heading as="h3" size="body" className="font-semibold text-ink">
+                    Theo dõi nhân viên liên hệ tư vấn khách hàng
+                  </Heading>
+                  <Text className="text-micro text-muted">
+                    Quản lý độc lập quá trình gọi tư vấn sau khi duyệt đơn (không làm thay đổi trạng
+                    thái thanh toán hay hợp đồng).
+                  </Text>
+                </div>
+                {detail.consultation && (
+                  <div className="flex items-center gap-2">
+                    {detail.consultation.isUrgent && <Badge tone="warning">Đơn thuê gấp</Badge>}
+                    <Badge tone="brand">
+                      {consultationStatusLabels[detail.consultation.status as ConsultationStatus] ??
+                        detail.consultation.status}
+                    </Badge>
+                  </div>
+                )}
+              </div>
+
+              {detail.consultation ? (
+                <>
+                  <div className="grid gap-3 rounded-control bg-canvas p-3.5 text-caption sm:grid-cols-3">
+                    <div>
+                      <span className="text-muted">Thời điểm duyệt đơn:</span>
+                      <p className="font-medium text-ink">
+                        {formatDate(detail.consultation.approvedAt)}
+                        {detail.consultation.approvedBy
+                          ? ` (${detail.consultation.approvedBy})`
+                          : ''}
+                      </p>
+                    </div>
+                    <div>
+                      <span className="text-muted">Lịch liên hệ dự kiến:</span>
+                      <p className="font-semibold text-brand">
+                        {formatDate(detail.consultation.expectedContactDate)}
+                        {detail.consultation.workingHoursWindow
+                          ? ` · ${detail.consultation.workingHoursWindow}`
+                          : ''}
+                      </p>
+                    </div>
+                    <div>
+                      <span className="text-muted">Nhân viên phụ trách:</span>
+                      <p className="font-medium text-ink">
+                        {detail.consultation.assignedStaffName || 'Chưa tiếp nhận'}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    <Select
+                      id="consult-status"
+                      label="Trạng thái tư vấn"
+                      value={consultStatus}
+                      onChange={(e) => setConsultStatus(e.target.value as ConsultationStatus)}
+                    >
+                      {CONSULTATION_STATUSES.map((st) => (
+                        <option key={st} value={st}>
+                          {consultationStatusLabels[st]}
+                        </option>
+                      ))}
+                    </Select>
+                    <Input
+                      id="consult-outcome"
+                      label="Kết quả cuộc gọi mới"
+                      placeholder="Đã nghe máy, hẹn gửi GPLX..."
+                      value={consultOutcome}
+                      onChange={(e) => setConsultOutcome(e.target.value)}
+                    />
+                    <Input
+                      id="consult-callback"
+                      label="Hẹn liên hệ lại (nếu có)"
+                      type="datetime-local"
+                      value={consultCallbackAt}
+                      onChange={(e) => setConsultCallbackAt(e.target.value)}
+                    />
+                  </div>
+
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <Textarea
+                      id="consult-call-note"
+                      label="Nội dung cuộc gọi tư vấn"
+                      rows={2}
+                      placeholder="Ghi nhận trao đổi với khách hàng..."
+                      value={consultCallNote}
+                      onChange={(e) => setConsultCallNote(e.target.value)}
+                    />
+                    <Textarea
+                      id="consult-internal-note"
+                      label="Ghi chú nội bộ vận hành"
+                      rows={2}
+                      placeholder="Lưu ý chuẩn bị xe, phụ kiện..."
+                      value={consultInternalNote}
+                      onChange={(e) => setConsultInternalNote(e.target.value)}
+                    />
+                  </div>
+
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex flex-wrap gap-2">
+                      {!detail.consultation.assignedStaffName && (
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          loading={consultSaving}
+                          onClick={() => void saveConsultationUpdate({ claim: true })}
+                        >
+                          Tiếp nhận yêu cầu
+                        </Button>
+                      )}
+                      {detail.consultation.status !== 'COMPLETED' && (
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          loading={consultSaving}
+                          onClick={() =>
+                            void saveConsultationUpdate({ overrideStatus: 'COMPLETED' })
+                          }
+                        >
+                          Đánh dấu hoàn thành tư vấn
+                        </Button>
+                      )}
+                    </div>
+                    <Button
+                      size="sm"
+                      loading={consultSaving}
+                      onClick={() => void saveConsultationUpdate()}
+                    >
+                      Lưu cập nhật tư vấn
+                    </Button>
+                  </div>
+
+                  {detail.consultation.contactLogs.length > 0 && (
+                    <div className="rounded-control bg-canvas p-3">
+                      <Text className="mb-2 text-caption font-semibold text-ink">
+                        Lịch sử cuộc gọi & Liên hệ ({detail.consultation.contactLogs.length})
+                      </Text>
+                      <ul className="space-y-1.5 border-l-2 border-brand/30 pl-3 text-caption">
+                        {detail.consultation.contactLogs.map((log, idx) => (
+                          <li key={idx}>
+                            <strong className="text-ink">{log.outcome}</strong> ·{' '}
+                            <span className="text-muted">{formatDate(log.contactedAt)}</span>
+                            {log.staffName ? ` · ${log.staffName}` : ''}
+                            {log.note ? ` — ${log.note}` : ''}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <Text className="text-caption text-muted">
+                  Yêu cầu tư vấn sẽ được hệ thống khởi tạo tự động ngay sau khi Admin duyệt đơn thuê
+                  (trạng thái Đã xác nhận).
+                </Text>
+              )}
+            </div>
+
+            {/* Section 6: Modification Audit History */}
+            {detail.modificationHistory && detail.modificationHistory.length > 0 && (
+              <div>
+                <Text className="mb-2 font-semibold text-ink">
+                  Lịch sử khách hàng chỉnh sửa đơn ({detail.modificationHistory.length})
+                </Text>
+                <div className="space-y-2.5">
+                  {detail.modificationHistory.map((mod, idx) => (
+                    <div key={idx} className="rounded-control border border-line p-3 text-caption">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span>
+                          <strong className="text-ink">{mod.modifiedBy || 'Khách hàng'}</strong> ·{' '}
+                          {formatDate(mod.modifiedAt)} (Trạng thái: {mod.statusAtChange})
+                        </span>
+                        <span>
+                          Báo giá: {formatMoney(mod.previousTotalPrice)} →{' '}
+                          <strong className="text-brand">{formatMoney(mod.newTotalPrice)}</strong> ·
+                          Cọc: {formatMoney(mod.previousDeposit)} → {formatMoney(mod.newDeposit)}
+                        </span>
+                      </div>
+                      {mod.reason && (
+                        <p className="mt-1 text-muted">Lý do thay đổi: {mod.reason}</p>
+                      )}
+                      <ul className="mt-1.5 space-y-0.5 text-muted">
+                        {mod.changes.map((c, cIdx) => (
+                          <li key={cIdx}>
+                            • <strong className="text-ink">{c.label}:</strong> {c.before} →{' '}
+                            <span className="text-ink">{c.after}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             <div>
               <Text className="mb-2 font-semibold text-ink">Lịch sử trạng thái</Text>
@@ -399,6 +725,29 @@ export function BookingsPanel() {
               Xác nhận chuyển đơn <strong>{transition.booking.bookingKey}</strong> sang trạng thái{' '}
               <strong>{bookingStatusLabels[transition.to] ?? transition.to}</strong>?
             </Text>
+
+            {transition.to === 'CONFIRMED' && (
+              <div className="space-y-2.5">
+                {transition.booking.isUrgentApproval && (
+                  <Notice tone="info">
+                    <strong>Cảnh báo đơn thuê gấp cần xử lý ưu tiên:</strong> Ngày nhận xe (
+                    {formatDate(transition.booking.startDate)} lúc {transition.booking.pickupTime})
+                    diễn ra trước hoặc sát ngày làm việc liên hệ dự kiến (
+                    {formatDate(transition.booking.expectedContactDate)}). Đơn sẽ được gắn nhãn{' '}
+                    <strong>Đơn thuê gấp</strong> để nhân viên chủ động liên hệ sớm.
+                  </Notice>
+                )}
+                <div className="rounded-control bg-subtle p-3 text-caption text-muted">
+                  Sau khi duyệt: Hệ thống tự động gửi thông báo xác nhận cho khách hàng và tạo lịch
+                  tư vấn vào ngày làm việc{' '}
+                  <strong className="text-ink">
+                    {formatDate(transition.booking.expectedContactDate)}
+                  </strong>{' '}
+                  ({transition.booking.workingHoursSnapshot || 'Giờ hành chính'}).
+                </div>
+              </div>
+            )}
+
             <Textarea
               id="dashboard-handover-note"
               label="Ghi chú giao nhận / xử lý nội bộ"

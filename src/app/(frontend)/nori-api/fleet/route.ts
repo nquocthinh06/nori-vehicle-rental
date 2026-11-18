@@ -30,55 +30,79 @@ export async function GET(request: Request) {
       collection: 'vehicles',
       overrideAccess: false,
       where,
+      sort: 'reference',
       depth: 1,
       limit: 100,
     })
-    const data: FleetView[] = result.docs.map((vehicle) => ({
-      id: vehicle.id,
-      reference: vehicle.reference,
-      modelId: typeof vehicle.model === 'object' ? vehicle.model.id : vehicle.model,
-      modelName: typeof vehicle.model === 'object' ? vehicle.model.name : 'Chưa cập nhật',
-      modelSlug: typeof vehicle.model === 'object' ? vehicle.model.slug : '',
-      intent: vehicle.intent,
-      isDemo: Boolean(vehicle.isDemo ?? true),
-      vehicleConditionType: vehicle.vehicleConditionType === 'NEW' ? 'NEW' : 'USED',
-      manufactureYear: vehicle.manufactureYear ?? null,
-      pricePerDay: vehicle.pricePerDay ?? null,
-      pricePerHour: vehicle.pricePerHour ?? null,
-      pricePerWeek: vehicle.pricePerWeek ?? null,
-      pricePerMonth: vehicle.pricePerMonth ?? null,
-      weekendSurcharge: vehicle.weekendSurcharge ?? null,
-      holidaySurcharge: vehicle.holidaySurcharge ?? null,
-      depositAmount: vehicle.depositAmount ?? null,
-      deliveryFee: vehicle.deliveryFee ?? null,
-      kmLimitPerDay: vehicle.kmLimitPerDay ?? null,
-      overKmFee: vehicle.overKmFee ?? null,
-      lateReturnFeePerHour: vehicle.lateReturnFeePerHour ?? null,
-      salePrice: vehicle.salePrice ?? null,
-      listedPrice: vehicle.listedPrice ?? null,
-      discountPrice: vehicle.discountPrice ?? null,
-      reservationDeposit: vehicle.reservationDeposit ?? null,
-      estimatedRollingPrice: vehicle.estimatedRollingPrice ?? null,
-      negotiable: Boolean(vehicle.negotiable),
-      warrantyPolicy: vehicle.warrantyPolicy ?? null,
-      priceSourceNote: vehicle.priceSourceNote ?? null,
-      odometer: vehicle.odometer ?? null,
-      condition: vehicle.condition ?? null,
-      exteriorCondition: vehicle.exteriorCondition ?? null,
-      interiorCondition: vehicle.interiorCondition ?? null,
-      engineCondition: vehicle.engineCondition ?? null,
-      maintenanceHistory: vehicle.maintenanceHistory ?? null,
-      inspectedAt: vehicle.inspectedAt ?? null,
-      color: vehicle.color ?? null,
-      version: vehicle.version ?? null,
-      location: vehicle.location ?? null,
-      pickupLocation: vehicle.pickupLocation ?? null,
-      operationStatus: vehicle.operationStatus ?? 'READY',
-      photos: (vehicle.photos ?? []).flatMap((p) => {
-        const image = photo(p.image)
-        return image ? [{ image, caption: p.caption ?? null, kind: p.kind ?? null }] : []
-      }),
-    }))
+    const data: FleetView[] = result.docs.map((vehicle) => {
+      const mappedPhotos = (vehicle.photos ?? [])
+        .map((p, idx) => {
+          const image = photo(p.image)
+          if (!image) return null
+          if (p.altText && p.altText.trim()) {
+            image.alt = p.altText.trim()
+          }
+          return {
+            image,
+            caption: p.caption ?? null,
+            kind: p.kind ?? null,
+            photoType: p.photoType ?? null,
+            isPrimary: Boolean(p.isPrimary),
+            sortOrder: typeof p.sortOrder === 'number' ? p.sortOrder : idx,
+            altText: p.altText ?? null,
+            sourceName: p.sourceName ?? null,
+          }
+        })
+        .filter((x): x is NonNullable<typeof x> => x !== null)
+        .sort((a, b) => {
+          if (a.isPrimary !== b.isPrimary) return a.isPrimary ? -1 : 1
+          return a.sortOrder - b.sortOrder
+        })
+
+      return {
+        id: vehicle.id,
+        reference: vehicle.reference,
+        modelId: typeof vehicle.model === 'object' ? vehicle.model.id : vehicle.model,
+        modelName: typeof vehicle.model === 'object' ? vehicle.model.name : 'Chưa cập nhật',
+        modelSlug: typeof vehicle.model === 'object' ? vehicle.model.slug : '',
+        intent: vehicle.intent,
+        isDemo: Boolean(vehicle.isDemo ?? true),
+        vehicleConditionType: vehicle.vehicleConditionType === 'NEW' ? 'NEW' : 'USED',
+        manufactureYear: vehicle.manufactureYear ?? null,
+        pricePerDay: vehicle.pricePerDay ?? null,
+        pricePerHour: vehicle.pricePerHour ?? null,
+        pricePerWeek: vehicle.pricePerWeek ?? null,
+        pricePerMonth: vehicle.pricePerMonth ?? null,
+        weekendSurcharge: vehicle.weekendSurcharge ?? null,
+        holidaySurcharge: vehicle.holidaySurcharge ?? null,
+        depositAmount: vehicle.depositAmount ?? null,
+        deliveryFee: vehicle.deliveryFee ?? null,
+        kmLimitPerDay: vehicle.kmLimitPerDay ?? null,
+        overKmFee: vehicle.overKmFee ?? null,
+        lateReturnFeePerHour: vehicle.lateReturnFeePerHour ?? null,
+        salePrice: vehicle.salePrice ?? null,
+        listedPrice: vehicle.listedPrice ?? null,
+        discountPrice: vehicle.discountPrice ?? null,
+        reservationDeposit: vehicle.reservationDeposit ?? null,
+        estimatedRollingPrice: vehicle.estimatedRollingPrice ?? null,
+        negotiable: Boolean(vehicle.negotiable),
+        warrantyPolicy: vehicle.warrantyPolicy ?? null,
+        priceSourceNote: vehicle.priceSourceNote ?? null,
+        odometer: vehicle.odometer ?? null,
+        condition: vehicle.condition ?? null,
+        exteriorCondition: vehicle.exteriorCondition ?? null,
+        interiorCondition: vehicle.interiorCondition ?? null,
+        engineCondition: vehicle.engineCondition ?? null,
+        maintenanceHistory: vehicle.maintenanceHistory ?? null,
+        inspectedAt: vehicle.inspectedAt ?? null,
+        color: vehicle.color ?? null,
+        version: vehicle.version ?? null,
+        location: vehicle.location ?? null,
+        pickupLocation: vehicle.pickupLocation ?? null,
+        operationStatus: vehicle.operationStatus ?? 'READY',
+        photos: mappedPhotos,
+      }
+    })
     return json(data)
   } catch (error) {
     return apiError(error)

@@ -2,22 +2,35 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   addDays,
+  BOOKING_CONFIRMED_LOCK_MESSAGE,
   businessToday,
   calculateAddonFee,
+  calculateNextContactSlot,
   calculateRentalQuote,
   calculateRollingPrice,
+  canModifyBooking,
   canTransition,
   canTransitionInquiry,
+  computeRentalDayDiff,
   countHolidayDays,
   countWeekendDays,
   dateNumber,
   formatDate,
   formatMoney,
+  getBookingActionMatrix,
+  getDynamicFeaturePresets,
+  getDynamicSpecTemplates,
+  getPhotoTypeOptions,
   isDepositExpired,
+  isSpecApplicable,
+  maskPhone,
   overlaps,
   parseAddonKeys,
+  parseWorkingDays,
   rentalDays,
+  subCategoriesByCategory,
   validateRentalDates,
+  validateTimeString,
 } from '../src/lib/rental-rules.ts'
 
 const today = '2026-11-16'
@@ -299,4 +312,318 @@ test('deposit expiration flags DEPOSIT_PENDING records older than holdHours', ()
   assert.equal(isDepositExpired('2026-11-16T13:00:00Z', 'DEPOSIT_PENDING', 24, now), false)
   assert.equal(isDepositExpired('2026-11-10T00:00:00Z', 'CONFIRMED', 24, now), false)
   assert.equal(isDepositExpired(null, 'DEPOSIT_PENDING', 24, now), false)
+})
+
+// === TEST CASES: SALE-01 to SALE-09 (Quy tắc tính giá lăn bánh & Bán xe) ===
+test('SALE: calculateRollingPrice computes 0% registration tax for Electric Car (EV)', () => {
+  const evBreakdown = calculateRollingPrice(895_000_000, 'CAR', 'Điện (EV)', true)
+  assert.ok(evBreakdown)
+  assert.equal(evBreakdown.registrationTaxRate, 0)
+  assert.equal(evBreakdown.registrationTax, 0)
+  assert.equal(evBreakdown.plateFee, 20_000_000)
+  assert.equal(evBreakdown.inspectionAndRoadFee, 1_900_000)
+  assert.equal(evBreakdown.civilInsuranceFee, 873_400)
+  assert.equal(evBreakdown.totalEstimated, 895_000_000 + 20_000_000 + 1_900_000 + 873_400)
+})
+
+test('SALE: calculateRollingPrice computes 2% registration tax for Used Car', () => {
+  const usedCarBreakdown = calculateRollingPrice(465_000_000, 'CAR', 'Xăng', false)
+  assert.ok(usedCarBreakdown)
+  assert.equal(usedCarBreakdown.registrationTaxRate, 0.02)
+  assert.equal(usedCarBreakdown.registrationTax, 9_300_000)
+  assert.equal(usedCarBreakdown.plateFee, 1_000_000)
+  assert.equal(usedCarBreakdown.civilInsuranceFee, 873_400)
+})
+
+test('SALE: calculateRollingPrice computes 6% registration tax for New Pickup Truck', () => {
+  const pickupBreakdown = calculateRollingPrice(1_195_000_000, 'PICKUP', 'Dầu (Diesel)', true)
+  assert.ok(pickupBreakdown)
+  assert.equal(pickupBreakdown.registrationTaxRate, 0.06)
+  assert.equal(pickupBreakdown.registrationTax, 71_700_000)
+  assert.equal(pickupBreakdown.plateFee, 20_000_000)
+  assert.equal(pickupBreakdown.civilInsuranceFee, 1_026_000)
+})
+
+test('SALE: calculateRollingPrice computes 2% registration tax & 2M plate fee for New Motorbike', () => {
+  const bikeBreakdown = calculateRollingPrice(91_000_000, 'MOTORBIKE', 'Xăng', true)
+  assert.ok(bikeBreakdown)
+  assert.equal(bikeBreakdown.registrationTaxRate, 0.02)
+  assert.equal(bikeBreakdown.registrationTax, 1_820_000)
+  assert.equal(bikeBreakdown.plateFee, 2_000_000)
+  assert.equal(bikeBreakdown.inspectionAndRoadFee, 0)
+  assert.equal(bikeBreakdown.civilInsuranceFee, 66_000)
+})
+
+// === TEST CASES: DEP-01 to DEP-10 (Quy tắc tiền đặt cọc) ===
+test('DEP: rental quote keeps depositAmount distinct and separate from rent', () => {
+  const quote = calculateRentalQuote({
+    startDate: '2026-12-01',
+    endDate: '2026-12-04',
+    dailyPrice: 1_000_000,
+    vehicleDeposit: 5_000_000,
+  })
+  assert.equal(quote.totalDays, 3)
+  assert.equal(quote.estimatedTotal, 3_000_000)
+  assert.equal(quote.depositAmount, 5_000_000)
+  assert.equal(quote.initialPaymentDue, 5_000_000)
+  assert.equal(quote.remainingAmount, 3_000_000)
+})
+
+test('DEP: custom delivery fee is added to total without inflating deposit', () => {
+  const quoteWithDelivery = calculateRentalQuote({
+    startDate: '2026-12-01',
+    endDate: '2026-12-03',
+    dailyPrice: 1_000_000,
+    vehicleDeliveryFee: 150_000,
+    vehicleDeposit: 5_000_000,
+    deliveryRequested: true,
+  })
+  assert.equal(quoteWithDelivery.deliveryFee, 150_000)
+  assert.equal(quoteWithDelivery.estimatedTotal, 2_150_000)
+  assert.equal(quoteWithDelivery.depositAmount, 5_000_000)
+})
+
+// === TEST CASES: RENT-01 to RENT-16 (Dịch vụ gia tăng Addons & Khuyến mãi) ===
+test('RENT: addon services calculate correctly for both per-day and flat rates', () => {
+  // EXTENDED_INSURANCE (90k/day) + CHILD_SEAT (100k flat)
+  const addonFee = calculateAddonFee(['EXTENDED_INSURANCE', 'CHILD_SEAT'], 4)
+  assert.equal(addonFee, 90_000 * 4 + 100_000)
+})
+
+test('RENT: invalid addon keys are ignored safely without throwing error', () => {
+  const safeKeys = parseAddonKeys(['INVALID_ADDON', 'EXTENDED_INSURANCE', null, ''])
+  assert.deepEqual(safeKeys, ['EXTENDED_INSURANCE'])
+})
+
+// === UPGRADE UNIT TESTS: Part A – Booking Modification Eligibility & Atomic Diff ===
+test('BK-RULES: canModifyBooking allows logged-in owner on PENDING booking with no payments', () => {
+  const res = canModifyBooking({
+    status: 'PENDING',
+    isLoggedIn: true,
+    isOwner: true,
+    hasPaymentRecord: false,
+  })
+  assert.equal(res.allowed, true)
+})
+
+test('BK-RULES: canModifyBooking rejects unauthenticated, non-owner, paid, or non-PENDING bookings', () => {
+  assert.equal(
+    canModifyBooking({ status: 'PENDING', isLoggedIn: false, isOwner: false }).code,
+    'UNAUTHORIZED',
+  )
+  assert.equal(
+    canModifyBooking({ status: 'PENDING', isLoggedIn: true, isOwner: false }).code,
+    'FORBIDDEN',
+  )
+  assert.equal(
+    canModifyBooking({
+      status: 'PENDING',
+      isLoggedIn: true,
+      isOwner: true,
+      hasPaymentRecord: true,
+    }).code,
+    'PAYMENT_LOCKED',
+  )
+  const confirmedCheck = canModifyBooking({
+    status: 'CONFIRMED',
+    isLoggedIn: true,
+    isOwner: true,
+    hasPaymentRecord: false,
+  })
+  assert.equal(confirmedCheck.allowed, false)
+  assert.equal(confirmedCheck.code, 'STATUS_LOCKED')
+  assert.equal(confirmedCheck.reason, BOOKING_CONFIRMED_LOCK_MESSAGE)
+
+  for (const st of [
+    'DEPOSIT_PENDING',
+    'READY_FOR_HANDOVER',
+    'ONGOING',
+    'INSPECTING',
+    'COMPLETED',
+    'CANCELLED',
+    'REJECTED',
+  ]) {
+    assert.equal(
+      canModifyBooking({ status: st, isLoggedIn: true, isOwner: true }).allowed,
+      false,
+      `Expected status ${st} to disallow direct modification`,
+    )
+  }
+})
+
+test('BK-RULES: getBookingActionMatrix matches Section 4.2 state permission matrix', () => {
+  const pendingMatrix = getBookingActionMatrix('PENDING', false, '2026-12-10', '2026-12-01')
+  assert.equal(pendingMatrix.canEditDirectly, true)
+  assert.equal(pendingMatrix.canCancelDirectly, true)
+  assert.equal(pendingMatrix.canViewDetail, true)
+  assert.equal(pendingMatrix.canContactSupport, true)
+
+  const pendingPaidMatrix = getBookingActionMatrix('PENDING', true, '2026-12-10', '2026-12-01')
+  assert.equal(pendingPaidMatrix.canEditDirectly, false)
+  assert.equal(pendingPaidMatrix.canCancelDirectly, true)
+
+  const confirmedMatrix = getBookingActionMatrix('CONFIRMED', false, '2026-12-10', '2026-12-01')
+  assert.equal(confirmedMatrix.canEditDirectly, false)
+  assert.equal(confirmedMatrix.canCancelDirectly, false)
+  assert.equal(confirmedMatrix.canViewDetail, true)
+})
+
+test('BK-RULES: computeRentalDayDiff keeps overlapping days intact and computes exact insert/delete sets', () => {
+  const diff = computeRentalDayDiff(
+    'v1',
+    '2026-12-01',
+    '2026-12-04',
+    'v1',
+    '2026-12-02',
+    '2026-12-06',
+  )
+  assert.deepEqual(diff.unchangedKeys, ['v1:2026-12-02', 'v1:2026-12-03'])
+  assert.deepEqual(diff.toDeleteKeys, ['v1:2026-12-01'])
+  assert.deepEqual(
+    diff.toInsert.map((x) => x.key),
+    ['v1:2026-12-04', 'v1:2026-12-05'],
+  )
+})
+
+test('BK-RULES: validateTimeString validates HH:MM 24-hour strings strictly', () => {
+  assert.equal(validateTimeString('08:00'), true)
+  assert.equal(validateTimeString('23:59'), true)
+  assert.equal(validateTimeString('24:00'), false)
+  assert.equal(validateTimeString('8:00'), false)
+  assert.equal(validateTimeString('12:60'), false)
+})
+
+// === UPGRADE UNIT TESTS: Part B – Next Working Day & Urgent Consultation Slot ===
+test('NT-RULES: calculateNextContactSlot advances Mon->Tue on normal working week', () => {
+  // 2026-11-16 is Monday in Vietnam
+  const slot = calculateNextContactSlot('2026-11-16T03:00:00.000Z', {
+    timezone: 'Asia/Ho_Chi_Minh',
+    workingDays: '1,2,3,4,5',
+    workStartTime: '08:00',
+    workEndTime: '17:30',
+    lunchBreakStart: '12:00',
+    lunchBreakEnd: '13:00',
+  })
+  assert.equal(slot.approvedLocalDate, '2026-11-16')
+  assert.equal(slot.expectedContactDate, '2026-11-17')
+  assert.equal(slot.weekdayLabel, 'Thứ Ba')
+  assert.match(slot.workingHoursLabel, /08:00 – 17:30/)
+  assert.equal(slot.isUrgent, false)
+})
+
+test('NT-RULES: calculateNextContactSlot skips weekend (Fri->Mon) and configured holidays', () => {
+  // 2026-11-20 is Friday -> skips Sat 21 & Sun 22 -> lands on Mon 23
+  const friSlot = calculateNextContactSlot('2026-11-20T08:00:00.000Z', {
+    timezone: 'Asia/Ho_Chi_Minh',
+    workingDays: '1,2,3,4,5',
+  })
+  assert.equal(friSlot.expectedContactDate, '2026-11-23')
+  assert.equal(friSlot.weekdayLabel, 'Thứ Hai')
+
+  // Skip custom holiday on 2026-11-23 -> lands on Tue 2026-11-24
+  const holidaySkipSlot = calculateNextContactSlot('2026-11-20T08:00:00.000Z', {
+    timezone: 'Asia/Ho_Chi_Minh',
+    workingDays: '1,2,3,4,5',
+    holidays: [{ date: '2026-11-23', name: 'Nghỉ bù nội bộ' }],
+  })
+  assert.equal(holidaySkipSlot.expectedContactDate, '2026-11-24')
+  assert.equal(holidaySkipSlot.weekdayLabel, 'Thứ Ba')
+})
+
+test('NT-RULES: calculateNextContactSlot flags urgent booking when pickup precedes contact slot', () => {
+  const urgentSameDay = calculateNextContactSlot(
+    '2026-11-20T08:00:00.000Z',
+    {
+      timezone: 'Asia/Ho_Chi_Minh',
+      workingDays: '1,2,3,4,5',
+      workStartTime: '08:30',
+      workEndTime: '17:30',
+    },
+    { startDate: '2026-11-21', pickupTime: '09:00' }, // Sat pickup before Mon contact
+  )
+  assert.equal(urgentSameDay.isUrgent, true)
+
+  const nonUrgentLater = calculateNextContactSlot(
+    '2026-11-16T03:00:00.000Z',
+    {
+      timezone: 'Asia/Ho_Chi_Minh',
+      workingDays: '1,2,3,4,5',
+      workStartTime: '08:00',
+      workEndTime: '17:30',
+    },
+    { startDate: '2026-11-20', pickupTime: '10:00' },
+  )
+  assert.equal(nonUrgentLater.isUrgent, false)
+})
+
+test('NT-RULES: parseWorkingDays and maskPhone handle edge cases cleanly', () => {
+  assert.deepEqual(parseWorkingDays('MON,TUE,WED,SAT'), [1, 2, 3, 6])
+  assert.deepEqual(parseWorkingDays(''), [1, 2, 3, 4, 5])
+  assert.equal(maskPhone('0901234567'), '090***4567')
+  assert.equal(maskPhone(null), 'Chưa cập nhật')
+})
+
+// === UPGRADE UNIT TESTS: Part D & E – Dynamic Vehicle Categories, Photos & EV Specs ===
+test('VH-RULES: motorbike photo options exclude car interior angles and include EV battery only when electric', () => {
+  const gasBikePhotos = getPhotoTypeOptions('MOTORBIKE', false, false)
+  assert.equal(
+    gasBikePhotos.some((p) => p.kind === 'INTERIOR'),
+    false,
+  )
+  assert.equal(
+    gasBikePhotos.some((p) => p.value === 'BATTERY_CHARGER'),
+    false,
+  )
+
+  const evBikePhotos = getPhotoTypeOptions('MOTORBIKE', true, true)
+  assert.equal(
+    evBikePhotos.some((p) => p.value === 'BATTERY_CHARGER'),
+    true,
+  )
+  assert.equal(
+    evBikePhotos.some((p) => p.value === 'ODO'),
+    true,
+  )
+
+  const carPhotos = getPhotoTypeOptions('CAR', false, false)
+  assert.equal(
+    carPhotos.some((p) => p.kind === 'INTERIOR'),
+    true,
+  )
+})
+
+test('VH-RULES: dynamic spec templates & isSpecApplicable exclude ICE cylinder/fuel tank on pure EVs', () => {
+  const evBikeSpecs = getDynamicSpecTemplates('MOTORBIKE', 'Điện (EV)')
+  assert.equal(
+    evBikeSpecs.some((s) => /dung tích xi-lanh/i.test(s.label)),
+    false,
+  )
+  assert.equal(
+    evBikeSpecs.some((s) => s.group === 'EV'),
+    true,
+  )
+
+  const pickupSpecs = getDynamicSpecTemplates('PICKUP', 'Dầu (Diesel)')
+  assert.equal(
+    pickupSpecs.some((s) => s.group === 'PICKUP'),
+    true,
+  )
+
+  assert.equal(isSpecApplicable('Dung tích xi-lanh', 'Điện (EV)'), false)
+  assert.equal(isSpecApplicable('Dung tích bình nhiên liệu', 'Điện (EV)'), false)
+  assert.equal(isSpecApplicable('Dung tích xi-lanh', 'Xăng'), true)
+  assert.equal(isSpecApplicable('Dung lượng pin', 'Điện (EV)'), true)
+})
+
+test('VH-RULES: subCategoriesByCategory & getDynamicFeaturePresets isolate CAR, MOTORBIKE, PICKUP', () => {
+  assert.ok(subCategoriesByCategory.MOTORBIKE.includes('ELECTRIC_BIKE'))
+  assert.equal(subCategoriesByCategory.MOTORBIKE.includes('ELECTRIC_CAR'), false)
+  assert.ok(subCategoriesByCategory.CAR.includes('ELECTRIC_CAR'))
+  assert.ok(subCategoriesByCategory.PICKUP.includes('PERFORMANCE_PICKUP'))
+
+  const bikeFeatures = getDynamicFeaturePresets('MOTORBIKE')
+  assert.equal(
+    bikeFeatures.comfortTech.some((f) => /Cửa sổ trời/i.test(f.name)),
+    false,
+  )
 })

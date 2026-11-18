@@ -37,6 +37,10 @@ export type SeedVariantItem = {
 
 export type SeedModelSpec = {
   name: string
+  officialName?: string
+  modelLine?: string
+  versionName?: string
+  generation?: string
   slug: string
   brand: string
   category: 'CAR' | 'MOTORBIKE' | 'PICKUP'
@@ -51,6 +55,9 @@ export type SeedModelSpec = {
   driveType: string
   listedPrice: number
   referenceRentPrice: number
+  defaultDepositSuggestion?: number
+  usagePurpose?: string
+  shortDescription?: string
   suitableFor: string
   description: string
   exteriorOverview: string
@@ -114,6 +121,19 @@ export const SEED_SITE_INFO = {
   phone: '1900 636 000',
   email: 'hotro@nori.vn',
   openingHours: '07:30 – 21:00 (Thứ Hai – Chủ Nhật)',
+  heroAutoplaySeconds: 6,
+  businessTimezone: 'Asia/Ho_Chi_Minh',
+  workingDays: '1,2,3,4,5',
+  workStartTime: '08:00',
+  workEndTime: '17:30',
+  lunchBreakStart: '12:00',
+  lunchBreakEnd: '13:00',
+  holidays: [
+    { date: '2026-01-01', name: 'Tết Dương lịch' },
+    { date: '2026-04-30', name: 'Ngày Giải phóng miền Nam' },
+    { date: '2026-05-01', name: 'Ngày Quốc tế Lao động' },
+    { date: '2026-09-02', name: 'Ngày Quốc khánh' },
+  ],
   rentalPolicySummary:
     'Thuê xe từ 1 đến 30 ngày nguyên (tính từ ngày nhận, không tính thêm tiền ngày trả). Giá thuê cuối cùng được xác nhận từ hệ thống trước khi giữ lịch. Mọi giao dịch thanh toán hiện thực hiện trực tiếp tại điểm bàn giao hoặc theo xác nhận chính thức của NORI.',
   purchasePolicySummary:
@@ -2641,6 +2661,163 @@ export const SEED_MODELS: SeedModelSpec[] = [
     source: 'https://www.mitsubishi-motors.com.vn/',
     featured: false,
     sortOrder: 20,
+  },
+
+  // =========================================================================
+  // 21. VINFAST EVO MAX
+  // =========================================================================
+  {
+    name: 'VinFast Evo Max',
+    officialName: 'VinFast Evo (Evo Max – Phiên bản đổi pin LFP)',
+    modelLine: 'Evo',
+    versionName: 'Tiêu chuẩn đổi pin',
+    generation: 'Thế hệ đổi pin 2025',
+    slug: 'vinfast-evo-max',
+    brand: 'VinFast',
+    category: 'MOTORBIKE',
+    subCategory: 'ELECTRIC_BIKE',
+    bodyStyle: 'Xe máy điện đô thị',
+    segment: 'Xe máy điện đô thị đổi pin LFP',
+    origin: 'Việt Nam (VinFast)',
+    modelYear: 2025,
+    seats: 2,
+    fuelType: 'Điện (EV)',
+    transmission: 'Truyền động trực tiếp (BLDC Inhub)',
+    driveType: 'Mô-tơ bánh sau (Inhub)',
+    listedPrice: 19_990_000,
+    referenceRentPrice: 60_000,
+    defaultDepositSuggestion: 2_000_000,
+    usagePurpose: 'Di chuyển đô thị hằng ngày, đi học, đi làm tiết kiệm chi phí vận hành',
+    shortDescription:
+      'Mẫu xe máy điện đô thị VinFast Evo thế hệ hỗ trợ đổi pin LFP linh hoạt, động cơ BLDC Inhub êm ái và chuẩn kháng nước IP67.',
+    suitableFor:
+      'Khách hàng di chuyển nội đô, sinh viên, nhân viên văn phòng ưu tiên phương tiện không phát thải, vận hành êm ái.',
+    description:
+      'VinFast Evo Max (tên thương mại dòng VinFast Evo thế hệ hỗ trợ đổi pin nhanh) mang phong cách thanh lịch kiểu châu Âu, hướng đến nhu cầu đi lại linh hoạt trong đô thị. Xe trang bị động cơ điện BLDC Inhub đặt tại bánh sau, hỗ trợ cấu hình 1 hoặc 2 pin LFP tháo rời giúp chủ động sạc tại nhà hoặc đổi pin nhanh tại trạm.',
+    exteriorOverview:
+      'Thiết kế bo tròn thanh lịch với cụm đèn chiếu sáng Full LED, đèn pha tròn đặc trưng, sàn để chân phẳng rộng rãi và đạt chuẩn kháng nước IP67.',
+    interiorOverview:
+      'Cụm đồng hồ kỹ thuật số hiển thị trực quan vận tốc, mức pin và chế độ lái; hộc chứa đồ dưới yên linh hoạt theo cấu hình lắp 1 hoặc 2 pin LFP.',
+    engineOverview:
+      'Động cơ điện một chiều không chổi than (BLDC Inhub) công suất danh định 1.500 W (công suất tối đa khoảng 2.450 W), tốc độ tối đa công bố khoảng 70 km/h.',
+    highlights: [
+      'Hỗ trợ pin LFP tháo rời linh hoạt (lắp 1 hoặc tối đa 2 pin)',
+      'Động cơ BLDC Inhub danh định 1.500 W, vận tốc tối đa ~70 km/h',
+      'Tiêu chuẩn kháng nước IP67 phù hợp điều kiện đường phố đô thị',
+      'Hệ thống chiếu sáng Full LED kết hợp phanh đĩa trước an toàn',
+    ],
+    features: [
+      { name: 'Hệ thống chiếu sáng và đèn định vị Full LED', category: 'TECHNOLOGY' },
+      {
+        name: 'Pin LFP an toàn, hỗ trợ tháo rời sạc hoặc đổi pin tại trạm',
+        category: 'TECHNOLOGY',
+      },
+      { name: 'Tiêu chuẩn chống nước IP67 cho động cơ và hệ thống pin', category: 'SAFETY' },
+      { name: 'Phanh đĩa bánh trước kết hợp lốp không săm', category: 'SAFETY' },
+      { name: 'Hai chế độ vận hành Eco / Sport trên tay lái', category: 'DRIVER_ASSIST' },
+    ],
+    coverKey: 'vinfast-evo200-ext-1',
+    gallery: [
+      {
+        mediaKey: 'vinfast-evo200-ext-1',
+        kind: 'EXTERIOR',
+        caption: 'Thiết kế dòng xe máy điện đô thị VinFast Evo (Wikimedia Commons)',
+      },
+    ],
+    specifications: [
+      {
+        group: 'EV',
+        label: 'Loại mô-tơ điện',
+        value: 'BLDC Inhub đặt tại bánh sau',
+        source: 'VinFast công bố',
+      },
+      {
+        group: 'EV',
+        label: 'Công suất danh định / tối đa',
+        value: '1.500 W / ~2.450 W',
+        source: 'VinFast công bố',
+      },
+      {
+        group: 'EV',
+        label: 'Công nghệ pin',
+        value: 'Pin LFP tháo rời (hỗ trợ lắp tối đa 2 pin)',
+        source: 'VinFast công bố',
+      },
+      {
+        group: 'EV',
+        label: 'Quãng đường di chuyển tham khảo',
+        value: '~85 km (1 pin) · tối đa ~165 km (2 pin)',
+        source: 'Tài liệu công bố dòng Evo đổi pin',
+      },
+      {
+        group: 'EV',
+        label: 'Thời gian sạc tiêu chuẩn tại nhà',
+        value: 'Khoảng 4 giờ 30 phút (bộ sạc 400 W cho 1 pin)',
+        source: 'Tài liệu công bố dòng Evo đổi pin',
+      },
+      {
+        group: 'MOTORBIKE',
+        label: 'Vận tốc tối đa',
+        value: '~70 km/h',
+        source: 'VinFast công bố',
+      },
+      {
+        group: 'MOTORBIKE',
+        label: 'Tiêu chuẩn kháng nước',
+        value: 'IP67 (ngập sâu 0,5 m trong 30 phút)',
+        source: 'VinFast công bố',
+      },
+      {
+        group: 'DIMENSIONS',
+        label: 'Kích thước Dài x Rộng x Cao',
+        value: '1.856 x 683 x 1.133 mm',
+        source: 'Tài liệu kỹ thuật dòng Evo đổi pin',
+      },
+      {
+        group: 'DIMENSIONS',
+        label: 'Chiều cao yên',
+        value: '770 mm',
+        source: 'Tài liệu kỹ thuật dòng Evo đổi pin',
+      },
+      {
+        group: 'CHASSIS',
+        label: 'Hệ thống phanh trước / sau',
+        value: 'Phanh đĩa trước / Phanh cơ (tang trống) sau',
+        source: 'VinFast công bố',
+      },
+    ],
+    variants: [
+      {
+        name: 'Bản không kèm pin (Thuê pin)',
+        year: 2025,
+        listedPrice: 19_990_000,
+        referenceRentPrice: 60_000,
+        fuelType: 'Điện (EV)',
+        transmission: 'Truyền động trực tiếp (BLDC Inhub)',
+        driveType: 'Mô-tơ bánh sau (Inhub)',
+        seats: 2,
+        summary: 'Giá đề xuất chưa gồm pin, linh hoạt đăng ký gói thuê/đổi pin',
+        colors: [
+          { name: 'Vàng', hex: '#EAB308', mediaKey: 'vinfast-evo200-ext-1' },
+          { name: 'Đen bóng', hex: '#18181B' },
+        ],
+      },
+      {
+        name: 'Bản kèm pin LFP',
+        year: 2025,
+        listedPrice: 25_600_000,
+        referenceRentPrice: 60_000,
+        fuelType: 'Điện (EV)',
+        transmission: 'Truyền động trực tiếp (BLDC Inhub)',
+        driveType: 'Mô-tơ bánh sau (Inhub)',
+        seats: 2,
+        summary: 'Giá đề xuất đã bao gồm VAT và 01 bộ pin LFP tiêu chuẩn',
+        colors: [{ name: 'Vàng', hex: '#EAB308', mediaKey: 'vinfast-evo200-ext-1' }],
+      },
+    ],
+    source: 'https://vinfastauto.com/vn_vi',
+    featured: true,
+    sortOrder: 0,
   },
 ]
 

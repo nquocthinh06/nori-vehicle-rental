@@ -77,6 +77,12 @@ export const subCategoryLabels: Record<string, string> = {
   PERFORMANCE_PICKUP: 'Bán tải hiệu năng cao',
 }
 
+export const subCategoriesByCategory: Record<'CAR' | 'MOTORBIKE' | 'PICKUP', string[]> = {
+  CAR: ['HATCHBACK', 'SEDAN', 'SUV', 'CUV', 'MPV', 'COUPE', 'SPORTS', 'ELECTRIC_CAR'],
+  MOTORBIKE: ['MANUAL_BIKE', 'SCOOTER', 'CLUTCH_BIKE', 'BIG_BIKE', 'ELECTRIC_BIKE'],
+  PICKUP: ['STANDARD_PICKUP', 'WORK_PICKUP', 'PREMIUM_PICKUP', 'PERFORMANCE_PICKUP'],
+}
+
 export const bookingStatusLabels: Record<string, string> = {
   PENDING: 'Chờ xác nhận',
   DEPOSIT_PENDING: 'Chờ đặt cọc',
@@ -87,6 +93,28 @@ export const bookingStatusLabels: Record<string, string> = {
   COMPLETED: 'Hoàn thành',
   CANCELLED: 'Đã hủy',
   REJECTED: 'Bị từ chối',
+}
+
+export const CONSULTATION_STATUSES = [
+  'PENDING_CONTACT',
+  'CONTACTING',
+  'NO_ANSWER',
+  'CALLBACK_SCHEDULED',
+  'CONSULTED',
+  'COMPLETED',
+  'CANCELLED',
+] as const
+
+export type ConsultationStatus = (typeof CONSULTATION_STATUSES)[number]
+
+export const consultationStatusLabels: Record<ConsultationStatus, string> = {
+  PENDING_CONTACT: 'Chờ liên hệ',
+  CONTACTING: 'Đang liên hệ',
+  NO_ANSWER: 'Không nghe máy',
+  CALLBACK_SCHEDULED: 'Hẹn liên hệ lại',
+  CONSULTED: 'Đã tư vấn',
+  COMPLETED: 'Hoàn thành',
+  CANCELLED: 'Đã hủy',
 }
 
 export const inquiryTypeLabels: Record<string, string> = {
@@ -117,9 +145,16 @@ export const operationStatusLabels: Record<string, string> = {
   INACTIVE: 'Tạm ngừng cung cấp',
 }
 
-export function businessToday(now = new Date()): string {
+export const featureStatusLabels: Record<string, string> = {
+  EQUIPPED: 'Có trang bị',
+  NOT_EQUIPPED: 'Không có trang bị',
+  UNVERIFIED: 'Chưa xác minh',
+  NOT_APPLICABLE: 'Không áp dụng',
+}
+
+export function businessToday(now = new Date(), timeZone = 'Asia/Ho_Chi_Minh'): string {
   return new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Ho_Chi_Minh',
+    timeZone,
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
@@ -135,6 +170,12 @@ export function dateNumber(value: string): number {
 
 export function addDays(value: string, days: number): string {
   return new Date((dateNumber(value) + days) * DAY_MS).toISOString().slice(0, 10)
+}
+
+export function validateTimeString(value?: string | null): boolean {
+  if (!value || !/^\d{2}:\d{2}$/.test(value)) return false
+  const [hh, mm] = value.split(':').map(Number)
+  return hh >= 0 && hh <= 23 && mm >= 0 && mm <= 59
 }
 
 export function validateRentalDates(startDate: string, endDate: string, today = businessToday()) {
@@ -157,6 +198,28 @@ export function rentalDays(start: string, end: string): string[] {
     result.push(new Date(day * DAY_MS).toISOString().slice(0, 10))
   }
   return result
+}
+
+export function computeRentalDayDiff(
+  oldVehicleId: string,
+  oldStart: string,
+  oldEnd: string,
+  newVehicleId: string,
+  newStart: string,
+  newEnd: string,
+) {
+  const oldSet = new Set(rentalDays(oldStart, oldEnd).map((d) => `${oldVehicleId}:${d}`))
+  const newDays = rentalDays(newStart, newEnd)
+  const newEntries = newDays.map((day) => ({
+    vehicleId: newVehicleId,
+    day,
+    key: `${newVehicleId}:${day}`,
+  }))
+  const newSet = new Set(newEntries.map((e) => e.key))
+  const toInsert = newEntries.filter((e) => !oldSet.has(e.key))
+  const toDeleteKeys = [...oldSet].filter((k) => !newSet.has(k))
+  const unchangedKeys = [...oldSet].filter((k) => newSet.has(k))
+  return { toInsert, toDeleteKeys, unchangedKeys }
 }
 
 export function countWeekendDays(start: string, end: string): number {
@@ -187,8 +250,14 @@ export const VIETNAM_HOLIDAYS = new Set([
   '2027-04-16',
 ])
 
-export function isVietnamHoliday(day: string): boolean {
-  return FIXED_HOLIDAY_MONTH_DAYS.has(day.slice(5)) || VIETNAM_HOLIDAYS.has(day)
+export function isVietnamHoliday(day: string, customHolidays?: Iterable<string>): boolean {
+  if (FIXED_HOLIDAY_MONTH_DAYS.has(day.slice(5)) || VIETNAM_HOLIDAYS.has(day)) return true
+  if (customHolidays) {
+    for (const h of customHolidays) {
+      if (h === day) return true
+    }
+  }
+  return false
 }
 
 export function countHolidayDays(start: string, end: string): number {
@@ -393,6 +462,219 @@ export function canTransition(
   return Boolean(allowed[from]?.includes(to)) && (to !== 'ONGOING' || today >= startDate)
 }
 
+export type BookingModifyCheckInput = {
+  status: string
+  isLoggedIn: boolean
+  isOwner: boolean
+  hasPaymentRecord?: boolean
+}
+
+export type BookingModifyCheckResult = {
+  allowed: boolean
+  code?: 'UNAUTHORIZED' | 'FORBIDDEN' | 'PAYMENT_LOCKED' | 'STATUS_LOCKED'
+  reason?: string
+}
+
+export const BOOKING_CONFIRMED_LOCK_MESSAGE =
+  'Đơn thuê của bạn vừa được NORI xác nhận. Thông tin thuê hiện không thể chỉnh sửa trực tiếp. Vui lòng liên hệ nhân viên hỗ trợ nếu cần thay đổi lịch trình.'
+
+export function canModifyBooking(input: BookingModifyCheckInput): BookingModifyCheckResult {
+  if (!input.isLoggedIn) {
+    return {
+      allowed: false,
+      code: 'UNAUTHORIZED',
+      reason: 'Vui lòng đăng nhập để chỉnh sửa đơn thuê.',
+    }
+  }
+  if (!input.isOwner) {
+    return {
+      allowed: false,
+      code: 'FORBIDDEN',
+      reason: 'Bạn không có quyền chỉnh sửa đơn thuê này.',
+    }
+  }
+  if (input.status !== 'PENDING') {
+    if (['CONFIRMED', 'READY_FOR_HANDOVER', 'ONGOING', 'INSPECTING'].includes(input.status)) {
+      return {
+        allowed: false,
+        code: 'STATUS_LOCKED',
+        reason: BOOKING_CONFIRMED_LOCK_MESSAGE,
+      }
+    }
+    if (input.status === 'DEPOSIT_PENDING') {
+      return {
+        allowed: false,
+        code: 'STATUS_LOCKED',
+        reason:
+          'Đơn thuê đang chờ đối soát đặt cọc nên không thể tự chỉnh sửa trực tiếp. Vui lòng liên hệ nhân viên NORI nếu cần thay đổi lịch trình.',
+      }
+    }
+    return {
+      allowed: false,
+      code: 'STATUS_LOCKED',
+      reason: 'Đơn thuê ở trạng thái hiện tại không thể chỉnh sửa trực tiếp.',
+    }
+  }
+  if (input.hasPaymentRecord) {
+    return {
+      allowed: false,
+      code: 'PAYMENT_LOCKED',
+      reason:
+        'Đơn thuê đã phát sinh giao dịch đặt cọc hoặc thanh toán cần đối soát nên không thể tự chỉnh sửa. Vui lòng liên hệ nhân viên NORI để được hỗ trợ.',
+    }
+  }
+  return { allowed: true }
+}
+
+export function getBookingActionMatrix(
+  status: string,
+  hasPaymentRecord = false,
+  startDate = '2099-01-01',
+  today = businessToday(),
+) {
+  const editCheck = canModifyBooking({
+    status,
+    isLoggedIn: true,
+    isOwner: true,
+    hasPaymentRecord,
+  })
+  const canCancelDirectly = canTransition(
+    status as BookingStatus,
+    'CANCELLED',
+    'customer',
+    startDate,
+    today,
+  )
+  return {
+    canEditDirectly: editCheck.allowed,
+    editLockReason: editCheck.reason ?? null,
+    canCancelDirectly,
+    canViewDetail: true,
+    canContactSupport: true,
+  }
+}
+
+export type BusinessHoursConfig = {
+  timezone?: string | null
+  workingDays?: number[] | string | null
+  workStartTime?: string | null
+  workEndTime?: string | null
+  lunchBreakStart?: string | null
+  lunchBreakEnd?: string | null
+  holidays?: ({ date: string; name?: string | null } | string)[] | null
+  fallbackHoursLabel?: string | null
+}
+
+const WEEKDAY_LABELS_VI: Record<number, string> = {
+  0: 'Chủ Nhật',
+  1: 'Thứ Hai',
+  2: 'Thứ Ba',
+  3: 'Thứ Tư',
+  4: 'Thứ Năm',
+  5: 'Thứ Sáu',
+  6: 'Thứ Bảy',
+}
+
+export function parseWorkingDays(raw?: number[] | string | null): number[] {
+  if (Array.isArray(raw)) {
+    const valid = raw.map(Number).filter((n) => Number.isInteger(n) && n >= 0 && n <= 6)
+    return valid.length ? [...new Set(valid)] : [1, 2, 3, 4, 5]
+  }
+  if (typeof raw === 'string' && raw.trim()) {
+    const tokenMap: Record<string, number> = {
+      SUN: 0,
+      MON: 1,
+      TUE: 2,
+      WED: 3,
+      THU: 4,
+      FRI: 5,
+      SAT: 6,
+    }
+    const parsed = raw
+      .split(',')
+      .map((s) => s.trim().toUpperCase())
+      .map((t) => (t in tokenMap ? tokenMap[t] : Number(t)))
+      .filter((n) => Number.isInteger(n) && n >= 0 && n <= 6)
+    return parsed.length ? [...new Set(parsed)] : [1, 2, 3, 4, 5]
+  }
+  return [1, 2, 3, 4, 5]
+}
+
+export function calculateNextContactSlot(
+  approvedAt: Date | string,
+  config?: BusinessHoursConfig,
+  pickupInfo?: { startDate: string; pickupTime?: string | null },
+) {
+  const tz = config?.timezone?.trim() || 'Asia/Ho_Chi_Minh'
+  const dateObj = typeof approvedAt === 'string' ? new Date(approvedAt) : approvedAt
+  const validNow = Number.isFinite(dateObj.getTime()) ? dateObj : new Date()
+  let approvedLocalDate: string
+  try {
+    approvedLocalDate = businessToday(validNow, tz)
+  } catch {
+    approvedLocalDate = businessToday(validNow, 'Asia/Ho_Chi_Minh')
+  }
+
+  const workingDaySet = new Set(parseWorkingDays(config?.workingDays))
+  const customHolidays = new Set<string>()
+  for (const item of config?.holidays ?? []) {
+    const d = typeof item === 'string' ? item.trim() : item?.date?.trim()
+    if (d && /^\d{4}-\d{2}-\d{2}$/.test(d)) customHolidays.add(d)
+  }
+
+  let candidate = addDays(approvedLocalDate, 1)
+  for (let i = 0; i < 60; i++) {
+    const weekday = new Date(`${candidate}T00:00:00.000Z`).getUTCDay()
+    if (workingDaySet.has(weekday) && !isVietnamHoliday(candidate, customHolidays)) {
+      break
+    }
+    candidate = addDays(candidate, 1)
+  }
+
+  const weekday = new Date(`${candidate}T00:00:00.000Z`).getUTCDay()
+  const weekdayLabel = WEEKDAY_LABELS_VI[weekday] ?? ''
+  const hasExplicitHours =
+    validateTimeString(config?.workStartTime) && validateTimeString(config?.workEndTime)
+  const hasLunchBreak =
+    validateTimeString(config?.lunchBreakStart) && validateTimeString(config?.lunchBreakEnd)
+
+  let workingHoursLabel = 'Trong khung giờ hành chính'
+  if (hasExplicitHours) {
+    workingHoursLabel = `${config!.workStartTime} – ${config!.workEndTime}${
+      hasLunchBreak ? ` (nghỉ trưa ${config!.lunchBreakStart} – ${config!.lunchBreakEnd})` : ''
+    }`
+  } else if (config?.fallbackHoursLabel?.trim()) {
+    workingHoursLabel = config.fallbackHoursLabel.trim()
+  }
+
+  let isUrgent = false
+  if (pickupInfo?.startDate && /^\d{4}-\d{2}-\d{2}$/.test(pickupInfo.startDate)) {
+    if (pickupInfo.startDate < candidate) {
+      isUrgent = true
+    } else if (pickupInfo.startDate === candidate) {
+      const pTime = validateTimeString(pickupInfo.pickupTime) ? pickupInfo.pickupTime! : '08:00'
+      const wStart = hasExplicitHours ? config!.workStartTime! : '08:30'
+      if (pTime <= wStart) isUrgent = true
+    }
+  }
+
+  return {
+    approvedLocalDate,
+    expectedContactDate: candidate,
+    weekdayLabel,
+    workingHoursLabel,
+    isUrgent,
+    isCustomHoursConfigured: hasExplicitHours,
+  }
+}
+
+export function maskPhone(phone?: string | null): string {
+  if (!phone || !phone.trim()) return 'Chưa cập nhật'
+  const clean = phone.trim().replace(/\s+/g, '')
+  if (clean.length < 7) return clean
+  return `${clean.slice(0, 3)}***${clean.slice(-4)}`
+}
+
 export type InquiryStatus =
   | 'NEW'
   | 'CONTACTED'
@@ -472,4 +754,364 @@ export function relationId<T extends string | number>(
   value: T | { id: T } | null | undefined,
 ): T | undefined {
   return typeof value === 'object' && value !== null ? value.id : (value ?? undefined)
+}
+
+// ============================================================================
+// Dynamic Vehicle Photo Categories, Spec Templates & Feature Presets (Parts D & E)
+// ============================================================================
+
+export type PhotoTypeOption = {
+  value: string
+  label: string
+  kind: 'OVERVIEW' | 'EXTERIOR' | 'INTERIOR' | 'ENGINE' | 'FEATURE'
+  evOnly?: boolean
+  instanceOnly?: boolean
+}
+
+export const CAR_PICKUP_PHOTO_TYPES: PhotoTypeOption[] = [
+  { value: 'OVERVIEW', label: 'Ảnh tổng thể', kind: 'OVERVIEW' },
+  { value: 'FRONT', label: 'Góc trước', kind: 'EXTERIOR' },
+  { value: 'REAR', label: 'Góc sau', kind: 'EXTERIOR' },
+  { value: 'LEFT', label: 'Góc bên trái', kind: 'EXTERIOR' },
+  { value: 'RIGHT', label: 'Góc bên phải', kind: 'EXTERIOR' },
+  { value: 'FRONT_QUARTER', label: 'Góc chéo trước', kind: 'EXTERIOR' },
+  { value: 'REAR_QUARTER', label: 'Góc chéo sau', kind: 'EXTERIOR' },
+  { value: 'EXTERIOR', label: 'Ngoại thất', kind: 'EXTERIOR' },
+  { value: 'INTERIOR', label: 'Nội thất', kind: 'INTERIOR' },
+  { value: 'COCKPIT', label: 'Khoang lái', kind: 'INTERIOR' },
+  { value: 'STEERING', label: 'Vô lăng', kind: 'INTERIOR' },
+  { value: 'DASHBOARD', label: 'Bảng điều khiển', kind: 'INTERIOR' },
+  { value: 'SEATS', label: 'Ghế ngồi', kind: 'INTERIOR' },
+  { value: 'TRUNK', label: 'Khoang hành lý / Thùng xe', kind: 'INTERIOR' },
+  { value: 'ENGINE', label: 'Động cơ', kind: 'ENGINE' },
+  { value: 'WHEELS', label: 'Mâm xe', kind: 'FEATURE' },
+  { value: 'LIGHTING', label: 'Hệ thống chiếu sáng', kind: 'FEATURE' },
+  { value: 'AMENITY', label: 'Hình ảnh tiện nghi', kind: 'FEATURE' },
+  { value: 'BATTERY_CHARGER', label: 'Pin & cổng sạc (EV)', kind: 'ENGINE', evOnly: true },
+  { value: 'ACTUAL', label: 'Hình ảnh thực tế', kind: 'EXTERIOR', instanceOnly: true },
+  { value: 'ODO', label: 'Hình ảnh ODO', kind: 'FEATURE', instanceOnly: true },
+  {
+    value: 'CONDITION',
+    label: 'Hình ảnh tình trạng phương tiện',
+    kind: 'FEATURE',
+    instanceOnly: true,
+  },
+]
+
+export const MOTORBIKE_PHOTO_TYPES: PhotoTypeOption[] = [
+  { value: 'OVERVIEW', label: 'Ảnh tổng thể', kind: 'OVERVIEW' },
+  { value: 'FRONT', label: 'Góc trước', kind: 'EXTERIOR' },
+  { value: 'REAR', label: 'Góc sau', kind: 'EXTERIOR' },
+  { value: 'LEFT', label: 'Góc bên trái', kind: 'EXTERIOR' },
+  { value: 'RIGHT', label: 'Góc bên phải', kind: 'EXTERIOR' },
+  { value: 'HEAD', label: 'Đầu xe', kind: 'EXTERIOR' },
+  { value: 'LIGHTING', label: 'Đèn xe', kind: 'FEATURE' },
+  { value: 'BODY', label: 'Thân xe', kind: 'EXTERIOR' },
+  { value: 'METER', label: 'Đồng hồ hiển thị', kind: 'FEATURE' },
+  { value: 'SEAT', label: 'Yên xe', kind: 'FEATURE' },
+  { value: 'TRUNK', label: 'Cốp xe', kind: 'FEATURE' },
+  { value: 'ENGINE', label: 'Động cơ', kind: 'ENGINE' },
+  { value: 'WHEELS', label: 'Bánh xe', kind: 'FEATURE' },
+  { value: 'BRAKES', label: 'Hệ thống phanh', kind: 'FEATURE' },
+  { value: 'BATTERY_CHARGER', label: 'Pin & bộ sạc (Xe điện)', kind: 'ENGINE', evOnly: true },
+  { value: 'ODO', label: 'Hình ảnh ODO', kind: 'FEATURE', instanceOnly: true },
+  { value: 'ACTUAL', label: 'Hình ảnh thực tế', kind: 'EXTERIOR', instanceOnly: true },
+]
+
+export function getPhotoTypeOptions(
+  category: 'CAR' | 'MOTORBIKE' | 'PICKUP',
+  isElectric = false,
+  includeInstanceTypes = false,
+): PhotoTypeOption[] {
+  const base = category === 'MOTORBIKE' ? MOTORBIKE_PHOTO_TYPES : CAR_PICKUP_PHOTO_TYPES
+  return base.filter((opt) => {
+    if (opt.evOnly && !isElectric) return false
+    if (opt.instanceOnly && !includeInstanceTypes) return false
+    return true
+  })
+}
+
+export type DynamicSpecTemplate = {
+  group: 'OVERVIEW' | 'ENGINE' | 'DIMENSIONS' | 'CHASSIS' | 'PICKUP' | 'MOTORBIKE' | 'EV'
+  label: string
+  placeholder: string
+}
+
+export function getDynamicSpecTemplates(
+  category: 'CAR' | 'MOTORBIKE' | 'PICKUP',
+  fuelType?: string | null,
+): DynamicSpecTemplate[] {
+  const isPureEv = fuelType === 'Điện (EV)'
+  const out: DynamicSpecTemplate[] = []
+
+  if (category === 'MOTORBIKE') {
+    out.push(
+      {
+        group: 'MOTORBIKE',
+        label: 'Loại xe',
+        placeholder: 'Tay ga / Xe số / Côn tay / Xe máy điện',
+      },
+      { group: 'MOTORBIKE', label: 'Số người được phép chở', placeholder: '2 người' },
+      { group: 'MOTORBIKE', label: 'Dung tích cốp', placeholder: 'Ví dụ: 22 lít' },
+    )
+    if (!isPureEv) {
+      out.push(
+        { group: 'ENGINE', label: 'Loại động cơ', placeholder: 'SOHC / DOHC, 4 kỳ, xi-lanh đơn' },
+        { group: 'ENGINE', label: 'Dung tích xi-lanh', placeholder: 'Ví dụ: 156,9 cc' },
+        {
+          group: 'ENGINE',
+          label: 'Công suất tối đa',
+          placeholder: 'Ví dụ: 11,8 kW / 8.500 vòng/phút',
+        },
+        {
+          group: 'ENGINE',
+          label: 'Mô-men xoắn cực đại',
+          placeholder: 'Ví dụ: 14,7 Nm / 6.500 vòng/phút',
+        },
+        {
+          group: 'ENGINE',
+          label: 'Hộp số / Hệ truyền động',
+          placeholder: 'Vô cấp CVT / Côn tay 6 cấp',
+        },
+        {
+          group: 'ENGINE',
+          label: 'Hệ thống làm mát',
+          placeholder: 'Làm mát bằng dung dịch / không khí',
+        },
+        { group: 'ENGINE', label: 'Mức tiêu thụ nhiên liệu', placeholder: 'Ví dụ: 2,1 lít/100 km' },
+        { group: 'ENGINE', label: 'Dung tích bình nhiên liệu', placeholder: 'Ví dụ: 8,1 lít' },
+      )
+    }
+    out.push(
+      {
+        group: 'DIMENSIONS',
+        label: 'Dài × Rộng × Cao',
+        placeholder: 'Ví dụ: 1.935 × 740 × 1.105 mm',
+      },
+      { group: 'DIMENSIONS', label: 'Chiều cao yên', placeholder: 'Ví dụ: 764 mm' },
+      { group: 'DIMENSIONS', label: 'Khoảng sáng gầm', placeholder: 'Ví dụ: 135 mm' },
+      { group: 'DIMENSIONS', label: 'Khối lượng bản thân', placeholder: 'Ví dụ: 131 kg' },
+      {
+        group: 'CHASSIS',
+        label: 'Kích thước lốp trước / sau',
+        placeholder: 'Ví dụ: 110/70-14 / 130/70-13',
+      },
+      { group: 'CHASSIS', label: 'Hệ thống phanh', placeholder: 'Đĩa trước ABS / Đĩa sau' },
+      {
+        group: 'CHASSIS',
+        label: 'Hệ thống giảm xóc',
+        placeholder: 'Ống lồng trước / Lò xo trụ đôi sau',
+      },
+    )
+  } else {
+    out.push(
+      { group: 'OVERVIEW', label: 'Kiểu dáng', placeholder: 'SUV / Sedan / Bán tải Cabin kép' },
+      { group: 'OVERVIEW', label: 'Số chỗ ngồi', placeholder: '5 chỗ / 7 chỗ' },
+      { group: 'OVERVIEW', label: 'Số cửa', placeholder: '4 cửa / 5 cửa' },
+    )
+    if (!isPureEv) {
+      out.push(
+        { group: 'ENGINE', label: 'Loại động cơ', placeholder: 'Xăng / Diesel Turbo I4' },
+        { group: 'ENGINE', label: 'Dung tích động cơ', placeholder: 'Ví dụ: 2.393 cc (2.4L)' },
+        {
+          group: 'ENGINE',
+          label: 'Công suất tối đa',
+          placeholder: 'Ví dụ: 147 mã lực / 3.400 vòng/phút',
+        },
+        {
+          group: 'ENGINE',
+          label: 'Mô-men xoắn tối đa',
+          placeholder: 'Ví dụ: 400 Nm / 1.600–2.000 vòng/phút',
+        },
+        { group: 'ENGINE', label: 'Hộp số', placeholder: 'Tự động 6 cấp / CVT / 10AT' },
+        {
+          group: 'ENGINE',
+          label: 'Hệ dẫn động',
+          placeholder: 'Cầu trước (FWD) / Cầu sau (RWD) / 2 cầu (4WD)',
+        },
+        {
+          group: 'ENGINE',
+          label: 'Mức tiêu thụ nhiên liệu hỗn hợp',
+          placeholder: 'Ví dụ: 7,6 lít/100 km',
+        },
+        { group: 'ENGINE', label: 'Dung tích bình nhiên liệu', placeholder: 'Ví dụ: 80 lít' },
+      )
+    } else {
+      out.push(
+        {
+          group: 'ENGINE',
+          label: 'Hệ dẫn động',
+          placeholder: 'AWD 2 cầu toàn thời gian / FWD / RWD',
+        },
+        {
+          group: 'ENGINE',
+          label: 'Hộp số / Truyền động',
+          placeholder: 'Đơn cấp truyền động trực tiếp',
+        },
+      )
+    }
+    out.push(
+      {
+        group: 'DIMENSIONS',
+        label: 'Chiều dài × Rộng × Cao',
+        placeholder: 'Ví dụ: 4.795 × 1.855 × 1.835 mm',
+      },
+      { group: 'DIMENSIONS', label: 'Chiều dài cơ sở', placeholder: 'Ví dụ: 2.745 mm' },
+      { group: 'DIMENSIONS', label: 'Khoảng sáng gầm', placeholder: 'Ví dụ: 279 mm' },
+      { group: 'DIMENSIONS', label: 'Khối lượng không tải', placeholder: 'Ví dụ: 2.015 kg' },
+      { group: 'DIMENSIONS', label: 'Dung tích khoang hành lý', placeholder: 'Ví dụ: 500 lít' },
+      { group: 'CHASSIS', label: 'Kích thước lốp', placeholder: 'Ví dụ: 265/60R18' },
+      {
+        group: 'CHASSIS',
+        label: 'Hệ thống treo trước / sau',
+        placeholder: 'Độc lập tay đòn kép / Liên kết 4 điểm',
+      },
+      {
+        group: 'CHASSIS',
+        label: 'Hệ thống phanh trước / sau',
+        placeholder: 'Đĩa thông gió / Đĩa đặc',
+      },
+    )
+    if (category === 'PICKUP') {
+      out.push(
+        {
+          group: 'PICKUP',
+          label: 'Cấu hình dẫn động bán tải',
+          placeholder: '4x2 (1 cầu) hoặc 4x4 (2 cầu gài cầu điện)',
+        },
+        { group: 'PICKUP', label: 'Tải trọng cho phép', placeholder: 'Ví dụ: 650 kg' },
+        {
+          group: 'PICKUP',
+          label: 'Kích thước thùng xe (D × R × C)',
+          placeholder: 'Ví dụ: 1.564 × 1.584 × 540 mm',
+        },
+        {
+          group: 'PICKUP',
+          label: 'Khả năng kéo tải',
+          placeholder: 'Ví dụ: 3.500 kg (theo công bố hãng)',
+        },
+        {
+          group: 'PICKUP',
+          label: 'Trang bị hỗ trợ địa hình',
+          placeholder: 'Khóa vi sai cầu sau, kiểm soát đổ đèo, chế độ Baja',
+        },
+      )
+    }
+  }
+
+  if (isPureEv || fuelType === 'Hybrid') {
+    out.push(
+      { group: 'EV', label: 'Loại động cơ điện', placeholder: 'Inhub / Đồng bộ nam châm vĩnh cửu' },
+      { group: 'EV', label: 'Công suất danh định', placeholder: 'Ví dụ: 1.500 W hoặc 150 kW' },
+      { group: 'EV', label: 'Công suất tối đa (EV)', placeholder: 'Ví dụ: 2.450 W hoặc 300 kW' },
+      { group: 'EV', label: 'Loại pin', placeholder: 'LFP (Lithium Iron Phosphate) / Lithium-ion' },
+      { group: 'EV', label: 'Dung lượng pin', placeholder: 'Ví dụ: 3,5 kWh / 87,7 kWh' },
+      { group: 'EV', label: 'Điện áp pin', placeholder: 'Ví dụ: 72V / 400V' },
+      {
+        group: 'EV',
+        label: 'Quãng đường di chuyển / lần sạc',
+        placeholder: 'Ví dụ: ~203 km / lần sạc',
+      },
+      {
+        group: 'EV',
+        label: 'Điều kiện / tiêu chuẩn đo quãng đường',
+        placeholder: 'WLTP / Điều kiện tiêu chuẩn hãng 30 km/h',
+      },
+      {
+        group: 'EV',
+        label: 'Thời gian sạc tiêu chuẩn',
+        placeholder: 'Ví dụ: Khoảng 8–10 giờ (sạc 400W)',
+      },
+      {
+        group: 'EV',
+        label: 'Công suất sạc / Sạc nhanh',
+        placeholder: 'Sạc tiêu chuẩn 400W / Sạc nhanh DC 10–70% ~31 phút',
+      },
+      {
+        group: 'EV',
+        label: 'Chuẩn cổng sạc',
+        placeholder: 'CCS2 / Bộ sạc rời chính hãng / Đổi pin trạm',
+      },
+      { group: 'EV', label: 'Tốc độ tối đa', placeholder: 'Ví dụ: 70 km/h hoặc 200 km/h' },
+      {
+        group: 'EV',
+        label: 'Công nghệ quản lý pin & Chế độ lái',
+        placeholder: 'BMS thông minh IP67 · Eco / Sport',
+      },
+    )
+  }
+
+  return out
+}
+
+export const ICE_ONLY_SPEC_PATTERNS = [
+  /dung tích xi-lanh/i,
+  /dung tích động cơ/i,
+  /dung tích bình nhiên liệu/i,
+  /dung tích bình xăng/i,
+  /tiêu thụ nhiên liệu/i,
+]
+
+export function isSpecApplicable(label: string, fuelType?: string | null): boolean {
+  if (fuelType === 'Điện (EV)') {
+    return !ICE_ONLY_SPEC_PATTERNS.some((re) => re.test(label))
+  }
+  return true
+}
+
+export function getDynamicFeaturePresets(category: 'CAR' | 'MOTORBIKE' | 'PICKUP') {
+  const comfortTech =
+    category === 'MOTORBIKE'
+      ? [
+          { name: 'Khóa thông minh Smart Key', category: 'TECHNOLOGY' as const },
+          { name: 'Đồng hồ kỹ thuật số LCD / TFT', category: 'TECHNOLOGY' as const },
+          { name: 'Cổng sạc USB tiện lợi', category: 'COMFORT' as const },
+          { name: 'Kết nối điện thoại thông minh (App)', category: 'TECHNOLOGY' as const },
+          { name: 'Hệ thống ngắt động cơ tạm thời (Start/Stop)', category: 'TECHNOLOGY' as const },
+          { name: 'Chế độ lái linh hoạt (Eco / Sport)', category: 'TECHNOLOGY' as const },
+          { name: 'Hệ thống chiếu sáng Full LED', category: 'TECHNOLOGY' as const },
+          { name: 'Cốp dưới yên rộng rãi', category: 'COMFORT' as const },
+        ]
+      : [
+          { name: 'Điều hòa tự động', category: 'COMFORT' as const },
+          { name: 'Màn hình giải trí cảm ứng trung tâm', category: 'TECHNOLOGY' as const },
+          { name: 'Kết nối Apple CarPlay', category: 'TECHNOLOGY' as const },
+          { name: 'Kết nối Android Auto', category: 'TECHNOLOGY' as const },
+          { name: 'Kết nối Bluetooth đàm thoại rảnh tay', category: 'TECHNOLOGY' as const },
+          { name: 'Cổng sạc USB các hàng ghế', category: 'COMFORT' as const },
+          { name: 'Sạc điện thoại không dây', category: 'COMFORT' as const },
+          { name: 'Ghế lái chỉnh điện', category: 'COMFORT' as const },
+          { name: 'Cửa sổ trời', category: 'COMFORT' as const },
+          { name: 'Chìa khóa thông minh Smart Key', category: 'COMFORT' as const },
+          { name: 'Khởi động nút bấm Start/Stop', category: 'COMFORT' as const },
+          { name: 'Ga tự động Cruise Control', category: 'DRIVER_ASSIST' as const },
+          { name: 'Hệ thống âm thanh đa loa', category: 'COMFORT' as const },
+        ]
+
+  const safety =
+    category === 'MOTORBIKE'
+      ? [
+          { name: 'Hệ thống chống bó cứng phanh ABS', category: 'SAFETY' as const },
+          { name: 'Hệ thống phanh kết hợp CBS', category: 'SAFETY' as const },
+          { name: 'Kiểm soát lực kéo (Traction Control / HSTC)', category: 'SAFETY' as const },
+          { name: 'Chống nước tiêu chuẩn IP67', category: 'SAFETY' as const },
+          { name: 'Cảnh báo chống trộm / Định vị xe', category: 'SAFETY' as const },
+        ]
+      : [
+          { name: 'Chống bó cứng phanh ABS', category: 'SAFETY' as const },
+          { name: 'Phân phối lực phanh điện tử EBD', category: 'SAFETY' as const },
+          { name: 'Cân bằng điện tử ESP / VSC', category: 'SAFETY' as const },
+          { name: 'Kiểm soát lực kéo Traction Control (TCS)', category: 'SAFETY' as const },
+          { name: 'Hệ thống túi khí an toàn', category: 'SAFETY' as const },
+          { name: 'Camera lùi', category: 'SAFETY' as const },
+          { name: 'Camera 360 độ toàn cảnh', category: 'DRIVER_ASSIST' as const },
+          { name: 'Cảm biến hỗ trợ đỗ xe', category: 'SAFETY' as const },
+          { name: 'Hỗ trợ khởi hành ngang dốc (HAC)', category: 'SAFETY' as const },
+          { name: 'Cảnh báo điểm mù (BSM)', category: 'DRIVER_ASSIST' as const },
+          { name: 'Cảnh báo lệch làn đường (LDW)', category: 'DRIVER_ASSIST' as const },
+          { name: 'Hỗ trợ giữ làn đường (LKA)', category: 'DRIVER_ASSIST' as const },
+          { name: 'Phanh khẩn cấp tự động (AEB)', category: 'DRIVER_ASSIST' as const },
+        ]
+
+  return { comfortTech, safety }
 }

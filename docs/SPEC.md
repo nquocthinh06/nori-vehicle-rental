@@ -1,9 +1,9 @@
 # ĐẶC TẢ YÊU CẦU HỆ THỐNG NORI (SYSTEM SPECIFICATION)
 
 - **Tên dự án**: NORI — Dịch vụ Cho thuê xe Linh hoạt & Tìm mua xe Tự tin
-- **Phiên bản tài liệu**: 2.0 (Kiểm định & Hoàn thiện sau Nâng cấp Responsive & PWA)
+- **Phiên bản tài liệu**: 2.3 (Nâng cấp Nghiệp vụ Chỉnh sửa Đơn thuê, Thông báo & Tư vấn Sau Duyệt, Hero Carousel CMS, Bảo mật Media & Quản trị Phương tiện Động)
 - **Kiến trúc công nghệ**: Next.js 16.4.6 (App Router), React 19.3.1, Payload CMS 4.0.0-beta.8, SQLite (`@payloadcms/db-sqlite` + Drizzle ORM), Tailwind CSS 4.
-- **Trạng thái thực thi**: 268/268 test cases đạt chuẩn (205 unit + 63 Playwright E2E).
+- **Trạng thái thực thi**: 287+ test cases tự động đạt chuẩn (`225` unit + `62` Chromium E2E + `test:admin` cô lập).
 
 ---
 
@@ -11,14 +11,27 @@
 
 - **`SPEC-01` — Thiết kế Mobile-First & Responsive Đa màn hình**:
   - Giao diện đáp ứng liền mạch từ màn hình nhỏ nhất `320px` đến màn hình lớn `1920px` qua 11 breakpoints (`320px`, `360px`, `375px`, `390px`, `412px`, `428px`, `640px`, `768px`, `1024px`, `1280px`, `1440px`).
+  - **Sticky Header đa nền tảng**: Cố định thanh điều hướng `z-40`, thu gọn thanh tiện ích khi cuộn trang, đổ bóng mờ sang trọng, menu mobile khóa cuộn trang nền.
   - Trên thiết bị di động (<768px): Cố định thanh Bottom Navigation (5 mục: Khám phá, Xe, Yêu thích, Đơn thuê, Tài khoản), hỗ trợ safe area (`env(safe-area-inset-bottom)`).
-  - Trang chi tiết xe có thanh đặt xe cố định chân trang (Sticky Booking CTA).
+  - Trang chi tiết xe có thanh đặt xe cố định chân trang (Sticky Booking CTA) và thanh tab chi tiết dính dưới header.
   - Bộ lọc tìm kiếm trên di động hiển thị dạng Bottom Sheet có hỗ trợ thao tác vuốt và chip lọc đang kích hoạt.
 - **`SPEC-02` — Khả năng tiếp cận & Tiêu chuẩn WCAG 2.2 AA**:
   - Độ tương phản chữ đạt tối thiểu `4.5:1` cho nội dung thông thường và `3:1` cho tiêu đề lớn.
   - Vùng chạm tương tác tối thiểu `44×44px` cho các nút bấm chính.
   - Hỗ trợ đầy đủ điều hướng bàn phím (`Tab`, `Shift+Tab`, `Escape`, `Enter`, `Space`) và focus ring rõ ràng (`outline-focus`).
+  - Hỗ trợ `prefers-reduced-motion` tự động ngắt animation và chuyển đổi carousel sang chế độ tĩnh.
   - `0` lỗi vi phạm khi quét tự động bằng công cụ `@axe-core/playwright`.
+- **`SPEC-02.1` — Hero Banner Carousel Tự Động Thông Minh**:
+  - Carousel 5 slide đại diện cho 5 phân khúc: Ô tô phổ thông, Xe sang, Xe máy, Bán tải, Xe điện xanh.
+  - Tự động chuyển đổi sau 6 giây, tạm dừng khi hover/touch/focus, nút Play/Pause toggle chuẩn ARIA.
+  - Hỗ trợ vuốt chạm trên mobile, không gây giật nhấp nháy, không nhảy cuộn trang, bảo toàn dữ liệu form tìm kiếm.
+- **`SPEC-02.2` — Thẻ Danh Mục Phương Tiện Có Ảnh Thực Tế**:
+  - Thay thế danh mục icon thô bằng thẻ danh mục có ảnh chụp chất lượng cao, nhãn phân khúc, số lượng xe khả dụng và liên kết lọc tương ứng.
+- **`SPEC-02.3` — Chuẩn Hóa Dropdown & Searchable Select**:
+  - Component `SearchableSelect` thay thế hoàn toàn dropdown mặc định thô của trình duyệt, tích hợp ô tìm kiếm nhanh, điều hướng bàn phím và đóng khi bấm Escape/ngoài vùng.
+- **`SPEC-02.4` — Hệ Thống 8 Tabs Trang Chi Tiết Phương Tiện**:
+  - 8 nhóm nội dung: 1. Tổng quan & Thiết kế, 2. Thông số kỹ thuật, 3. Công nghệ & An toàn, 4. Xe thực tế & ODO, 5. Giá & Chính sách, 6. Lịch khả dụng (Calendar), 7. Đánh giá, 8. Liên hệ & Hỗ trợ.
+  - Triệt tiêu scrollbar thô với class `.no-scrollbar`, thanh tab bám dính dưới header, chuyển tab tức thì không tải lại trang.
 
 ---
 
@@ -88,5 +101,106 @@
   - Kiểm tra tính toàn vẹn `PRAGMA integrity_check` tự động trên tệp sao lưu.
   - Cung cấp script phục hồi `scripts/restore-db.mjs`.
 - **`SPEC-16` — Minh bạch Dữ liệu DEMO & Giới hạn Thương mại**:
-  - Toàn bộ 21 xe trong kho hiện tại gắn cờ `isDemo` rõ ràng trên giao diện.
+  - Toàn bộ 21 xe trong kho hiện tại gắn cờ `isDemo` rõ ràng trên giao diện; nhãn `"Ảnh Catalogue – không phải hình ảnh của cá thể xe đang cho thuê."` hiển thị tách biệt với ảnh cá thể xe thực tế.
   - Cổng thanh toán và dịch vụ gửi SMS/Email đang ở chế độ mô phỏng an toàn (Sandbox), thông báo minh bạch cho người dùng trước khi tiến hành tích hợp thương mại thực tế.
+
+---
+
+## 7. Yêu cầu Nghiệp vụ Mở rộng v2.3 (Booking Edit, Post-Approval Consultation & Dynamic Fleet)
+
+- **`SPEC-17` — Chỉnh sửa Đơn thuê Chờ duyệt & Khóa Đồng thời (Optimistic Locking)**:
+  - Chỉ cho phép khách hàng sở hữu đơn ở trạng thái `PENDING` và chưa phát sinh bản ghi `payments` thực hiện `PUT /nori-api/bookings`.
+  - Hoán đổi nguyên tử các bản ghi giữ ngày `rental_days` (loại trừ chính `bookingKey` đang sửa qua `excludeBookingId`, kiểm tra xung đột với mọi đơn khác & lịch bảo trì), tính lại báo giá từ máy chủ, hiển thị bảng đối chiếu Trước / Sau và lưu `modificationHistory` + `AuditLogs`.
+  - Kiểm tra `revision` và trạng thái tại thời điểm lưu: nếu Admin vừa duyệt đơn đồng thời, trả `HTTP 409 CONFLICT` kèm hướng dẫn liên hệ nhân viên hỗ trợ.
+- **`SPEC-18` — Thông báo Popup Sau Duyệt & Quy trình Nhân viên Liên hệ Tư vấn**:
+  - Khi đơn chuyển sang `CONFIRMED`, hook `afterChange` sinh idempotent 01 bản ghi `notifications` (`eventKey` duy nhất) và 01 hồ sơ `consultations`.
+  - Popup `"Đơn thuê của bạn đã được xác nhận!"` hiển thị đúng một lần trên mỗi sự kiện duyệt (có thể xem lại qua Chuông thông báo trên Header), nêu rõ xác nhận đơn chưa đồng nghĩa đã thanh toán, tự ẩn nếu đơn bị hủy trước khi khách đọc (`superseded = true`).
+  - Tự động tính ngày làm việc kế tiếp (`calculateNextContactSlot`) theo múi giờ `Asia/Ho_Chi_Minh`, ngày làm việc và danh sách ngày nghỉ lễ cấu hình từ Admin; gắn nhãn `Đơn thuê gấp` nếu giờ nhận xe diễn ra trước khung liên hệ dự kiến.
+- **`SPEC-19` — Hero Carousel Quản trị từ CMS (`NoriSite.heroSlides`)**:
+  - Đồng bộ 5 slide phương tiện sắc nét giữa `/dashboard/content` và trang chủ `/`; hỗ trợ crossfade mượt, tạm dừng/tiếp tục, vuốt cảm ứng, `visibilitychange`, `prefers-reduced-motion`, fallback khi ảnh lỗi hoặc 0 slide hoạt động, và giữ nguyên dữ liệu ô tìm kiếm `<SearchBar />`.
+- **`SPEC-20` — Tải đa ảnh Bảo mật & Biểu mẫu Phương tiện Thích ứng (`CAR` / `MOTORBIKE` / `PICKUP` / `EV`)**:
+  - API `/nori-api/dashboard/media` kiểm tra chữ ký nhị phân (magic bytes JPEG/PNG/WebP/AVIF), kích thước ảnh qua `sharp`, quét chuỗi thực thi nhúng, hỗ trợ tải nhiều ảnh một lần và chặn xóa ảnh đang được tham chiếu (`HTTP 409`).
+  - Không gian quản trị dòng xe 10 tab và trang chi tiết `/vehicles/[slug]` tự động thích ứng danh mục con, góc chụp, nhóm thông số (ẩn thông số động cơ đốt trong trên xe thuần điện, ẩn bộ lọc `"Nội thất"` mặc định trên xe máy) và chỉ hiển thị tính năng `EQUIPPED`.
+
+---
+
+## 8. Sơ đồ Nghiệp vụ & Kiến trúc (Mermaid Diagrams)
+
+### 8.1. Sơ đồ Trạng thái Đơn thuê & Quyền Chỉnh sửa (Booking State Diagram)
+
+```mermaid
+stateDiagram-v2
+  [*] --> PENDING: Khách đặt thuê (Khóa rental_days)
+  PENDING --> PENDING: Khách chỉnh sửa trực tiếp (PUT /bookings, chưa có payment)
+  PENDING --> DEPOSIT_PENDING: Admin yêu cầu đặt cọc (Khóa tự sửa)
+  PENDING --> CONFIRMED: Admin duyệt đơn (Tạo Notification + Consultation, Khóa tự sửa)
+  PENDING --> CANCELLED: Khách / Admin hủy (Giải phóng rental_days)
+  PENDING --> REJECTED: Admin từ chối (Giải phóng rental_days)
+  DEPOSIT_PENDING --> CONFIRMED: Admin xác nhận cọc
+  DEPOSIT_PENDING --> CANCELLED: Khách / Admin hủy
+  CONFIRMED --> READY_FOR_HANDOVER: Chuẩn bị giao xe
+  CONFIRMED --> ONGOING: Bàn giao xe (Từ ngày nhận)
+  CONFIRMED --> CANCELLED: Admin hủy & đánh dấu superseded Notification
+  READY_FOR_HANDOVER --> ONGOING: Bàn giao xe
+  ONGOING --> INSPECTING: Nhận lại xe & kiểm tra ODO
+  ONGOING --> COMPLETED: Hoàn tất hợp đồng
+  INSPECTING --> COMPLETED: Đối soát xong & giải phóng xe
+```
+
+### 8.2. Sơ đồ Hoạt động Chỉnh sửa Đơn thuê Chờ duyệt (Activity Diagram)
+
+```mermaid
+flowchart TD
+  A["Khách mở /my-bookings -> Chọn Chỉnh sửa đơn PENDING"] --> B["Tải dữ liệu đơn + revision hiện tại"]
+  B --> C["Khách đổi ngày/giờ, giao nhận, dịch vụ phụ, SĐT/email, mã KM"]
+  C --> D["Gọi GET /nori-api/availability?excludeBookingId=..."]
+  D --> E["Hiển thị bảng so sánh Trước / Sau & chênh lệch chi phí"]
+  E --> F["Khách bấm Xác nhận lưu thay đổi (PUT /nori-api/bookings)"]
+  F --> G{"Kiểm tra quyền, status=PENDING, revision & payments=0?"}
+  G -- "Không đạt / Admin vừa duyệt" --> H["Trả HTTP 409 CONFLICT + Thông báo khóa chỉnh sửa"]
+  G -- "Hợp lệ" --> I["Tính lại báo giá Server & Hoán đổi nguyên tử rental_days"]
+  I --> J{"Trùng lịch đơn khác / bảo trì?"}
+  J -- "Trùng lịch" --> K["Rollback & Trả HTTP 409 CONFLICT"]
+  J -- "Khả dụng" --> L["Lưu Booking (revision + 1) + modificationHistory + AuditLogs"]
+  L --> M["Cập nhật UI Khách hàng & Admin Dashboard"]
+```
+
+### 8.3. Sơ đồ Tuần tự Duyệt đơn, Thông báo Popup & Tư vấn (Sequence Diagram)
+
+```mermaid
+sequenceDiagram
+  participant Admin as Admin (/dashboard/bookings)
+  participant API as Backend & Bookings Hook
+  participant DB as SQLite (nori.db)
+  participant Cust as Khách hàng (Web / PWA)
+
+  Admin->>API: PATCH /nori-api/dashboard/bookings { status: "CONFIRMED" }
+  API->>DB: Cập nhật status="CONFIRMED", tăng revision
+  API->>API: calculateNextContactSlot(approvedAt, NoriSite.workingHours, holidays)
+  API->>DB: Tạo idempotent Notifications (eventKey) & Consultations (PENDING_CONTACT)
+  API-->>Admin: 200 OK (Hiển thị lịch hẹn gọi & nhãn Đơn thuê gấp nếu có)
+  Cust->>API: GET /nori-api/notifications
+  API-->>Cust: Trả activePopup (popupDismissed = false, superseded = false)
+  Cust->>Cust: Hiển thị Popup "Đơn thuê của bạn đã được xác nhận!"
+  Cust->>API: PATCH /nori-api/notifications { id, markRead: true, dismissPopup: true }
+  API->>DB: Lưu isRead=true, popupDismissed=true
+  Admin->>API: PATCH /nori-api/dashboard/consultations (Ghi nhật ký gọi -> CONSULTED)
+  API->>DB: Cập nhật Consultations độc lập với trạng thái thanh toán/hợp đồng
+```
+
+### 8.4. Sơ đồ Tuần tự Tải ảnh Bảo mật & Đồng bộ Phương tiện (Media & Vehicle Sequence)
+
+```mermaid
+sequenceDiagram
+  participant Admin as Admin (/dashboard/models | /vehicles)
+  participant MediaAPI as POST /nori-api/dashboard/media
+  participant VehAPI as POST/PATCH /nori-api/dashboard/vehicles
+  participant Cache as Next.js Tag Cache
+
+  Admin->>MediaAPI: Upload 1 hoặc nhiều file (multipart/form-data)
+  MediaAPI->>MediaAPI: Kiểm tra RBAC Admin, dung lượng <=8MB, Magic Bytes & Sharp dimensions
+  MediaAPI-->>Admin: 201 Created { uploaded[], failed[], partialFailure }
+  Admin->>VehAPI: Lưu hồ sơ dòng xe / cá thể xe (gallery[], specifications[], features[])
+  VehAPI->>Cache: revalidateCatalogue -> revalidateTag("nori-catalogue", "nori-model-slug")
+  VehAPI-->>Admin: 200/201 OK (Đồng bộ tức thì sang /vehicles & /vehicles/[slug])
+```

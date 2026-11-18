@@ -1,13 +1,14 @@
 # TÀI LIỆU API HỆ THỐNG NORI (API SPECIFICATION & DOCUMENTATION)
 
-- **Phiên bản**: 2.0 (Hỗ trợ Centralized Admin, Responsive & PWA, Idempotency Guard, Concurrency Control)
-- **Tiêu chuẩn giao tiếp**: RESTful JSON API.
+- **Phiên bản**: 2.3 (Bổ sung Chỉnh sửa Đơn thuê Chờ duyệt, Thông báo & Lịch Tư vấn Sau Duyệt, Tải đa ảnh Magic-Byte, Quản trị Hero Slides & Phương tiện Động)
+- **Tiêu chuẩn giao tiếp**: RESTful JSON API (`Cache-Control: private, no-store` cho dữ liệu phiên & giao dịch).
 - **Tiêu chuẩn phản hồi (Envelope Pattern)**:
   - Thành công: `{ "success": true, "data": <PayloadObject | PayloadArray> }`
   - Thất bại: `{ "success": false, "error": { "code": "<ERROR_CODE>", "message": "<Thông báo tiếng Việt>", "fields": { ... } } }`
 - **Bảo mật cơ sở**:
-  - Mọi route mutation (`POST`, `PATCH`, `PUT`, `DELETE`) bắt buộc kiểm tra `assertOrigin(request)` chống tấn công CSRF.
-  - Phân quyền RBAC bằng HttpOnly Cookie `payload-token` (Admins) và `app-session` (Users).
+  - Mọi route mutation (`POST`, `PATCH`, `PUT`, `DELETE`) bắt buộc kiểm tra `assertOrigin(request)` chống tấn công CSRF (được kiểm tra tự động qua `scripts/static-lint.mjs`).
+  - Mọi trường dữ liệu gửi lên đều đi qua allowlist nghiêm ngặt (`body(request, allowlist, maxBytes)`), từ chối ngay (`HTTP 400`) nếu chèn trường trái phép (`totalPrice`, `dailyPriceSnapshot`, `role`, `status`, ...).
+  - Phân quyền RBAC tách biệt bằng HttpOnly Cookie `payload-token` (`admins`) và phiên người dùng ứng dụng (`users`).
 
 ---
 
@@ -15,79 +16,74 @@
 
 ### 1.1. Xác thực & Tài khoản (`/nori-api/auth/*`)
 
-- `GET /nori-api/auth/me`: Lấy thông tin phiên đăng nhập hiện tại (trả về thông tin User hoặc Admin, không bao gồm salt/hash).
-- `POST /nori-api/auth/login`: Đăng nhập với `{ email, password }`. Cấp cookie phiên HttpOnly.
-- `POST /nori-api/auth/register`: Đăng ký tài khoản khách hàng (`users`). Chặn chèn trường `role` trái phép (trả `400`). Yêu cầu `confirmPassword`.
+- `GET /nori-api/auth/me`: Lấy thông tin phiên đăng nhập hiện tại (User hoặc Admin, ẩn hoàn toàn `salt`/`hash`).
+- `POST /nori-api/auth/login`: Đăng nhập với `{ email, password }`.
+- `POST /nori-api/auth/register`: Đăng ký tài khoản khách hàng (`users`). Chặn chèn `role` trái phép (`400`).
 - `POST /nori-api/auth/logout`: Đăng xuất và xóa sạch cookie phiên.
-- `POST /nori-api/auth/password`: Đổi mật khẩu. Yêu cầu `{ currentPassword, newPassword, confirmPassword }`. Trả `401` nếu sai mật khẩu hiện tại.
-- `PATCH /nori-api/auth/me`: Cập nhật thông tin cá nhân (`fullName`, `phone`, `driverLicense`).
+- `POST /nori-api/auth/password`: Đổi mật khẩu (`{ currentPassword, newPassword, confirmPassword }`, trả `401` nếu sai mật khẩu hiện tại).
+- `PATCH /nori-api/auth/me`: Cập nhật hồ sơ cá nhân (`fullName`, `phone`, `driverLicenseNumber`, `idCardNumber`, `address`).
 
 ### 1.2. Đội xe & Khả dụng (`/nori-api/fleet`, `/nori-api/availability`)
 
-- `GET /nori-api/fleet?model=<slug_or_id>`: Lấy danh sách xe thực tế của dòng xe. Hỗ trợ tra cứu theo cả UUID hoặc `modelSlug`.
-- `GET /nori-api/availability?vehicle=<id>&startDate=<YYYY-MM-DD>&endDate=<YYYY-MM-DD>&promoCode=<code>`: Kiểm tra xe có bị khóa lịch bởi `rental_days` hoặc `maintenance_schedules` hay không, và tính toán báo giá chi tiết từ Backend.
+- `GET /nori-api/fleet?model=<slug_or_id>&modelSlug=<slug>`: Trả danh sách cá thể xe thực tế sắp xếp theo `reference` tăng dần, kèm mảng đa ảnh cá thể (`isPrimary`, `photoType`, `sortOrder`).
+- `GET /nori-api/availability?vehicle=<id>&startDate=<YYYY-MM-DD>&endDate=<YYYY-MM-DD>&delivery=<0|1>&addons=<keys>&promoCode=<code>&excludeBookingId=<id>`:
+  - Kiểm tra lịch trống đối chiếu `rental_days` và `maintenance_schedules`.
+  - Khi truyền `excludeBookingId` (chủ sở hữu đơn hợp lệ), loại trừ các ngày giữ chỗ hiện tại của chính đơn đó nhưng vẫn kiểm tra xung đột với mọi đơn khác.
+  - Tính toán báo giá chi tiết từ máy chủ (`basePrice`, `weekendSurchargeTotal`, `holidaySurchargeTotal`, `deliveryFee`, `addonFee`, `discountAmount`, `promoDiscountAmount`, `estimatedTotal`, `depositAmount`).
 
 ### 1.3. Đơn thuê xe (`/nori-api/bookings`)
 
-- `GET /nori-api/bookings`: Danh sách đơn thuê của khách hàng đăng nhập.
-- `POST /nori-api/bookings`: Tạo đơn thuê mới. Thực thi trong transaction, khóa ngày `rental_days`. Trả về `HTTP 409 CONFLICT` nếu xảy ra va chạm lịch thuê (Race Condition).
-- `PATCH /nori-api/bookings`: Hủy đơn thuê khi đơn ở trạng thái `PENDING` hoặc `DEPOSIT_PENDING`. Trả về `404` nếu cố tình hủy đơn của người khác (Chống IDOR).
+- `GET /nori-api/bookings`: Danh sách đơn thuê của khách hàng đăng nhập (hoặc chi tiết 1 đơn qua `?id=<uuid>`), kèm cờ `canModify`, `modifyLockReason`, `revision` và `modificationHistory`.
+- `POST /nori-api/bookings`: Tạo đơn thuê mới nguyên tử kèm khóa ngày `rental_days` (`HTTP 409 CONFLICT` nếu trùng lịch).
+- `PUT /nori-api/bookings`: **Chỉnh sửa thông tin đơn thuê đang chờ duyệt (`PENDING`)**:
+  - **Allowlist**: `id`, `expectedRevision`, `startDate`, `endDate`, `pickupTime`, `returnTime`, `pickupLocation`, `returnLocation`, `deliveryRequested`, `addonServices`, `customerPhone`, `customerEmail`, `promoCode`, `note`, `reason`.
+  - **Điều kiện khóa**: Chỉ cho phép chủ đơn khi `status === 'PENDING'`, chưa phát sinh bản ghi `payments`, và `expectedRevision` khớp `revision` hiện tại. Trả `HTTP 409 CONFLICT` nếu đơn vừa được Admin duyệt đồng thời hoặc đã có giao dịch đặt cọc/thanh toán cần đối soát.
+  - **Hoán đổi lịch nguyên tử**: Tính phần giao/bù `computeRentalDayDiff`, khóa ngày mới trước khi giải phóng ngày thừa, tính lại toàn bộ giá trên Backend và ghi `modificationHistory` + `AuditLogs`.
+- `PATCH /nori-api/bookings`: Hủy đơn thuê khi đơn ở trạng thái `PENDING` hoặc `DEPOSIT_PENDING` (`403`/`404` nếu cố hủy đơn người khác).
 
-### 1.4. Yêu cầu mua xe & Đánh giá (`/nori-api/inquiries`, `/nori-api/reviews`)
+### 1.4. Thông báo Xác nhận Đơn thuê (`/nori-api/notifications`)
 
-- `GET / POST /nori-api/inquiries`: Gửi và xem yêu cầu tư vấn/lái thử/mua xe.
-- `GET / POST /nori-api/reviews`: Xem và gửi đánh giá cho dòng xe. Backend chỉ cho phép gửi đánh giá đối với đơn thuê đã `COMPLETED` và mỗi đơn chỉ được đánh giá 1 lần.
+- `GET /nori-api/notifications`: Lấy danh sách thông báo của khách hàng hiện tại, `unreadCount`, và `activePopup` (thông báo `BOOKING_CONFIRMED` mới nhất có `popupDismissed = false` và `superseded = false`).
+- `PATCH /nori-api/notifications`: Đánh dấu đã đọc (`markRead`, `markAllRead`) và/hoặc đã đóng Popup (`dismissPopup: true`) để đảm bảo Popup xác nhận chỉ tự bật đúng 01 lần cho mỗi sự kiện duyệt đơn.
+
+### 1.5. Yêu cầu Mua xe & Đánh giá (`/nori-api/inquiries`, `/nori-api/reviews`)
+
+- `GET / POST /nori-api/inquiries`: Gửi và tra cứu yêu cầu tư vấn/xem xe/lái thử/mua xe.
+- `GET / POST /nori-api/reviews`: Xem và gửi đánh giá thực tế cho chuyến thuê đã `COMPLETED` (tối đa 1 đánh giá / đơn).
 
 ---
 
 ## 2. Giao diện Lập trình Quản trị Tập trung (`/nori-api/dashboard/*`)
 
-Tất cả API quản trị yêu cầu cookie `payload-token` hợp lệ thuộc collection `admins`. Mọi người dùng thuộc `users` hoặc người chưa đăng nhập đều bị từ chối truy cập với mã `HTTP 403 FORBIDDEN`.
+Mọi route dưới `/nori-api/dashboard/*` yêu cầu phiên đăng nhập `admins` hợp lệ; trả `HTTP 403 FORBIDDEN` với khách hàng hoặc người dùng ẩn danh.
 
-### 2.1. Phân hệ Tổng quan & Thống kê
+### 2.1. Tổng quan, Báo cáo & Xuất dữ liệu
 
-- `GET /nori-api/dashboard`: Thống kê tổng quan KPI, biểu đồ doanh thu 14 ngày, số lượng xe sẵn sàng, đơn thuê mới, yêu cầu mua xe.
-- `GET /nori-api/dashboard/reports`: Báo cáo chi tiết theo khoảng thời gian (`startDate`, `endDate`).
-- `GET /nori-api/dashboard/export?type=<bookings|inquiries|vehicles|customers|financial>`: Xuất file CSV định dạng UTF-8 kèm BOM.
+- `GET /nori-api/dashboard`: Thống kê KPI, biểu đồ hoạt động 14 ngày, mức độ hoàn thiện dữ liệu Catalogue.
+- `GET /nori-api/dashboard/reports`: Báo cáo vận hành & doanh thu theo khoảng ngày.
+- `GET /nori-api/dashboard/export?type=<bookings|inquiries|vehicles|customers|financial>`: Xuất CSV chuẩn UTF-8 BOM.
 
-### 2.2. Phân hệ Quản lý Đội xe & Đa phương tiện
+### 2.2. Quản lý Dòng xe, Cá thể xe & Thư viện Media
 
-- `GET / POST / PATCH / DELETE /nori-api/dashboard/vehicles`: CRUD danh mục dòng xe (`vehicle-models`) và từng chiếc xe thực tế (`vehicles`). Bảo vệ chống xóa xe đang có hợp đồng hoạt động.
-- `GET / POST /nori-api/dashboard/media`: Tải lên hình ảnh xe thật hoặc hình ảnh CMS (`multipart/form-data`, giới hạn tối đa 8MB).
+- `GET / POST / PATCH / DELETE /nori-api/dashboard/vehicles`:
+  - Hỗ trợ đầy đủ tham số `entity: 'model'` (10 nhóm thông tin dòng xe, đa ảnh `gallery[]`, thông số kỹ thuật động, tính năng kèm trạng thái `EQUIPPED`/`NOT_EQUIPPED`/`UNVERIFIED`/`NOT_APPLICABLE`, phiên bản & màu sắc) và cá thể xe thực tế (`photos[]` đa góc chụp, ảnh chính `isPrimary`, giá thuê/bán, ODO, tình trạng).
+  - Kiểm tra chéo `subCategory` hợp lệ theo `category` (`CAR` / `MOTORBIKE` / `PICKUP`) và tự động kích hoạt `revalidateCatalogue` đồng bộ sang giao diện khách hàng.
+- `GET / POST / DELETE /nori-api/dashboard/media`:
+  - `POST`: Hỗ trợ tải 1 hoặc nhiều ảnh (`file` / `files[]`, tối đa 12 tệp/lượt, `<= 8MB`/tệp). Xác thực chữ ký nhị phân (magic bytes JPEG, PNG, WebP, AVIF), quét chuỗi script/thực thi nhúng, kiểm tra kích thước thực qua `sharp` (`>= 64×64px`), chuẩn hóa tên tệp an toàn và trả báo cáo `{ uploaded, failed, partialFailure }`.
+  - `DELETE ?id=<uuid>`: Kiểm tra toàn bộ tham chiếu trên `vehicle-models`, `vehicles`, `nori-site`, `posts`; trả `HTTP 409 CONFLICT` nếu ảnh đang được sử dụng.
 
-### 2.3. Phân hệ Quản lý Đơn thuê & Yêu cầu Mua xe
+### 2.3. Quản lý Đơn thuê & Theo dõi Nhân viên Liên hệ Tư vấn
 
-- `GET / PATCH /nori-api/dashboard/bookings`: Quản lý 9 trạng thái đơn thuê, ghi chú số hợp đồng (`contractNumber`), phụ phí phát sinh (`extraFee`), chỉ số ODO khi nhận/trả xe (`returnOdometer`), tình trạng xe (`returnCondition`).
-- `GET / PATCH /nori-api/dashboard/inquiries`: Tiếp nhận, phân công nhân viên tư vấn, đặt lịch lái thử và chuyển trạng thái đơn mua xe.
+- `GET / PATCH /nori-api/dashboard/bookings`: Quản lý vòng đời 9 trạng thái đơn thuê, hỗ trợ bộ lọc tư vấn (`consultFilter`: `PENDING_CONTACT`, `DUE_TODAY`, `OVERDUE`, `URGENT`, `CONSULTED`), cảnh báo đơn thuê gấp trước khi duyệt và hiển thị lịch sử khách chỉnh sửa đơn.
+- `GET / PATCH /nori-api/dashboard/consultations`: Phân công nhân viên phụ trách (`assignedStaffId`/`assignedStaffName`), cập nhật trạng thái liên hệ tư vấn (`PENDING_CONTACT`, `CONTACTED`, `NO_ANSWER`, `CALLBACK_SCHEDULED`, `CONSULTED`, `NEED_EXTRA_DOCS`, `WAITING_DEPOSIT`, `CANCELLED_AFTER_CONTACT`), hẹn gọi lại và lưu nhật ký cuộc gọi (`contactLogs[]`) độc lập hoàn toàn với trạng thái thanh toán/hợp đồng.
+- `GET / PATCH /nori-api/dashboard/inquiries`: Quản lý yêu cầu tư vấn mua xe & lịch lái thử.
 
-### 2.4. Phân hệ Bảo trì & Khuyến mãi
+### 2.4. Nội dung CMS, Khung giờ Hành chính & Các Phân hệ Vận hành Khác
 
-- `GET / POST / PATCH / DELETE /nori-api/dashboard/maintenance`: Quản lý lịch bảo trì, sửa chữa xe định kỳ. Tự động khóa ngày trên lịch xe để ngăn khách đặt trùng.
-- `GET / POST / PATCH / DELETE /nori-api/dashboard/promotions`: Quản lý mã giảm giá (`PERCENT` hoặc `FIXED`), ngày hiệu lực và số lượt sử dụng tối đa.
-
-### 2.5. Phân hệ Sổ quỹ & Giao dịch Thanh toán
-
-- `GET / POST / PATCH /nori-api/dashboard/payments`: Quản lý sổ thu chi, xác nhận cọc, thanh toán và hoàn tiền.
-  - **Idempotency Guard**: Tự động phát hiện và chặn request thanh toán trùng lặp có cùng `bookingId`, `paymentType`, `amount` trong vòng 30 giây, trả về `HTTP 409 DUPLICATE_PAYMENT`.
-
-### 2.6. Phân hệ Khách hàng, Nội dung CMS & Quản trị viên
-
-- `GET / PATCH /nori-api/dashboard/customers`: Quản lý danh sách khách hàng, khóa/mở tài khoản, xác minh GPLX/CCCD, kiểm duyệt ẩn/hiện đánh giá.
-- `GET / PATCH /nori-api/dashboard/content`: Chỉnh sửa cấu hình toàn trang `NoriSite` (Hero banner, thông tin liên hệ, chính sách, FAQ). Hỗ trợ Lưu nháp (Draft), Xuất bản (Publish) và Khôi phục phiên bản (Version Restore).
-- `GET / POST / PATCH / DELETE /nori-api/dashboard/posts`: Quản lý bài viết tin tức, bài cẩm nang du lịch (Draft/Publish).
-- `GET / POST / PATCH / DELETE /nori-api/dashboard/admins`: Quản lý tài khoản quản trị viên và phân quyền RBAC (Chỉ `SUPER_ADMIN`). Xem nhật ký thao tác `audit-logs`.
-
----
-
-## 3. Bảng Mã Lỗi Chuẩn Hóa (Error Codes)
-
-| Mã lỗi (Code)           | HTTP Status | Mô tả nghiệp vụ                                                   |
-| :---------------------- | :---------- | :---------------------------------------------------------------- |
-| `VALIDATION_ERROR`      | 400         | Thiếu trường bắt buộc hoặc dữ liệu không hợp lệ                   |
-| `CSRF_DETECTED`         | 403         | Header Origin hoặc Referer không trùng khớp với máy chủ           |
-| `UNAUTHORIZED`          | 401         | Chưa đăng nhập hoặc phiên làm việc đã hết hạn                     |
-| `FORBIDDEN`             | 403         | Không có quyền truy cập tài nguyên (Ví dụ: khách vào trang Admin) |
-| `NOT_FOUND`             | 404         | Không tìm thấy bản ghi hoặc không có quyền sở hữu (chống IDOR)    |
-| `SLOT_UNAVAILABLE`      | 409         | Xe đã có người đặt hoặc đang trong lịch bảo trì (Race Condition)  |
-| `DUPLICATE_PAYMENT`     | 409         | Yêu cầu thanh toán trùng lặp được gửi trong khoảng thời gian 30s  |
-| `INTERNAL_SERVER_ERROR` | 500         | Lỗi máy chủ ngoài dự kiến                                         |
+- `GET / PATCH /nori-api/dashboard/content`: Quản trị `NoriSite` gồm danh sách slide Hero Carousel (`heroSlides[]`, `heroAutoplaySeconds`), cấu hình khung giờ hành chính & ngày nghỉ lễ (`businessTimezone`, `workingDays`, `workStartTime`, `workEndTime`, `lunchBreakStart`, `lunchBreakEnd`, `holidays[]`), chính sách, FAQ và lưu nháp/xuất bản.
+- `GET / POST / PATCH / DELETE /nori-api/dashboard/maintenance`: Quản lý lịch bảo trì phương tiện.
+- `GET / POST / PATCH / DELETE /nori-api/dashboard/promotions`: Quản lý mã khuyến mãi.
+- `GET / POST / PATCH /nori-api/dashboard/payments`: Sổ thu chi & đối soát đặt cọc (có Idempotency Guard 30 giây).
+- `GET / PATCH /nori-api/dashboard/customers`: Quản lý khách hàng & kiểm duyệt đánh giá.
+- `GET / POST / PATCH / DELETE /nori-api/dashboard/posts`: Quản lý tin tức & cẩm nang.
+- `GET / POST / PATCH / DELETE /nori-api/dashboard/admins`: Quản lý quản trị viên & tra cứu `audit-logs`.

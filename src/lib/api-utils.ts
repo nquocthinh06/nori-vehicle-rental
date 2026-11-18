@@ -23,9 +23,10 @@ export function fail(
 export async function body(
   request: Request,
   allowlist: string[],
+  maxBytes = 6000,
 ): Promise<Record<string, unknown>> {
   const raw = await request.text()
-  if (raw.length > 6000) throw new APIError('Nội dung gửi lên quá dài.', 400)
+  if (raw.length > maxBytes) throw new APIError('Nội dung gửi lên quá dài.', 400)
   let value: unknown
   try {
     value = JSON.parse(raw)

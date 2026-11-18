@@ -1,4 +1,4 @@
-import type { CollectionConfig } from 'payload'
+import { APIError, type CollectionConfig } from 'payload'
 
 import { createFolderField, createTagField } from 'payload'
 import { revalidateMedia, revalidateDeletedMedia } from '@/hooks/revalidate-nori'
@@ -11,7 +11,102 @@ export const Media: CollectionConfig = {
     update: ({ req }) => req.user?.collection === 'admins',
     delete: ({ req }) => req.user?.collection === 'admins',
   },
-  hooks: { afterChange: [revalidateMedia], afterDelete: [revalidateDeletedMedia] },
+  hooks: {
+    beforeDelete: [
+      async ({ id, req }) => {
+        const mediaId = String(id)
+        const [models, vehicles, posts, site] = await Promise.all([
+          req.payload.find({
+            collection: 'vehicle-models',
+            overrideAccess: true,
+            req,
+            depth: 0,
+            limit: 200,
+          }),
+          req.payload.find({
+            collection: 'vehicles',
+            overrideAccess: true,
+            req,
+            depth: 0,
+            limit: 500,
+          }),
+          req.payload.find({
+            collection: 'posts',
+            overrideAccess: true,
+            req,
+            depth: 0,
+            limit: 200,
+            where: { cover: { equals: mediaId } },
+          }),
+          req.payload.findGlobal({
+            slug: 'nori-site',
+            overrideAccess: true,
+            req,
+            depth: 0,
+          }),
+        ])
+
+        const refs: string[] = []
+        for (const m of models.docs) {
+          const coverId = typeof m.cover === 'object' && m.cover ? m.cover.id : m.cover
+          const inGallery = (m.gallery ?? []).some(
+            (g) => (typeof g.image === 'object' && g.image ? g.image.id : g.image) === mediaId,
+          )
+          const inVariant = (m.variants ?? []).some((v) =>
+            (v.colors ?? []).some(
+              (c) => (typeof c.image === 'object' && c.image ? c.image.id : c.image) === mediaId,
+            ),
+          )
+          if (coverId === mediaId || inGallery || inVariant) {
+            refs.push(`Dòng xe: ${m.name}`)
+          }
+        }
+        for (const v of vehicles.docs) {
+          const inPhotos = (v.photos ?? []).some(
+            (p) => (typeof p.image === 'object' && p.image ? p.image.id : p.image) === mediaId,
+          )
+          if (inPhotos) refs.push(`Xe thực tế: ${v.reference}`)
+        }
+        for (const p of posts.docs) {
+          refs.push(`Bài viết: ${p.title}`)
+        }
+
+        const siteRecord = site as unknown as Record<string, unknown>
+        const siteSingleIds = [site.logo, site.favicon, site.ogImage, site.storyImage].map((x) =>
+          typeof x === 'object' && x ? (x as { id?: string }).id : x,
+        )
+        const inHeroImages = (site.heroImages ?? []).some(
+          (h) => (typeof h.image === 'object' && h.image ? h.image.id : h.image) === mediaId,
+        )
+        const heroSlidesRaw = Array.isArray(siteRecord.heroSlides)
+          ? (siteRecord.heroSlides as Record<string, unknown>[])
+          : []
+        const inHeroSlides = heroSlidesRaw.some((s) => {
+          const dId =
+            typeof s.desktopImage === 'object' && s.desktopImage
+              ? (s.desktopImage as { id?: string }).id
+              : s.desktopImage
+          const mId =
+            typeof s.mobileImage === 'object' && s.mobileImage
+              ? (s.mobileImage as { id?: string }).id
+              : s.mobileImage
+          return dId === mediaId || mId === mediaId
+        })
+        if (siteSingleIds.includes(mediaId) || inHeroImages || inHeroSlides) {
+          refs.push('Nội dung & Banner trang chủ NORI')
+        }
+
+        if (refs.length > 0) {
+          throw new APIError(
+            `Không thể xóa tệp ảnh vì đang được sử dụng tại: ${refs.slice(0, 3).join(', ')}. Hãy gỡ liên kết trước khi xóa.`,
+            409,
+          )
+        }
+      },
+    ],
+    afterChange: [revalidateMedia],
+    afterDelete: [revalidateDeletedMedia],
+  },
   fields: [
     {
       name: 'alt',

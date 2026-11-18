@@ -25,18 +25,19 @@ Dự án được định hướng phát triển theo tiêu chuẩn công nghệ
 ### 2.1. Phía Khách Hàng (Customer Experience)
 
 - **Catalogue & Tìm kiếm Thông minh**:
-  - Quản lý danh mục 20 dòng xe thuộc 3 nhóm chính: 8 mẫu ô tô, 8 mẫu xe máy, 4 mẫu bán tải.
+  - Quản lý danh mục 21 dòng xe thuộc 3 nhóm chính: ô tô phổ thông & hạng sang, xe máy & xe máy điện, xe bán tải địa hình.
   - Lọc đa tiêu chí: Nhóm xe, hãng sản xuất, khoảng giá thuê theo ngày, loại nhiên liệu, số chỗ ngồi.
   - Tìm kiếm tiếng Việt không dấu, chuyển đổi linh hoạt chế độ xem lưới (Grid) hoặc danh sách (List).
+- **Hero Carousel Phương Tiện Quản Trị Từ CMS**:
+  - 5 slide phương tiện sắc nét quản trị trực tiếp từ `/dashboard/content`, tự động chuyển mượt mà, hỗ trợ vuốt chạm di động, tạm dừng/tiếp tục và bảo toàn dữ liệu thanh tìm kiếm `<SearchBar />`.
 - **Chi tiết Xe & Tính Giá Tự Động**:
-  - Thư viện hình ảnh ngoại thất, nội thất, động cơ và chi tiết chân thực.
+  - Chuyển đổi minh bạch giữa nguồn ảnh Catalogue (`"Ảnh Catalogue – không phải hình ảnh của cá thể xe đang cho thuê."`) và ảnh cá thể xe thực tế; tự động ẩn bộ lọc `"Nội thất"` trên xe máy và ẩn thông số đốt trong trên xe thuần điện.
   - Thông số kỹ thuật chuẩn hóa, chọn phiên bản và màu sắc.
   - Lịch kiểm tra xe trống theo thời gian thực (`/nori-api/availability`).
   - Động cơ tính giá thuê tự động: Chiết khấu tuần (5%), chiết khấu tháng (12%), phụ phí cuối tuần và ngày lễ, cộng phí dịch vụ bổ sung (bảo hiểm, ghế trẻ em, thiết bị định vị).
-- **Quy trình Đặt Xe Minh Bạch**:
-  - Gửi yêu cầu đặt thuê xe, xác minh bằng số GPLX và số điện thoại.
-  - Khóa lịch giữ xe an toàn qua cơ chế giao dịch SQLite, chống đặt xe trùng lịch tuyệt đối (`HTTP 409 Conflict`).
-  - Theo dõi tiến độ đơn thuê qua 9 trạng thái rõ ràng.
+- **Quy trình Đặt Xe, Chỉnh Sửa Đơn Chờ Duyệt & Thông Báo Sau Duyệt**:
+  - Cho phép khách hàng chỉnh sửa trực tiếp đơn đang chờ duyệt (`PENDING`) tại `/my-bookings` kèm bảng đối chiếu chi phí Trước / Sau, hoán đổi ngày khóa nguyên tử và khóa Optimistic Locking (`revision`) chống ghi đè khi Admin duyệt đồng thời.
+  - Tự động hiển thị Popup xác nhận đơn thuê (1 lần/sự kiện duyệt, xem lại qua Chuông thông báo trên Header) kèm ngày dự kiến nhân viên liên hệ tư vấn theo khung giờ hành chính và ngày lễ.
 - **Tư vấn Mua Xe & Đặt Lịch Lái Thử**:
   - Biểu mẫu đăng ký tư vấn mua xe hoặc hẹn lịch lái thử xe trong kho.
   - Khách hàng theo dõi phản hồi trực tiếp trong trang quản lý tài khoản (`/account`).
@@ -94,19 +95,19 @@ graph TD
 
 ## 4. Công nghệ sử dụng
 
-| Lĩnh vực                | Công nghệ               | Phiên bản            | Vai trò                                                   |
-| :---------------------- | :---------------------- | :------------------- | :-------------------------------------------------------- |
-| **Framework**           | Next.js                 | 16.4.6               | App Router, Turbopack, Standalone deployment              |
-| **UI Library**          | React                   | 19.3.1               | Giao diện tương tác người dùng                            |
-| **Styling**             | Tailwind CSS            | 4.0.0                | Hệ thống semantic tokens, CSS biến thể mới                |
-| **Headless CMS**        | Payload CMS             | 4.0.0-beta.8         | Quản trị dữ liệu, phân quyền và API cốt lõi               |
-| **Database**            | SQLite                  | 3.x                  | Lưu trữ dữ liệu quan hệ, transaction toàn vẹn             |
-| **Database Adapter**    | `@payloadcms/db-sqlite` | 4.0.0-beta.8         | Kết nối SQLite & Drizzle ORM                              |
-| **Runtime & Toolchain** | Node.js / pnpm          | >=24.22.1 / pnpm 10+ | Môi trường thực thi và quản lý gói phụ thuộc              |
-| **Testing Engine**      | Node Test Runner        | Node.js built-in     | Thực thi 205 Unit tests nghiệp vụ                         |
-| **E2E Testing**         | Playwright              | 1.65.1               | 63 kịch bản E2E (Chromium Desktop, Mobile, Safari WebKit) |
-| **A11y Testing**        | Axe Core                | 4.14.0               | Kiểm tra chuẩn tiếp cận WCAG 2.2 AA                       |
-| **Linter & Formatter**  | oxfmt & Custom AST      | 0.73.0               | Chuẩn hóa định dạng và quét bảo mật tĩnh                  |
+| Lĩnh vực                | Công nghệ               | Phiên bản            | Vai trò                                                     |
+| :---------------------- | :---------------------- | :------------------- | :---------------------------------------------------------- |
+| **Framework**           | Next.js                 | 16.4.6               | App Router, Turbopack, Standalone deployment                |
+| **UI Library**          | React                   | 19.3.1               | Giao diện tương tác người dùng                              |
+| **Styling**             | Tailwind CSS            | 4.0.0                | Hệ thống semantic tokens, CSS biến thể mới                  |
+| **Headless CMS**        | Payload CMS             | 4.0.0-beta.8         | Quản trị dữ liệu, phân quyền và API cốt lõi                 |
+| **Database**            | SQLite                  | 3.x                  | Lưu trữ dữ liệu quan hệ, transaction toàn vẹn               |
+| **Database Adapter**    | `@payloadcms/db-sqlite` | 4.0.0-beta.8         | Kết nối SQLite & Drizzle ORM                                |
+| **Runtime & Toolchain** | Node.js / pnpm          | >=24.22.1 / pnpm 10+ | Môi trường thực thi và quản lý gói phụ thuộc                |
+| **Testing Engine**      | Node Test Runner        | Node.js built-in     | Thực thi 225 Unit tests nghiệp vụ                           |
+| **E2E Testing**         | Playwright              | 1.65.1               | 62 kịch bản E2E Chromium (Desktop, Mobile, Admin, Security) |
+| **A11y Testing**        | Axe Core                | 4.14.0               | Kiểm tra chuẩn tiếp cận WCAG 2.2 AA                         |
+| **Linter & Formatter**  | oxfmt & Custom AST      | 0.73.0               | Chuẩn hóa định dạng và quét bảo mật tĩnh                    |
 
 ---
 

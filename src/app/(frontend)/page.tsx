@@ -17,7 +17,14 @@ export default async function HomePage() {
   const locations = [...new Set(models.flatMap((m) => m.locations))].sort()
   return (
     <main id="main-content">
-      {site.showHeroSection && <Hero images={site.heroImages} />}
+      {site.showHeroSection && (
+        <Hero
+          images={site.heroImages}
+          slides={site.heroSlides}
+          hasConfiguredSlides={site.hasConfiguredHeroSlides}
+          autoplaySeconds={site.heroAutoplaySeconds}
+        />
+      )}
       <Container>
         <SearchBar locations={locations} />
         {site.showBenefitsSection && <Benefits />}

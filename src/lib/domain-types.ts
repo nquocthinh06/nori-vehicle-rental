@@ -41,7 +41,16 @@ export type FleetView = {
   location: string | null
   pickupLocation: string | null
   operationStatus: string
-  photos: { image: Photo; caption: string | null; kind: string | null }[]
+  photos: {
+    image: Photo
+    caption: string | null
+    kind: string | null
+    photoType?: string | null
+    isPrimary?: boolean
+    sortOrder?: number
+    altText?: string | null
+    sourceName?: string | null
+  }[]
 }
 
 export type Quote = {
@@ -78,20 +87,101 @@ export type StatusHistoryItem = {
   note?: string | null
 }
 
+export type BookingFieldChange = {
+  field: string
+  label: string
+  before: string | null
+  after: string | null
+}
+
+export type BookingModificationItem = {
+  modifiedAt: string
+  modifiedBy?: string | null
+  actorType?: string | null
+  statusAtChange?: string | null
+  reason?: string | null
+  previousTotalPrice: number
+  newTotalPrice: number
+  previousDeposit: number
+  newDeposit: number
+  changes: BookingFieldChange[]
+}
+
+export type ConsultationLogItem = {
+  contactedAt: string
+  staffName: string | null
+  outcome: string
+  note: string | null
+  nextCallbackAt: string | null
+}
+
+export type ConsultationView = {
+  id: string
+  bookingId: string
+  bookingKey: string
+  customerName: string
+  customerPhone: string | null
+  customerEmail: string | null
+  vehicleName: string
+  startDate: string
+  endDate: string
+  approvedAt: string
+  approvedBy: string | null
+  expectedContactDate: string
+  workingHoursWindow: string | null
+  isUrgent: boolean
+  assignedStaffId: string | null
+  assignedStaffName: string | null
+  status: string
+  callbackScheduledAt: string | null
+  internalNote: string | null
+  contactLogs: ConsultationLogItem[]
+  createdAt: string
+}
+
+export type NotificationView = {
+  id: string
+  type: string
+  title: string
+  message: string
+  bookingId: string | null
+  bookingKey: string | null
+  bookingStatus: string | null
+  vehicleName: string | null
+  startDate: string | null
+  endDate: string | null
+  pickupTime: string | null
+  returnTime: string | null
+  expectedContactDate: string | null
+  workingHoursLabel: string | null
+  customerPhoneMasked: string | null
+  hotline: string | null
+  isUrgent: boolean
+  paymentConfirmed: boolean
+  superseded: boolean
+  isRead: boolean
+  readAt: string | null
+  popupDismissed: boolean
+  createdAt: string
+}
+
 export type BookingView = {
   id: string
   bookingKey: string
+  revision?: number
   status: string
   modelName: string
+  modelSlug?: string
   reference: string
   vehicleId?: string
   customerId?: string
-  customerEmail?: string
+  customerEmail?: string | null
   startDate: string
   endDate: string
   pickupTime: string
   returnTime: string
   pickupLocation: string | null
+  returnLocation?: string | null
   deliveryRequested: boolean
   addonServices: string | null
   customerPhone?: string | null
@@ -116,7 +206,16 @@ export type BookingView = {
   initialPaymentDue: number
   remainingAmount: number
   handoverNote?: string | null
+  expectedContactDate?: string | null
+  workingHoursSnapshot?: string | null
+  isUrgentApproval?: boolean
+  hasPaymentRecord?: boolean
+  paymentConfirmed?: boolean
+  canModify?: boolean
+  modifyLockReason?: string | null
   statusHistory?: StatusHistoryItem[]
+  modificationHistory?: BookingModificationItem[]
+  consultation?: ConsultationView | null
   depositExpired?: boolean
   createdAt: string
   customerName?: string

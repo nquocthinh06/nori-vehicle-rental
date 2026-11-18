@@ -22,7 +22,7 @@ function getAdminCredentials() {
   return { email, password }
 }
 
-const ORIGIN = 'http://localhost:3000'
+const ORIGIN = process.env.NORI_TEST_BASE_URL || `http://localhost:${process.env.PORT || 3000}`
 const AUTH_HEADERS = { origin: ORIGIN, referer: `${ORIGIN}/` }
 
 const DASHBOARD_ROUTES = [
@@ -195,9 +195,11 @@ test.describe('NORI Data Sync & Business Security Verification', () => {
 
     // Clean up
     const db = new DatabaseSync(getDbPath())
+    db.exec('PRAGMA foreign_keys = ON')
     db.prepare('DELETE FROM rental_days WHERE booking_key = ?').run(booking.bookingKey)
     db.prepare('DELETE FROM bookings WHERE id = ?').run(booking.id)
     db.prepare('DELETE FROM users WHERE email = ?').run(custEmail)
+    db.close()
   })
 
   test('Concurrent double-booking collision is rejected with HTTP 409 Conflict', async ({
@@ -259,9 +261,11 @@ test.describe('NORI Data Sync & Business Security Verification', () => {
 
     // Clean up
     const db = new DatabaseSync(getDbPath())
+    db.exec('PRAGMA foreign_keys = ON')
     db.prepare('DELETE FROM rental_days WHERE booking_key = ?').run(b1Data.bookingKey)
     db.prepare('DELETE FROM bookings WHERE id = ?').run(b1Data.id)
     db.prepare('DELETE FROM users WHERE email IN (?, ?)').run(cust1, cust2)
+    db.close()
   })
 
   test('Duplicate payment request within 30s is rejected with HTTP 409 Conflict', async ({
@@ -372,9 +376,11 @@ test.describe('NORI Data Sync & Business Security Verification', () => {
 
     // Clean up
     const db = new DatabaseSync(getDbPath())
+    db.exec('PRAGMA foreign_keys = ON')
     db.prepare('DELETE FROM rental_days WHERE booking_key = ?').run(bookingA.bookingKey)
     db.prepare('DELETE FROM bookings WHERE id = ?').run(bookingA.id)
     db.prepare('DELETE FROM users WHERE email IN (?, ?)').run(custA, custB)
+    db.close()
   })
 
   test('All 13 Dashboard routes enforce Admin RBAC both on page and API level', async ({
@@ -386,6 +392,7 @@ test.describe('NORI Data Sync & Business Security Verification', () => {
       '/nori-api/dashboard',
       '/nori-api/dashboard/admins',
       '/nori-api/dashboard/bookings',
+      '/nori-api/dashboard/consultations',
       '/nori-api/dashboard/content',
       '/nori-api/dashboard/customers',
       '/nori-api/dashboard/inquiries',
