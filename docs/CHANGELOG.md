@@ -1,5 +1,27 @@
 # NHẬT KÝ THAY ĐỔI VÀ NÂNG CẤP HỆ THỐNG NORI (CHANGELOG)
 
+## [Phiên bản 2.5.0] — 2026-11-18: Chuẩn Hóa Đồng Bộ Dữ Liệu Nhóm (Data Snapshot), Đồng Bộ Hình Ảnh (Media Sync), Gói Sao Lưu Nhất Quán & Quản Trị Hệ Thống (`/dashboard/system`)
+
+### 1. Kiến trúc Data Snapshot & Đồng bộ Nhóm qua GitHub (`src/lib/data-sync.ts`, `data/snapshots/*`, `data/seed/schema.sql`)
+
+- Xây dựng hệ thống **Version-Controlled Data Snapshot** cho phép xuất (`data:export`), kiểm tra toàn vẹn (`data:validate`), xem trước thay đổi (`data:import -- --dry-run`) và đồng bộ (`data:sync`) toàn bộ dữ liệu công khai và cấu hình Admin qua GitHub mà không cần commit cơ sở dữ liệu nhị phân `nori.db`.
+- Tách biệt rõ 3 nhóm dữ liệu: **Version-controlled Data** (`data/snapshots/*.json`, `data/seed/schema.sql`, `media/seed/**`), **Shared Runtime Data** (`nori.db`, `media/*`) và **Sensitive Data** (`.env`, password hash/salt, sessions, đơn thuê thực, thanh toán, CCCD/GPLX).
+- Tích hợp cơ chế phát hiện và xử lý xung đột 3 chiều (`abort`, `keep-local`, `prefer-snapshot`) theo mã băm `recordHash` và thời điểm `updatedAt`, bảo vệ tuyệt đối dữ liệu cục bộ của các thành viên khi làm việc nhóm.
+
+### 2. Đồng bộ Hình ảnh & Media Manifest (`data/snapshots/media-manifest.json`, `media/seed/**`, `scripts/media-validate.ts`)
+
+- Tự động phát hiện và sao chép các tệp hình ảnh mới do Admin tải lên từ `media/` sang thư mục quản lý phiên bản `media/seed/{vehicles,hero,banners,articles}/`, đồng thời tái sử dụng 63 ảnh mẫu gốc tại `public/seed-media/` qua đối chiếu `SHA-256 checksum` để không lưu trùng lặp file trong Git.
+- Khôi phục chính xác 100% khóa ngoại hình ảnh (`cover_id`, `desktop_image_id`, `mobile_image_id`, `image_id`) cho dòng xe, xe thực tế, Hero Slide, Banner và bài viết sau khi clone hoặc pull dự án trên máy mới.
+
+### 3. Gói Sao lưu Nhất quán (Consistent Backup Bundle) & Giao diện Quản trị Hệ thống (`/dashboard/system`)
+
+- Nâng cấp `data:backup` / `db:backup` và `data:restore` / `db:restore` để đóng gói đồng thời cơ sở dữ liệu SQLite (`VACUUM INTO`), toàn bộ tệp hình ảnh tham chiếu (`media/`) và `backup-manifest.json` kèm kiểm tra `PRAGMA integrity_check` và `SHA-256`.
+- Bổ sung trang quản trị **Đồng bộ & Sao lưu dữ liệu** (`/dashboard/system` & API `/nori-api/dashboard/system`) hiển thị trực quan chu trình 3 trạng thái dữ liệu, kiểm tra toàn vẹn, Dry-Run Import, Export Snapshot và tạo/khôi phục bản sao lưu ngay trên giao diện Admin.
+- Mở rộng `src/hooks/audit-nori.ts` ghi nhận chi tiết giá trị Trước / Sau (`fromStatus` / `toStatus`) đã làm sạch cho các thao tác cập nhật dòng xe, xe thực tế, nội dung website, hình ảnh media và phân quyền Admin.
+- Bổ sung bộ kiểm thử `tests/data-sync.test.mjs` (**11 kịch bản kiểm thử chuyên sâu bao phủ 35 tiêu chí `DATA-01..DATA-35`**, nâng tổng số lên **258 Unit Tests**) và kịch bản E2E `/dashboard/system` (**93 Playwright E2E Tests**).
+
+---
+
 ## [Phiên bản 2.4.0] — 2026-11-18: Chuẩn Hóa Xác Thực & Phiên Đăng Nhập, Động Cơ Khuyến Mãi Nguyên Tử, Chuyên Mục Bài Viết & Kiểm Toán QA Toàn Diện
 
 ### 1. Chuẩn hóa Xác thực, Cách ly Phiên `Customer` / `Admin` & Bảo mật Cookie (`src/lib/session-cookie.ts`, `src/lib/app-auth.ts`)

@@ -63,11 +63,12 @@ Kiểm tra chéo bằng truy vấn SQL đọc trước khi áp dụng cho thấy
 
 1. **Khóa an toàn chống chạy E2E lên `./nori.db` gốc**:
    - [`playwright.config.ts`](../../playwright.config.ts) từ chối khởi chạy Playwright (`[NORI SAFETY GUARD]`) nếu `NORI_SQLITE_PATH` / `DATABASE_URI` không trỏ vào bản sao cô lập (trừ khi truyền cờ tường minh `NORI_ALLOW_LIVE_DB_TEST=1`).
-   - `getDbPath()` trong [`nori.spec.ts`](../../tests/e2e/nori.spec.ts) và [`qa-comprehensive-audit.spec.ts`](../../tests/e2e/qa-comprehensive-audit.spec.ts) tự chặn truy cập phá hủy tới `path.resolve('nori.db')`.
-   - Bổ sung lệnh chuẩn [`pnpm test:e2e:isolated`](../../scripts/run-e2e-isolated.mjs): tự sao chép `./nori.db` → `nori-e2e-isolated.db`, chạy toàn bộ E2E trên cổng riêng `3105` với `NORI_DISABLE_DEMO_SEED=1`, tự kiểm tra **`PRAGMA integrity_check = ok`**, **`PRAGMA foreign_key_check = []`** và **`leftoverTestUsersCount = 0`** rồi xóa bản tạm.
-2. **Bảo vệ Build & Seed**:
-   - [`scripts/test-admin-isolated.mjs`](../../scripts/test-admin-isolated.mjs) sao chép nguồn sang `nori-test-isolated.db` và fail ngay nếu `fkCheck.length > 0`.
+   - `getDbPath()` trong toàn bộ **`8/8`** tệp E2E có mở DB (`nori.spec.ts`, `qa-comprehensive-audit.spec.ts`, `auth-session-booking-regression.spec.ts`, `data-sync.spec.ts`, `hero-cms.spec.ts`, `posts-banner.spec.ts`, `promo-checkout-regression.spec.ts`, `upgrade-workflows.spec.ts`) đều tự chặn truy cập tới `path.resolve('nori.db')` khi thiếu `NORI_ALLOW_LIVE_DB_TEST=1`.
+   - Lệnh chuẩn [`pnpm test:e2e:isolated`](../../scripts/run-e2e-isolated.mjs): tự sao chép `./nori.db` → `nori-e2e-isolated.db`, chạy toàn bộ `92` E2E trên port trống động với `NORI_DISABLE_DEMO_SEED=1`, tự kiểm tra **`PRAGMA integrity_check = ok`**, **`PRAGMA foreign_key_check = []`** và **`newLeftoverTestUsersCount = 0`** rồi dọn process tree & xóa bản tạm (`PASS 92/92` trong `4.8m` sau khi sửa `./nori.db`).
+2. **Bảo vệ Build, Seed & Khởi động lại thực tế**:
+   - [`scripts/test-admin-isolated.mjs`](../../scripts/test-admin-isolated.mjs) sao chép nguồn sang `nori-test-isolated.db` và fail ngay nếu `fkCheck.length > 0` (**`ISOLATED_ADMIN_TEST_PASS`** sau khi sửa `./nori.db`).
    - [`src/lib/seed-nori.ts`](../../src/lib/seed-nori.ts) tôn trọng `NORI_DISABLE_DEMO_SEED=1` và tự thoát sớm nếu dữ liệu đã tồn tại, không bao giờ ghi đè cấu hình Hero/Admin hiện hành.
+   - Đã kiểm chứng khởi động lại cả `next dev` (`:3000`) và production `next start` (port động, `NORI_DISABLE_DEMO_SEED=1`, chỉ gửi HTTP `GET` read-only `/nori-api/health`, `/`, `/vehicles/toyota-fortuner`, `/login`, `/dashboard`, `/admin`): mọi route `200`, `/` hiển thị **`"Mọi hành trình."`**, và bảo toàn 100% số lượng bản ghi cùng `integrity_check = ok`, `foreign_key_check = []` trên `./nori.db`.
 
 ---
 

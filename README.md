@@ -150,11 +150,21 @@ graph TD
    PORT=3000
    ```
 
-4. **Khởi động môi trường phát triển (Dev Server)**:
+4. **Khởi tạo Database, Đồng bộ Snapshot & Khởi chạy Dev Server**:
    ```bash
+   # Khởi tạo cấu trúc 84 bảng SQLite
+   npm run db:migrate
+
+   # Nhập bộ dữ liệu mẫu và hình ảnh mới nhất từ Snapshot
+   npm run data:import
+
+   # Khởi tạo tài khoản Admin cục bộ an toàn
+   npm run seed:admin -- --init-env
+
+   # Khởi chạy máy chủ phát triển
    pnpm dev
    ```
-   Truy cập ứng dụng tại: `http://localhost:3000`
+   Truy cập ứng dụng tại: `http://localhost:3000` (Quản trị viên: `http://localhost:3000/dashboard` và `http://localhost:3000/dashboard/system`).
 
 ---
 
@@ -246,26 +256,33 @@ Sau khi biên dịch thành công:
 
 ---
 
-## 10. Hướng dẫn Sao lưu và Phục hồi (Backup & Restore)
+## 10. Hướng dẫn Đồng bộ Dữ liệu Nhóm, Sao lưu và Phục hồi (Data Sync, Backup & Restore)
 
-Hệ thống cung cấp cơ chế sao lưu SQLite trực tuyến mà không cần dừng máy chủ:
-
-### Sao lưu (Backup)
+Dự án trang bị bộ công cụ đồng bộ dữ liệu nhóm (`data/snapshots/`, `media/seed/`) và sao lưu nhất quán (`backups/`):
 
 ```bash
-pnpm db:backup
+# Kiểm tra trạng thái đồng bộ giữa Database cục bộ và Git Snapshot
+npm run data:status
+
+# Xuất dữ liệu công khai & hình ảnh mới từ Admin ra Snapshot để chia sẻ qua GitHub
+npm run data:export
+
+# Kiểm tra tính toàn vẹn JSON, khóa ngoại, checksum ảnh và quét chặn dữ liệu nhạy cảm
+npm run data:validate
+npm run media:validate
+
+# Xem trước thay đổi (Dry Run) và nhập dữ liệu từ Snapshot sau khi git pull
+npm run data:import -- --dry-run
+npm run data:sync
+
+# Sao lưu nhất quán (SQLite VACUUM INTO + Media files + SHA-256 Manifest)
+npm run data:backup
+
+# Khôi phục Database & Media từ bản sao lưu
+npm run data:restore
 ```
 
-- Lệnh sử dụng chuẩn `VACUUM INTO` của SQLite để tạo bản sao lưu nhất quán tức thì tại thư mục `backups/`.
-- Tự động chạy lệnh `PRAGMA integrity_check` để xác thực độ toàn vẹn của tệp sao lưu.
-
-### Phục hồi (Restore)
-
-```bash
-node scripts/restore-db.mjs backups/nori-backup-YYYY-MM-DD-HHmmss.db
-```
-
-- Script tự động sao lưu bản snapshot hiện tại trước khi khôi phục, kiểm tra tính toàn vẹn và nạp lại dữ liệu an toàn.
+Quản trị viên cấp cao (`SUPER_ADMIN`) cũng có thể theo dõi trạng thái đồng bộ, kiểm tra toàn vẹn, xuất/nhập Snapshot và tạo/khôi phục bản sao lưu trực tiếp trên giao diện **Quản trị hệ thống → Đồng bộ & Sao lưu dữ liệu** (`/dashboard/system`).
 
 ---
 
@@ -292,3 +309,8 @@ Hệ thống tài liệu đầy đủ của dự án được lưu trữ trong t
 - [docs/PROJECT_STATUS.md](docs/PROJECT_STATUS.md) — Tình trạng dự án, tỷ lệ hoàn thiện các module và kế hoạch tiếp theo.
 - [docs/CHANGELOG.md](docs/CHANGELOG.md) — Lịch sử cập nhật và nâng cấp qua các phiên bản.
 - [docs/PWA.md](docs/PWA.md) — Hướng dẫn chi tiết về cấu hình, kiểm thử và cài đặt Progressive Web App.
+- [docs/DATA-SYNC.md](docs/DATA-SYNC.md) — Kiến trúc chuẩn hóa Data Persistence, Data Snapshot và Media Synchronization.
+- [docs/TEAM-WORKFLOW.md](docs/TEAM-WORKFLOW.md) — Quy trình làm việc nhóm qua GitHub khi thay đổi code, dữ liệu và hình ảnh.
+- [docs/BACKUP-RESTORE.md](docs/BACKUP-RESTORE.md) — Quy trình sao lưu nhất quán (Database + Media) và khôi phục sau sự cố.
+- [docs/DATABASE.md](docs/DATABASE.md) — Kiểm kê lưu trữ dữ liệu (Data Storage Inventory) và kiến trúc 84 bảng SQLite.
+- [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) — Phân tách 4 môi trường (Local, Test, Shared Staging, Production) và hướng dẫn triển khai VPS.
