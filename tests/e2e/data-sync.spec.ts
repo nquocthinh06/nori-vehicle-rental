@@ -48,6 +48,7 @@ const DASHBOARD_ROUTES = [
   '/dashboard/posts',
   '/dashboard/promotions',
   '/dashboard/reports',
+  '/dashboard/system',
   '/dashboard/vehicles',
 ]
 
@@ -432,6 +433,7 @@ test.describe('NORI Data Sync & Business Security Verification', () => {
       '/nori-api/dashboard/posts',
       '/nori-api/dashboard/promotions',
       '/nori-api/dashboard/reports',
+      '/nori-api/dashboard/system',
       '/nori-api/dashboard/vehicles',
       '/nori-api/dashboard/export',
     ]) {
@@ -473,5 +475,60 @@ test.describe('NORI Data Sync & Business Security Verification', () => {
     // Verify Set-Cookie and no-store protection in SW
     expect(swText).toContain('set-cookie')
     expect(swText).toContain('no-store')
+  })
+
+  test('System Data Sync & Backup API enforces RBAC and provides snapshot status, validation, and dry-run import', async ({
+    request,
+    page,
+  }) => {
+    // 1. Unauthenticated POST to /nori-api/dashboard/system is rejected with 403
+    const unauthPost = await request.post('/nori-api/dashboard/system', {
+      headers: AUTH_HEADERS,
+      data: { action: 'validate' },
+    })
+    expect(unauthPost.status()).toBe(403)
+
+    // 2. Authenticate as SUPER_ADMIN using page.request so browser context shares admin cookie
+    const { email, password } = getAdminCredentials()
+    const loginRes = await page.request.post('/nori-api/auth/login', {
+      headers: AUTH_HEADERS,
+      data: { email, password },
+    })
+    expect(loginRes.status()).toBe(200)
+
+    // 3. GET /nori-api/dashboard/system returns snapshot version, schema version, and media validation
+    const sysRes = await page.request.get('/nori-api/dashboard/system')
+    expect(sysRes.status()).toBe(200)
+    const sysJson = await sysRes.json()
+    const sysData = sysJson.data ?? sysJson
+    expect(sysData.status.schemaVersion).toBe('nori-payload-sqlite-v2.5')
+    expect(sysData.status.snapshotVersion).toMatch(/^snap-/)
+    expect(sysData.status.validation.ok).toBe(true)
+    expect(sysData.permissions.canManageSync).toBe(true)
+
+    // 4. POST action=validate & action=dry_run_import succeed
+    const valRes = await page.request.post('/nori-api/dashboard/system', {
+      headers: AUTH_HEADERS,
+      data: { action: 'validate' },
+    })
+    expect(valRes.status()).toBe(200)
+    const valJson = await valRes.json()
+    expect((valJson.data ?? valJson).report.ok).toBe(true)
+
+    const dryRes = await page.request.post('/nori-api/dashboard/system', {
+      headers: AUTH_HEADERS,
+      data: { action: 'dry_run_import', onConflict: 'abort' },
+    })
+    expect(dryRes.status()).toBe(200)
+    const dryJson = await dryRes.json()
+    expect((dryJson.data ?? dryJson).result.status).toBe('DRY_RUN')
+
+    // 5. Visit /dashboard/system UI and verify 3-state lifecycle & controls render
+    await page.goto('/dashboard/system', { waitUntil: 'domcontentloaded' })
+    await expect(
+      page.getByRole('heading', {
+        name: /Chu trình lưu trữ & đồng bộ dữ liệu nhóm/i,
+      }),
+    ).toBeVisible({ timeout: 5000 })
   })
 })

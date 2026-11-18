@@ -67,9 +67,7 @@ async function waitForHealth(url, timeoutMs = 45_000) {
 async function main() {
   const sourceDb = path.resolve(process.cwd(), process.env.NORI_SOURCE_DB || 'nori.db')
   const isolatedDb = path.resolve(process.cwd(), 'nori-e2e-isolated.db')
-  const port = process.env.NORI_E2E_PORT
-    ? String(process.env.NORI_E2E_PORT)
-    : await getFreePort()
+  const port = process.env.NORI_E2E_PORT ? String(process.env.NORI_E2E_PORT) : await getFreePort()
   const baseUrl = `http://localhost:${port}`
 
   if (!fs.existsSync(sourceDb)) {
@@ -79,6 +77,11 @@ async function main() {
   const preCheckDb = new DatabaseSync(sourceDb, { readOnly: true })
   const preIntegrity = preCheckDb.prepare('PRAGMA integrity_check').get()
   const preFk = preCheckDb.prepare('PRAGMA foreign_key_check').all()
+  const preTestUsersCount = preCheckDb
+    .prepare(
+      "SELECT count(*) AS count FROM users WHERE email LIKE '%@example.test' OR email LIKE '%@nori.test'",
+    )
+    .get().count
   preCheckDb.close()
   if (preIntegrity?.integrity_check !== 'ok' || preFk.length > 0) {
     throw new Error(
@@ -88,6 +91,11 @@ async function main() {
 
   removeSqliteFiles(isolatedDb)
   fs.copyFileSync(sourceDb, isolatedDb)
+  for (const suffix of ['-wal', '-shm']) {
+    if (fs.existsSync(`${sourceDb}${suffix}`)) {
+      fs.copyFileSync(`${sourceDb}${suffix}`, `${isolatedDb}${suffix}`)
+    }
+  }
 
   const serverEnv = {
     ...process.env,
@@ -169,7 +177,9 @@ async function main() {
         serverUnexpectedExit,
         postIntegrity: postIntegrity.integrity_check,
         postFkViolationsCount: postFk.length,
-        leftoverTestUsersCount: leftoverTestUsers.length,
+        baselineTestUsersCount: preTestUsersCount,
+        postTestUsersCount: leftoverTestUsers.length,
+        newLeftoverTestUsersCount: Math.max(0, leftoverTestUsers.length - preTestUsersCount),
       }),
     )
 
