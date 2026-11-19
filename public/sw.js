@@ -1,4 +1,4 @@
-const CACHE_NAME = 'nori-pwa-v1'
+const CACHE_NAME = 'nori-pwa-v2'
 const PRECACHE_URLS = ['/offline', '/nori-mark.svg', '/icons/icon-192.png', '/icons/icon-512.png']
 
 const SENSITIVE_PREFIXES = [
@@ -7,6 +7,7 @@ const SENSITIVE_PREFIXES = [
   '/admin',
   '/dashboard',
   '/account',
+  '/favorites',
   '/my-bookings',
   '/checkout',
   '/login',
@@ -58,6 +59,7 @@ self.addEventListener('message', (event) => {
 self.addEventListener('fetch', (event) => {
   const { request } = event
   if (request.method !== 'GET') return
+  if (request.cache === 'no-store') return
   if (request.headers.has('authorization')) return
 
   const url = new URL(request.url)

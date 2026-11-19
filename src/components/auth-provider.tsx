@@ -59,48 +59,70 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true)
   const refreshSeqRef = useRef(0)
   const lastFocusSyncRef = useRef(0)
+  const inFlightRefreshRef = useRef<Promise<AppUser | null> | null>(null)
 
   const refresh = useCallback(async (): Promise<AppUser | null> => {
-    const seq = ++refreshSeqRef.current
-    try {
-      const response = await fetch('/nori-api/auth/me', {
-        credentials: 'same-origin',
-        cache: 'no-store',
-      })
-      const result = await response.json()
-      const nextUser: AppUser | null =
-        response.ok && result?.success && result.data ? (result.data as AppUser) : null
-      if (seq === refreshSeqRef.current) {
-        setUser(nextUser)
-      }
-      return nextUser
-    } catch {
-      if (seq === refreshSeqRef.current) {
-        setUser(null)
-      }
-      return null
-    } finally {
-      if (seq === refreshSeqRef.current) {
-        setLoading(false)
-      }
+    if (inFlightRefreshRef.current) {
+      return inFlightRefreshRef.current
     }
+    const seq = ++refreshSeqRef.current
+    const task = (async (): Promise<AppUser | null> => {
+      const controller = new AbortController()
+      const timer = setTimeout(() => controller.abort(), 10_000)
+      try {
+        const response = await fetch('/nori-api/auth/me', {
+          credentials: 'same-origin',
+          cache: 'no-store',
+          signal: controller.signal,
+        })
+        const result = await response.json()
+        const nextUser: AppUser | null =
+          response.ok && result?.success && result.data ? (result.data as AppUser) : null
+        if (seq === refreshSeqRef.current) {
+          setUser(nextUser)
+        }
+        return nextUser
+      } catch {
+        if (seq === refreshSeqRef.current) {
+          setUser(null)
+        }
+        return null
+      } finally {
+        clearTimeout(timer)
+        if (seq === refreshSeqRef.current) {
+          setLoading(false)
+        }
+      }
+    })()
+
+    inFlightRefreshRef.current = task
+    task.finally(() => {
+      if (inFlightRefreshRef.current === task) {
+        inFlightRefreshRef.current = null
+      }
+    })
+    return task
   }, [])
 
   useEffect(() => {
     void refresh()
 
     const onInvalidated = () => {
+      inFlightRefreshRef.current = null
       void refresh()
     }
     const onVisibilityChange = () => {
       if (!document.hidden) {
-        lastFocusSyncRef.current = Date.now()
-        void refresh()
+        const now = Date.now()
+        if (now - lastFocusSyncRef.current > 5000) {
+          lastFocusSyncRef.current = now
+          void refresh()
+        }
       }
     }
     const onWindowFocus = () => {
       const now = Date.now()
-      if (now - lastFocusSyncRef.current > 2000) {
+      if (now - lastFocusSyncRef.current > 5000) {
         lastFocusSyncRef.current = now
         void refresh()
       }
@@ -126,6 +148,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = useCallback(async () => {
     refreshSeqRef.current += 1
+    inFlightRefreshRef.current = null
     const response = await fetch('/nori-api/auth/logout', {
       method: 'POST',
       credentials: 'same-origin',
@@ -133,6 +156,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     })
     if (!response.ok) throw new Error('Chưa thể đăng xuất. Vui lòng thử lại.')
     clearAllCheckoutDrafts()
+    try {
+      navigator.serviceWorker?.controller?.postMessage({ type: 'CLEAR_CACHES' })
+    } catch {
+      // ignore SW postMessage failure
+    }
     setUser(null)
   }, [])
 

@@ -19,11 +19,18 @@ function shouldInvalidateSessionOn401(path: string): boolean {
   return !NON_SESSION_401_PATHS.some((prefix) => path === prefix || path.startsWith(`${prefix}?`))
 }
 
+const DEFAULT_API_TIMEOUT_MS = 15_000
+
+export type ApiRequestOptions = RequestInit & {
+  timeoutMs?: number
+}
+
 function defaultMessageForStatus(status: number): string {
   if (status === 400) return 'Dữ liệu gửi lên chưa hợp lệ. Vui lòng kiểm tra lại.'
   if (status === 401) return 'Phiên đăng nhập đã hết hạn hoặc chưa hợp lệ. Vui lòng đăng nhập lại.'
   if (status === 403) return 'Tài khoản hiện tại không có quyền thực hiện thao tác này.'
   if (status === 404) return 'Không tìm thấy thông tin được yêu cầu.'
+  if (status === 408) return 'Yêu cầu quá thời gian chờ phản hồi. Vui lòng thử lại.'
   if (status === 409) return 'Dữ liệu vừa thay đổi hoặc xung đột. Vui lòng kiểm tra lại.'
   if (status === 422) return 'Thông tin chưa đáp ứng điều kiện nghiệp vụ. Vui lòng kiểm tra lại.'
   if (status === 429) return 'Bạn thao tác quá nhanh. Vui lòng thử lại sau ít phút.'
@@ -31,20 +38,54 @@ function defaultMessageForStatus(status: number): string {
   return 'Chưa thể xử lý yêu cầu. Vui lòng thử lại.'
 }
 
-export async function api<T>(path: string, options?: RequestInit): Promise<T> {
+export async function api<T>(path: string, options?: ApiRequestOptions): Promise<T> {
+  const {
+    timeoutMs = DEFAULT_API_TIMEOUT_MS,
+    signal: callerSignal,
+    ...fetchOptions
+  } = options ?? {}
+  const controller = new AbortController()
+  let timedOut = false
+
+  const onCallerAbort = () => controller.abort(callerSignal?.reason)
+  if (callerSignal) {
+    if (callerSignal.aborted) {
+      controller.abort(callerSignal.reason)
+    } else {
+      callerSignal.addEventListener('abort', onCallerAbort, { once: true })
+    }
+  }
+
+  const timer =
+    Number.isFinite(timeoutMs) && timeoutMs > 0
+      ? setTimeout(() => {
+          timedOut = true
+          controller.abort()
+        }, timeoutMs)
+      : null
+
   let response: Response
   try {
     response = await fetch(`/nori-api${path}`, {
-      ...options,
+      ...fetchOptions,
+      signal: controller.signal,
       credentials: 'same-origin',
       cache: 'no-store',
       headers: {
-        ...(options?.body ? { 'Content-Type': 'application/json' } : {}),
-        ...options?.headers,
+        ...(fetchOptions.body ? { 'Content-Type': 'application/json' } : {}),
+        ...fetchOptions.headers,
       },
     })
   } catch (err) {
-    if (options?.signal?.aborted || (err instanceof Error && err.name === 'AbortError')) {
+    if (timedOut && !callerSignal?.aborted) {
+      throw new RequestError(
+        'Yêu cầu quá thời gian chờ phản hồi. Vui lòng kiểm tra kết nối và thử lại.',
+        408,
+        {},
+        'REQUEST_TIMEOUT',
+      )
+    }
+    if (callerSignal?.aborted || (err instanceof Error && err.name === 'AbortError')) {
       throw err
     }
     throw new RequestError(
@@ -53,6 +94,9 @@ export async function api<T>(path: string, options?: RequestInit): Promise<T> {
       {},
       'NETWORK_ERROR',
     )
+  } finally {
+    if (timer) clearTimeout(timer)
+    if (callerSignal) callerSignal.removeEventListener('abort', onCallerAbort)
   }
 
   let result: {

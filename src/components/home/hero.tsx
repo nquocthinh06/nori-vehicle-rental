@@ -268,20 +268,28 @@ function HeroSlideMedia({
     alt: slide.imageAlt,
     fill: true,
     sizes: commonSizes,
-    quality: 84,
-    loading: isPrimary ? 'eager' : 'lazy',
-  })
-
-  const {
-    props: { srcSet: mobileSrcSet, ...mobileImgProps },
-  } = getImageProps({
-    src: resolvedMobile,
-    alt: slide.imageAlt,
-    fill: true,
-    sizes: commonSizes,
     quality: 80,
     loading: isPrimary ? 'eager' : 'lazy',
   })
+
+  const hasSeparateMobile = resolvedMobile !== resolvedDesktop
+  const mobileImage = hasSeparateMobile
+    ? getImageProps({
+        src: resolvedMobile,
+        alt: slide.imageAlt,
+        fill: true,
+        sizes: commonSizes,
+        quality: 75,
+        loading: isPrimary ? 'eager' : 'lazy',
+      }).props
+    : null
+  const mobileSrcSet = mobileImage ? mobileImage.srcSet : desktopSrcSet
+  const mobileImgProps = mobileImage
+    ? (() => {
+        const { srcSet: _ignored, ...rest } = mobileImage
+        return rest
+      })()
+    : desktopImgProps
 
   if (previewViewport) {
     const activeProps = previewViewport === 'mobile' ? mobileImgProps : desktopImgProps

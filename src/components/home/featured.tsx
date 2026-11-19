@@ -1,7 +1,7 @@
 'use client'
 
 import Image from 'next/image'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useMemo, useState } from 'react'
 import type { Category, ModelView } from '@/lib/catalogue'
 import { Button, ButtonLink, EmptyState, Heading, NoriLink, Text, cn } from '@/components/ui'
 import { Icon, type IconName } from '@/components/ui/icon'
@@ -73,49 +73,33 @@ const categoryCards: CategoryShowcase[] = [
 
 export function Featured({ models }: { models: ModelView[] }) {
   const [category, setCategory] = useState<Category | ''>('')
-  const [belowFoldReady, setBelowFoldReady] = useState(false)
-  const discoverRef = useRef<HTMLElement>(null)
 
-  useEffect(() => {
-    if (belowFoldReady) return
-    const enable = () => setBelowFoldReady(true)
-    if (document.readyState === 'complete') {
-      const id = window.setTimeout(enable, 60)
-      return () => window.clearTimeout(id)
+  // Calculate live vehicle counts and resolve CMS cover images per category (with seed-media fallback)
+  const { categoryCounts, categoryImages } = useMemo(() => {
+    const counts = { CAR: 0, MOTORBIKE: 0, PICKUP: 0, EV: 0 }
+    const covers: Partial<Record<Category | 'EV', { url: string; alt: string }>> = {}
+    for (const m of models) {
+      counts[m.category] += 1
+      if (m.cover?.url && !covers[m.category]) {
+        covers[m.category] = { url: m.cover.url, alt: m.cover.alt || m.name }
+      }
+      if (m.fuelType?.includes('Điện')) {
+        counts.EV += 1
+        if (m.cover?.url && !covers.EV) {
+          covers.EV = { url: m.cover.url, alt: m.cover.alt || m.name }
+        }
+      }
     }
-    window.addEventListener('load', enable, { once: true })
-    const timer = window.setTimeout(enable, 1800)
-    const observer =
-      typeof IntersectionObserver !== 'undefined' && discoverRef.current
-        ? new IntersectionObserver(
-            (entries) => {
-              if (entries.some((e) => e.isIntersecting)) enable()
-            },
-            { rootMargin: '200px' },
-          )
-        : null
-    if (observer && discoverRef.current) observer.observe(discoverRef.current)
-    return () => {
-      window.removeEventListener('load', enable)
-      window.clearTimeout(timer)
-      observer?.disconnect()
-    }
-  }, [belowFoldReady])
-
-  // Calculate live vehicle counts
-  const categoryCounts = useMemo(() => {
-    return {
-      CAR: models.filter((m) => m.category === 'CAR').length,
-      MOTORBIKE: models.filter((m) => m.category === 'MOTORBIKE').length,
-      PICKUP: models.filter((m) => m.category === 'PICKUP').length,
-      EV: models.filter((m) => m.fuelType?.includes('Điện')).length,
-    }
+    return { categoryCounts: counts, categoryImages: covers }
   }, [models])
 
-  const visible = models.filter((m) => !category || m.category === category).slice(0, 6)
+  const visible = useMemo(
+    () => models.filter((m) => !category || m.category === category).slice(0, 6),
+    [models, category],
+  )
 
   return (
-    <section ref={discoverRef} id="discover" className="py-14 md:py-section">
+    <section id="discover" className="py-14 md:py-section">
       {/* Section Header */}
       <div className="flex flex-wrap items-end justify-between gap-5">
         <div className="max-w-reading">
@@ -139,6 +123,7 @@ export function Featured({ models }: { models: ModelView[] }) {
       <div className="mt-8 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
         {categoryCards.map((cat) => {
           const count = cat.key === 'EV' ? categoryCounts.EV : categoryCounts[cat.key]
+          const resolvedImg = categoryImages[cat.key]
           return (
             <NoriLink
               key={cat.key}
@@ -147,18 +132,16 @@ export function Featured({ models }: { models: ModelView[] }) {
             >
               {/* Photo Area */}
               <div className="relative aspect-vehicle w-full overflow-hidden bg-night/5">
-                {belowFoldReady && (
-                  <Image
-                    src={cat.image}
-                    alt={cat.imageAlt}
-                    fill
-                    loading="lazy"
-                    decoding="async"
-                    fetchPriority="low"
-                    sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 25vw"
-                    className="object-cover object-center transition-transform duration-500 ease-out group-hover:scale-105"
-                  />
-                )}
+                <Image
+                  src={resolvedImg?.url ?? cat.image}
+                  alt={resolvedImg?.alt || cat.imageAlt}
+                  fill
+                  loading="lazy"
+                  decoding="async"
+                  fetchPriority="low"
+                  sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 25vw"
+                  className="object-cover object-center transition-transform duration-500 ease-out group-hover:scale-105"
+                />
                 <div className="absolute inset-0 bg-gradient-to-t from-night/70 via-night/10 to-transparent" />
 
                 {/* Badge top-left */}

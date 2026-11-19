@@ -4,6 +4,7 @@ import { createFolderField, createTagField } from 'payload'
 import { adminMediaDeleteAccess, adminMediaWriteAccess } from '@/access/nori'
 import { auditCollection } from '@/hooks/audit-nori'
 import { revalidateMedia, revalidateDeletedMedia } from '@/hooks/revalidate-nori'
+import { localMediaResizeHandler } from '@/lib/media-optimizer'
 
 const mediaAudit = auditCollection({
   entity: 'media',
@@ -152,8 +153,13 @@ export const Media: CollectionConfig = {
     createTagField({ relationTo: 'tags' }),
   ],
   upload: {
+    ...(process.env.NORI_MEDIA_DIR?.trim() ? { staticDir: process.env.NORI_MEDIA_DIR.trim() } : {}),
+    handlers: [localMediaResizeHandler],
     modifyResponseHeaders: ({ headers }) => {
-      headers.set('Cache-Control', 'public, max-age=3600, s-maxage=3600')
+      headers.set(
+        'Cache-Control',
+        'public, max-age=3600, s-maxage=3600, stale-while-revalidate=86400',
+      )
       return headers
     },
   },

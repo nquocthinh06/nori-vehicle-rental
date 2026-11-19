@@ -222,24 +222,28 @@ export function AdminShell({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!user?.isAdmin) return
-    let active = true
+    const controller = new AbortController()
     api<{
       statuses?: Record<string, number>
       fleetStats?: { byOperationStatus?: Record<string, number>; expiredDepositCount?: number }
+      newInquiriesCount?: number
       inquiries?: { status: string }[]
-    }>('/dashboard')
+    }>('/dashboard?summaryOnly=1', { signal: controller.signal, timeoutMs: 10_000 })
       .then((res) => {
-        if (!active) return
+        if (controller.signal.aborted) return
         setNotif({
           pendingBookings: res.statuses?.PENDING ?? 0,
           expiredDeposits: res.fleetStats?.expiredDepositCount ?? 0,
-          newInquiries: (res.inquiries ?? []).filter((i) => i.status === 'NEW').length,
+          newInquiries:
+            typeof res.newInquiriesCount === 'number'
+              ? res.newInquiriesCount
+              : (res.inquiries ?? []).filter((i) => i.status === 'NEW').length,
           maintenanceVehicles: res.fleetStats?.byOperationStatus?.MAINTENANCE ?? 0,
         })
       })
       .catch(() => {})
     return () => {
-      active = false
+      controller.abort()
     }
   }, [user?.isAdmin, pathname])
 

@@ -67,6 +67,8 @@ async function waitForHealth(url, timeoutMs = 45_000) {
 async function main() {
   const sourceDb = path.resolve(process.cwd(), process.env.NORI_SOURCE_DB || 'nori.db')
   const isolatedDb = path.resolve(process.cwd(), 'nori-e2e-isolated.db')
+  const sourceMediaDir = path.resolve(process.cwd(), process.env.NORI_SOURCE_MEDIA_DIR || 'media')
+  const isolatedMediaDir = path.resolve(process.cwd(), '.tmp-e2e-media')
   const port = process.env.NORI_E2E_PORT ? String(process.env.NORI_E2E_PORT) : await getFreePort()
   const baseUrl = `http://localhost:${port}`
 
@@ -97,12 +99,20 @@ async function main() {
     }
   }
 
+  fs.rmSync(isolatedMediaDir, { recursive: true, force: true })
+  if (fs.existsSync(sourceMediaDir)) {
+    fs.cpSync(sourceMediaDir, isolatedMediaDir, { recursive: true })
+  } else {
+    fs.mkdirSync(isolatedMediaDir, { recursive: true })
+  }
+
   const serverEnv = {
     ...process.env,
     NODE_ENV: 'production',
     PORT: port,
     DATABASE_URI: `file:./nori-e2e-isolated.db`,
     NORI_SQLITE_PATH: isolatedDb,
+    NORI_MEDIA_DIR: isolatedMediaDir,
     NORI_DISABLE_DEMO_SEED: '1',
     PAYLOAD_SECRET: process.env.PAYLOAD_SECRET || 'nori-isolated-e2e-payload-secret-0123456789',
     NORI_SESSION_SECRET:
@@ -191,6 +201,7 @@ async function main() {
     stoppingServer = true
     await stopChildProcess(serverProc)
     removeSqliteFiles(isolatedDb)
+    fs.rmSync(isolatedMediaDir, { recursive: true, force: true })
   }
 }
 

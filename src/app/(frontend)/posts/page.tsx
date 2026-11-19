@@ -1,6 +1,6 @@
 import { Suspense } from 'react'
 import type { Metadata } from 'next'
-import { getPublishedPosts } from '@/lib/catalogue'
+import { getPublishedPosts, slimPostForCard } from '@/lib/catalogue'
 import { PostsDirectory } from '@/components/posts-directory'
 import { CallToAction } from '@/components/home/sections'
 import { CardSkeleton, Container, Eyebrow, Heading, NoriLink, Text } from '@/components/ui'
@@ -13,7 +13,7 @@ export const metadata: Metadata = {
 }
 
 export default async function PostsPage() {
-  const posts = await getPublishedPosts()
+  const posts = (await getPublishedPosts()).map(slimPostForCard)
 
   return (
     <main id="main-content" className="pb-16">

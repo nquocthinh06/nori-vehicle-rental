@@ -1,5 +1,10 @@
 import type { Metadata } from 'next'
-import { getCatalogue, getPublishedPosts, getSiteContent } from '@/lib/catalogue'
+import {
+  getCatalogueSummary,
+  getPublishedPosts,
+  getSiteContent,
+  slimPostForCard,
+} from '@/lib/catalogue'
 import { Container, Eyebrow, Heading, NoriLink } from '@/components/ui'
 import { Icon } from '@/components/ui/icon'
 import { Hero } from '@/components/home/hero'
@@ -16,23 +21,12 @@ export const metadata: Metadata = {
 
 export default async function HomePage() {
   const [models, site, posts] = await Promise.all([
-    getCatalogue(),
+    getCatalogueSummary(),
     getSiteContent(),
     getPublishedPosts(),
   ])
   const locations = [...new Set(models.flatMap((m) => m.locations))].sort()
-  const slimModels = models.map((m) => ({
-    ...m,
-    description: null,
-    exteriorOverview: '',
-    interiorOverview: '',
-    engineOverview: '',
-    highlights: [],
-    features: [],
-    gallery: m.gallery.slice(0, 1),
-    specifications: [],
-    variants: [],
-  }))
+  const recentPosts = posts.slice(0, 3).map(slimPostForCard)
   return (
     <main id="main-content">
       {site.showHeroSection && (
@@ -46,10 +40,10 @@ export default async function HomePage() {
       <Container>
         <SearchBar locations={locations} />
         {site.showBenefitsSection && <Benefits />}
-        {site.showFeaturedSection && <Featured models={slimModels} />}
+        {site.showFeaturedSection && <Featured models={models} />}
         {site.showStorySection && <Story image={site.storyImage} />}
         {site.showHowItWorksSection && <HowItWorks />}
-        {posts.length > 0 && (
+        {recentPosts.length > 0 && (
           <section className="pb-14 md:pb-section">
             <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
               <div>
@@ -64,7 +58,7 @@ export default async function HomePage() {
               </NoriLink>
             </div>
             <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-              {posts.slice(0, 3).map((post) => (
+              {recentPosts.map((post) => (
                 <PostCard key={post.id} post={post} />
               ))}
             </div>

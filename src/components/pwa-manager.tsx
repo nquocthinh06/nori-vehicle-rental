@@ -47,25 +47,43 @@ export function PwaManager() {
     }
     window.addEventListener('beforeinstallprompt', onBeforeInstall)
 
-    // Register Service Worker in production or when supported
+    // Register Service Worker strictly in production; in development unregister any stale SW and clear caches
+    // so HMR chunks and dev assets are never intercepted by an outdated app shell.
     if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
-      navigator.serviceWorker
-        .register('/sw.js', { scope: '/' })
-        .then((registration) => {
-          if (registration.waiting) {
-            setUpdateReady(registration)
-          }
-          registration.addEventListener('updatefound', () => {
-            const installing = registration.installing
-            if (!installing) return
-            installing.addEventListener('statechange', () => {
-              if (installing.state === 'installed' && navigator.serviceWorker.controller) {
-                setUpdateReady(registration)
-              }
+      if (process.env.NODE_ENV === 'production') {
+        navigator.serviceWorker
+          .register('/sw.js', { scope: '/' })
+          .then((registration) => {
+            if (registration.waiting) {
+              setUpdateReady(registration)
+            }
+            registration.addEventListener('updatefound', () => {
+              const installing = registration.installing
+              if (!installing) return
+              installing.addEventListener('statechange', () => {
+                if (installing.state === 'installed' && navigator.serviceWorker.controller) {
+                  setUpdateReady(registration)
+                }
+              })
             })
           })
-        })
-        .catch(() => undefined)
+          .catch(() => undefined)
+      } else {
+        navigator.serviceWorker
+          .getRegistrations()
+          .then((regs) => Promise.all(regs.map((reg) => reg.unregister())))
+          .catch(() => undefined)
+        if (typeof caches !== 'undefined') {
+          caches
+            .keys()
+            .then((keys) =>
+              Promise.all(
+                keys.filter((k) => k.startsWith('nori-pwa-')).map((k) => caches.delete(k)),
+              ),
+            )
+            .catch(() => undefined)
+        }
+      }
     }
 
     return () => {
@@ -96,10 +114,19 @@ export function PwaManager() {
   }
 
   function applyUpdate() {
-    if (updateReady?.waiting) {
-      updateReady.waiting.postMessage({ type: 'SKIP_WAITING' })
+    if (!updateReady?.waiting) return
+    let reloaded = false
+    const reloadOnce = () => {
+      if (reloaded) return
+      reloaded = true
       window.location.reload()
     }
+    if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
+      navigator.serviceWorker.addEventListener('controllerchange', reloadOnce, { once: true })
+    }
+    updateReady.waiting.postMessage({ type: 'SKIP_WAITING' })
+    // Fallback if controllerchange does not fire within 1.5s
+    window.setTimeout(reloadOnce, 1500)
   }
 
   if (pathname?.startsWith('/dashboard')) return null

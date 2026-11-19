@@ -74,6 +74,9 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
   const [ackError, setAckError] = useState('')
 
   const isCustomer = Boolean(user && !user.isAdmin)
+  const inFlightRef = useRef(false)
+  const abortRef = useRef<AbortController | null>(null)
+  const lastVisFetchRef = useRef(0)
 
   const fetchNotifications = useCallback(async () => {
     if (!user || user.isAdmin) {
@@ -83,6 +86,10 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
       setError('')
       return
     }
+    if (inFlightRef.current) return
+    inFlightRef.current = true
+    const controller = new AbortController()
+    abortRef.current = controller
     setLoading(true)
     setError('')
     try {
@@ -90,21 +97,32 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
         items: NotificationView[]
         unreadCount: number
         activePopup: NotificationView | null
-      }>('/notifications')
+      }>('/notifications', { signal: controller.signal, timeoutMs: 12_000 })
+      if (controller.signal.aborted) return
       setItems(res.items)
       setUnreadCount(res.unreadCount)
       if (res.activePopup && !hasLocalAck(user.id, res.activePopup.id)) {
         setPopupItem((current) => current ?? res.activePopup)
       }
     } catch (err) {
+      if (controller.signal.aborted || (err instanceof Error && err.name === 'AbortError')) {
+        return
+      }
       setError((err as Error).message || 'Chưa thể đồng bộ thông báo.')
     } finally {
-      setLoading(false)
+      inFlightRef.current = false
+      if (abortRef.current === controller) {
+        abortRef.current = null
+      }
+      if (!controller.signal.aborted) {
+        setLoading(false)
+      }
     }
   }, [user])
 
   useEffect(() => {
     if (!isCustomer) {
+      abortRef.current?.abort()
       setItems([])
       setUnreadCount(0)
       setPopupItem(null)
@@ -113,7 +131,10 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
     void fetchNotifications()
 
     const onVisibility = () => {
-      if (!document.hidden) void fetchNotifications()
+      if (!document.hidden && Date.now() - lastVisFetchRef.current > 5_000) {
+        lastVisFetchRef.current = Date.now()
+        void fetchNotifications()
+      }
     }
     const onManualRefresh = () => {
       void fetchNotifications()
@@ -122,11 +143,14 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
     window.addEventListener('nori:notifications-refresh', onManualRefresh)
 
     const timer = setInterval(() => {
-      if (!document.hidden) void fetchNotifications()
-    }, 20_000)
+      if (!document.hidden && (typeof navigator === 'undefined' || navigator.onLine !== false)) {
+        void fetchNotifications()
+      }
+    }, 60_000)
 
     return () => {
       clearInterval(timer)
+      abortRef.current?.abort()
       document.removeEventListener('visibilitychange', onVisibility)
       window.removeEventListener('nori:notifications-refresh', onManualRefresh)
     }

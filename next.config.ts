@@ -35,6 +35,7 @@ const nextConfig: NextConfig = {
   images: {
     loader: 'custom',
     loaderFile: './figma-image-loader.ts',
+    qualities: [75, 80, 84],
   },
   async headers() {
     const securityHeaders = [
@@ -45,9 +46,10 @@ const nextConfig: NextConfig = {
     ]
     return [{ source: '/(.*)', headers: securityHeaders }]
   },
-  // Don't block publishing or preview deploys on errors if the emitted JS is valid
+  // Block local/CI/production builds on TypeScript errors while preserving
+  // Figma Make cloud publish compatibility when running inside sboxd (FIGMA=1).
   typescript: {
-    ignoreBuildErrors: true,
+    ignoreBuildErrors: process.env.FIGMA === '1',
   },
   // `next dev` serves the Make preview at a per-sandbox cross-origin host. Next
   // blocks its dev resources (`/_next/*`, HMR WebSocket, internal endpoints)

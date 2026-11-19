@@ -1,12 +1,12 @@
 import { notFound } from 'next/navigation'
 import type { Metadata } from 'next'
-import { getCatalogue, getModel, getSiteContent } from '@/lib/catalogue'
+import { getCatalogueSummary, getModel, getSiteContent } from '@/lib/catalogue'
 import { VehicleDetail } from '@/components/vehicle-detail'
 
 export const dynamicParams = true
 
 export async function generateStaticParams() {
-  return (await getCatalogue()).map((model) => ({ slug: model.slug }))
+  return (await getCatalogueSummary()).map((model) => ({ slug: model.slug }))
 }
 
 export async function generateMetadata({
@@ -25,5 +25,19 @@ export async function generateMetadata({
 export default async function VehiclePage({ params }: { params: Promise<{ slug: string }> }) {
   const [model, site] = await Promise.all([getModel((await params).slug), getSiteContent()])
   if (!model) notFound()
-  return <VehicleDetail model={model} address={site.address} site={site} />
+  const detailSite = {
+    ageRequirement: site.ageRequirement,
+    licenseRequirement: site.licenseRequirement,
+    depositPolicy: site.depositPolicy,
+    cancellationPolicy: site.cancellationPolicy,
+    phone: site.phone,
+    email: site.email,
+    address: site.address,
+    openingHours: site.openingHours,
+    workStartTime: site.workStartTime,
+    workEndTime: site.workEndTime,
+    lunchBreakStart: site.lunchBreakStart,
+    lunchBreakEnd: site.lunchBreakEnd,
+  }
+  return <VehicleDetail model={model} address={site.address} site={detailSite} />
 }

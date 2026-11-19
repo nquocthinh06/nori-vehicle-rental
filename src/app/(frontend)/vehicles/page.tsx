@@ -1,6 +1,6 @@
 import { Suspense } from 'react'
 import type { Metadata } from 'next'
-import { getCatalogue } from '@/lib/catalogue'
+import { getCatalogueSummary } from '@/lib/catalogue'
 import { Catalogue } from '@/components/catalogue'
 import { CardSkeleton, Container, Eyebrow, Heading, NoriLink, Text } from '@/components/ui'
 import { Icon } from '@/components/ui/icon'
@@ -12,7 +12,7 @@ export const metadata: Metadata = {
 }
 
 export default async function VehiclesPage() {
-  const models = await getCatalogue()
+  const models = await getCatalogueSummary()
   return (
     <main id="main-content" className="pb-16">
       <div className="border-y border-line bg-subtle">

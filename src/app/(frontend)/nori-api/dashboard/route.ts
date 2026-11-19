@@ -41,6 +41,67 @@ export async function GET(request: Request) {
     const canReports = adminHasPermission(admin, 'reports', 'read')
     const canBookingsOrReports = canBookings || canReports
     const params = new URL(request.url).searchParams
+    const emptyList = { docs: [], totalDocs: 0, page: 1, totalPages: 1 }
+    const zeroCount = { totalDocs: 0 }
+
+    // Lightweight sidebar badge summary mode for AdminShell (avoids running 18 heavy queries on every navigation)
+    if (params.get('summaryOnly') === '1') {
+      const [pendingCount, depositPendingDocs, newInquiriesCount, maintenanceCount] =
+        await Promise.all([
+          canBookings
+            ? payload.count({
+                collection: 'bookings',
+                user,
+                overrideAccess: false,
+                where: { status: { equals: 'PENDING' } },
+              })
+            : Promise.resolve(zeroCount),
+          canBookings
+            ? payload.find({
+                collection: 'bookings',
+                user,
+                overrideAccess: false,
+                depth: 0,
+                limit: 200,
+                select: { status: true, createdAt: true },
+                where: { status: { equals: 'DEPOSIT_PENDING' } },
+              })
+            : Promise.resolve(emptyList),
+          canInquiries
+            ? payload.count({
+                collection: 'sales-inquiries',
+                user,
+                overrideAccess: false,
+                where: { status: { equals: 'NEW' } },
+              })
+            : Promise.resolve(zeroCount),
+          canVehicles
+            ? payload.count({
+                collection: 'vehicles',
+                user,
+                overrideAccess: false,
+                where: { operationStatus: { equals: 'MAINTENANCE' } },
+              })
+            : Promise.resolve(zeroCount),
+        ])
+
+      let expiredDepositCount = 0
+      for (const b of depositPendingDocs.docs) {
+        if (isDepositExpired(b.createdAt, b.status ?? 'DEPOSIT_PENDING')) {
+          expiredDepositCount += 1
+        }
+      }
+
+      return json({
+        statuses: { PENDING: pendingCount.totalDocs },
+        fleetStats: {
+          byOperationStatus: { MAINTENANCE: maintenanceCount.totalDocs },
+          expiredDepositCount,
+        },
+        newInquiriesCount: newInquiriesCount.totalDocs,
+      })
+    }
+
     const bookingPage = Number(params.get('bookingPage') ?? '1')
     const inquiryPage = Number(params.get('inquiryPage') ?? '1')
     if (
@@ -67,8 +128,6 @@ export async function GET(request: Request) {
     ) {
       return fail('Bộ lọc trạng thái yêu cầu chưa hợp lệ.')
     }
-    const emptyList = { docs: [], totalDocs: 0, page: 1, totalPages: 1 }
-    const zeroCount = { totalDocs: 0 }
 
     const [
       vehicles,

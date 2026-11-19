@@ -118,6 +118,24 @@ const pickupTimes = [
   '20:00',
 ]
 
+export type VehicleDetailSiteInfo = Partial<
+  Pick<
+    SiteContent,
+    | 'ageRequirement'
+    | 'licenseRequirement'
+    | 'depositPolicy'
+    | 'cancellationPolicy'
+    | 'phone'
+    | 'email'
+    | 'address'
+    | 'openingHours'
+    | 'workStartTime'
+    | 'workEndTime'
+    | 'lunchBreakStart'
+    | 'lunchBreakEnd'
+  >
+>
+
 export function VehicleDetail({
   model,
   address,
@@ -125,7 +143,7 @@ export function VehicleDetail({
 }: {
   model: ModelView
   address: string | null
-  site?: SiteContent
+  site?: VehicleDetailSiteInfo
 }) {
   const [intent, setIntent] = useState<'rent' | 'buy'>('rent')
   const [galleryScope, setGalleryScope] = useState<'catalogue' | 'instance'>('catalogue')
@@ -652,7 +670,6 @@ export function VehicleDetail({
               >
                 {currentImage ? (
                   <Image
-                    key={currentImage.url}
                     src={currentImage.url}
                     alt={currentImage.alt}
                     fill
@@ -762,6 +779,18 @@ export function VehicleDetail({
                       key={k}
                       variant={kind === k && !variantColor ? 'dark' : 'secondary'}
                       aria-pressed={kind === k && !variantColor}
+                      onPointerEnter={() => {
+                        const firstForKind =
+                          k === 'ALL'
+                            ? baseScopedImages[0]?.image
+                            : baseScopedImages.find((item) => item.kind === k)?.image
+                        if (firstForKind?.url && typeof window !== 'undefined') {
+                          const preloadImg = new window.Image()
+                          preloadImg.src = firstForKind.url.includes('?')
+                            ? firstForKind.url
+                            : `${firstForKind.url}?w=1080&q=75`
+                        }
+                      }}
                       onClick={() => {
                         startTransition(() => {
                           setKind(k)

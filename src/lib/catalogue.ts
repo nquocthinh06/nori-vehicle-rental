@@ -308,6 +308,78 @@ export const getCatalogue = unstable_cache(
   { tags: ['nori-catalogue'] },
 )
 
+/**
+ * Lightweight cached catalogue query for listing/home/static-param routes.
+ * Fetches only card-level fields at depth 1 (avoiding full descriptions, specs,
+ * features, variants, and multi-photo galleries) to keep RSC payloads minimal.
+ */
+export const getCatalogueSummary = unstable_cache(
+  async (): Promise<ModelView[]> => {
+    const payload = await getPayloadClient()
+    const [models, fleet] = await Promise.all([
+      payload.find({
+        collection: 'vehicle-models',
+        overrideAccess: false,
+        depth: 1,
+        limit: 100,
+        sort: 'sortOrder',
+        select: {
+          name: true,
+          slug: true,
+          brand: true,
+          category: true,
+          subCategory: true,
+          bodyStyle: true,
+          segment: true,
+          modelYear: true,
+          seats: true,
+          fuelType: true,
+          transmission: true,
+          listedPrice: true,
+          referenceRentPrice: true,
+          cover: true,
+          featured: true,
+          verificationStatus: true,
+          sortOrder: true,
+        },
+      }),
+      payload.find({
+        collection: 'vehicles',
+        overrideAccess: false,
+        depth: 0,
+        limit: 1000,
+        select: {
+          model: true,
+          status: true,
+          operationStatus: true,
+          intent: true,
+          pricePerDay: true,
+          salePrice: true,
+          location: true,
+          isDemo: true,
+        },
+      }),
+    ])
+    return models.docs.map((m) => modelView(m as VehicleModel, fleet.docs as Vehicle[]))
+  },
+  ['nori-catalogue-summary-v1'],
+  { tags: ['nori-catalogue'] },
+)
+
+export function slimPostForCard(post: PostView): PostView {
+  const clean = post.content.replace(/\s+/g, ' ').trim()
+  const shortContent =
+    post.excerpt && post.excerpt.trim()
+      ? ''
+      : clean.length <= 160
+        ? clean
+        : `${clean.slice(0, 157)}...`
+  return {
+    ...post,
+    content: shortContent,
+  }
+}
+
 export function getModel(slug: string) {
   return unstable_cache(
     async () => {
