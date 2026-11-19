@@ -1489,3 +1489,1076 @@ export function getDynamicFeaturePresets(category: 'CAR' | 'MOTORBIKE' | 'PICKUP
 
   return { comfortTech, safety }
 }
+
+// ============================================================================
+// Online Payment Integration, Financial Standardization & State Machine Rules
+// ============================================================================
+
+export const PAYMENT_STATUSES = [
+  'PENDING',
+  'PROCESSING',
+  'CONFIRMED',
+  'FAILED',
+  'EXPIRED',
+  'CANCELLED',
+  'PARTIALLY_PAID',
+  'REVIEW_REQUIRED',
+  'REFUND_PENDING',
+  'PARTIALLY_REFUNDED',
+  'REFUNDED',
+] as const
+
+export type PaymentStatus = (typeof PAYMENT_STATUSES)[number]
+
+export const paymentStatusLabels: Record<string, string> = {
+  PENDING: 'Chờ thanh toán',
+  PROCESSING: 'Đang xác minh',
+  CONFIRMED: 'Đã thanh toán',
+  PAID: 'Đã thanh toán',
+  FAILED: 'Giao dịch thất bại',
+  EXPIRED: 'Đã hết hạn',
+  CANCELLED: 'Đã hủy',
+  PARTIALLY_PAID: 'Thanh toán thiếu',
+  REVIEW_REQUIRED: 'Cần đối soát',
+  REFUND_PENDING: 'Đang xử lý hoàn tiền',
+  PARTIALLY_REFUNDED: 'Đã hoàn tiền một phần',
+  REFUNDED: 'Đã hoàn tiền',
+}
+
+export const PAYMENT_TYPES = [
+  'DEPOSIT',
+  'RENTAL_FEE',
+  'FULL_PAYMENT',
+  'SECURITY_DEPOSIT',
+  'EXTRA_FEE',
+  'PURCHASE_DEPOSIT',
+  'REFUND',
+] as const
+
+export type PaymentType = (typeof PAYMENT_TYPES)[number]
+
+export const paymentTypeLabels: Record<string, string> = {
+  DEPOSIT: 'Tiền đặt cọc giữ xe',
+  RENTAL_FEE: 'Tiền thuê xe còn lại',
+  FULL_PAYMENT: 'Thanh toán toàn bộ tiền thuê',
+  SECURITY_DEPOSIT: 'Tiền cọc bảo đảm tài sản',
+  EXTRA_FEE: 'Phụ phí phát sinh',
+  PURCHASE_DEPOSIT: 'Đặt cọc mua xe',
+  REFUND: 'Hoàn tiền / Hoàn cọc',
+}
+
+export const PAYMENT_METHODS = [
+  'VIETQR_SEPAY',
+  'ONLINE_MOCK',
+  'BANK_TRANSFER',
+  'CASH',
+  'CARD_POS',
+] as const
+
+export type PaymentMethod = (typeof PAYMENT_METHODS)[number]
+
+export const paymentMethodLabels: Record<string, string> = {
+  VIETQR_SEPAY: 'VietQR động (SePay)',
+  ONLINE_MOCK: 'VietQR trực tuyến (Mô phỏng)',
+  BANK_TRANSFER: 'Chuyển khoản ngân hàng thủ công',
+  CASH: 'Tiền mặt tại điểm giao nhận',
+  CARD_POS: 'Quẹt thẻ POS tại quầy',
+}
+
+export const PAYMENT_PROVIDERS = [
+  'SEPAY',
+  'MOCK',
+  'MANUAL',
+  'PAYOS',
+  'VNPAY',
+  'MOMO',
+  'ZALOPAY',
+] as const
+
+export type PaymentProviderName = (typeof PAYMENT_PROVIDERS)[number]
+
+export const paymentProviderLabels: Record<string, string> = {
+  SEPAY: 'SePay VietQR',
+  MOCK: 'Mock Payment Provider',
+  MANUAL: 'Đối soát thủ công NORI',
+  PAYOS: 'PayOS (Mở rộng)',
+  VNPAY: 'VNPay (Mở rộng)',
+  MOMO: 'MoMo (Mở rộng)',
+  ZALOPAY: 'ZaloPay (Mở rộng)',
+}
+
+export const PAYMENT_ENVIRONMENTS = ['MOCK', 'SANDBOX', 'PRODUCTION'] as const
+export type PaymentEnvironment = (typeof PAYMENT_ENVIRONMENTS)[number]
+
+export const RECONCILIATION_STATUSES = [
+  'NONE',
+  'MATCHED',
+  'UNDERPAID',
+  'OVERPAID',
+  'LATE_PAYMENT',
+  'UNMATCHED',
+  'MANUAL_OVERRIDE',
+  'RESOLVED',
+] as const
+
+export type ReconciliationStatus = (typeof RECONCILIATION_STATUSES)[number]
+
+export const reconciliationStatusLabels: Record<string, string> = {
+  NONE: 'Bình thường',
+  MATCHED: 'Khớp tự động',
+  UNDERPAID: 'Chuyển thiếu tiền',
+  OVERPAID: 'Chuyển thừa tiền',
+  LATE_PAYMENT: 'Thanh toán đến muộn / Đơn đã đóng',
+  UNMATCHED: 'Chưa xác định đơn thuê',
+  MANUAL_OVERRIDE: 'Xác nhận thủ công',
+  RESOLVED: 'Đã xử lý đối soát',
+}
+
+export const REFUND_STATUSES = [
+  'REQUESTED',
+  'APPROVED',
+  'PROCESSING',
+  'REFUNDED',
+  'REJECTED',
+  'FAILED',
+] as const
+
+export type RefundStatus = (typeof REFUND_STATUSES)[number]
+
+export const refundStatusLabels: Record<string, string> = {
+  REQUESTED: 'Chờ duyệt hoàn tiền',
+  APPROVED: 'Đã duyệt — Chờ chi hoàn',
+  PROCESSING: 'Đang xử lý hoàn tiền',
+  REFUNDED: 'Đã hoàn tiền thành công',
+  REJECTED: 'Từ chối hoàn tiền',
+  FAILED: 'Hoàn tiền thất bại',
+}
+
+export const BOOKING_PAYMENT_SUMMARIES = [
+  'UNPAID',
+  'PENDING_VERIFICATION',
+  'PARTIALLY_PAID',
+  'DEPOSIT_PAID',
+  'FULLY_PAID',
+  'OVERPAID',
+  'REVIEW_REQUIRED',
+  'REFUND_PENDING',
+  'PARTIALLY_REFUNDED',
+  'REFUNDED',
+] as const
+
+export type BookingPaymentSummaryStatus = (typeof BOOKING_PAYMENT_SUMMARIES)[number]
+
+export const bookingPaymentSummaryLabels: Record<string, string> = {
+  UNPAID: 'Chưa thanh toán',
+  PENDING_VERIFICATION: 'Chờ xác minh giao dịch',
+  PARTIALLY_PAID: 'Thanh toán một phần',
+  DEPOSIT_PAID: 'Đã thanh toán cọc',
+  FULLY_PAID: 'Đã thanh toán đủ',
+  PAID_IN_FULL: 'Đã thanh toán đủ',
+  OVERPAID: 'Thanh toán thừa — Chờ đối soát',
+  REVIEW_REQUIRED: 'Cần đối soát tài chính',
+  DISCREPANCY_REVIEW: 'Cần đối soát tài chính',
+  REFUND_PENDING: 'Đang xử lý hoàn tiền',
+  PARTIALLY_REFUNDED: 'Đã hoàn tiền một phần',
+  REFUNDED: 'Đã hoàn tiền',
+}
+
+export const paymentSummaryLabels = bookingPaymentSummaryLabels
+
+/**
+ * Maps external provider status codes to NORI's internal canonical PaymentStatus.
+ * Note: NORI uses `CONFIRMED` as the canonical confirmed/paid status in the database.
+ */
+export function mapProviderStatusToInternal(externalStatus: string): PaymentStatus {
+  const normalized = String(externalStatus ?? '')
+    .trim()
+    .toUpperCase()
+  switch (normalized) {
+    case 'PAID':
+    case 'SUCCESS':
+    case 'SUCCEEDED':
+    case 'COMPLETED':
+    case 'CONFIRMED':
+      return 'CONFIRMED'
+    case 'PROCESSING':
+    case 'VERIFYING':
+    case 'IN_PROGRESS':
+      return 'PROCESSING'
+    case 'PARTIAL':
+    case 'PARTIALLY_PAID':
+    case 'UNDERPAID':
+      return 'PARTIALLY_PAID'
+    case 'OVERPAID':
+    case 'REVIEW':
+    case 'REVIEW_REQUIRED':
+    case 'LATE':
+    case 'UNMATCHED':
+      return 'REVIEW_REQUIRED'
+    case 'EXPIRED':
+    case 'TIMEOUT':
+      return 'EXPIRED'
+    case 'CANCELLED':
+    case 'CANCELED':
+    case 'VOIDED':
+      return 'CANCELLED'
+    case 'FAILED':
+    case 'ERROR':
+    case 'DECLINED':
+      return 'FAILED'
+    case 'REFUND_PENDING':
+    case 'REFUNDING':
+      return 'REFUND_PENDING'
+    case 'PARTIALLY_REFUNDED':
+      return 'PARTIALLY_REFUNDED'
+    case 'REFUNDED':
+      return 'REFUNDED'
+    case 'PENDING':
+    case 'CREATED':
+    default:
+      return 'PENDING'
+  }
+}
+
+export function canTransitionPayment(
+  from: string,
+  to: string,
+  actor: 'customer' | 'admin' | 'webhook' | 'system' = 'system',
+): boolean {
+  const current = mapProviderStatusToInternal(from)
+  const target = mapProviderStatusToInternal(to)
+  if (current === target) return true
+
+  // Customer can only cancel their own PENDING payment intent before money is verified
+  if (actor === 'customer') {
+    return current === 'PENDING' && target === 'CANCELLED'
+  }
+
+  const allowed: Record<PaymentStatus, PaymentStatus[]> = {
+    PENDING: [
+      'PROCESSING',
+      'CONFIRMED',
+      'PARTIALLY_PAID',
+      'REVIEW_REQUIRED',
+      'FAILED',
+      'EXPIRED',
+      'CANCELLED',
+    ],
+    PROCESSING: ['CONFIRMED', 'PARTIALLY_PAID', 'REVIEW_REQUIRED', 'FAILED', 'EXPIRED'],
+    PARTIALLY_PAID: [
+      'CONFIRMED',
+      'REVIEW_REQUIRED',
+      'REFUND_PENDING',
+      'PARTIALLY_REFUNDED',
+      'REFUNDED',
+    ],
+    REVIEW_REQUIRED: [
+      'CONFIRMED',
+      'PARTIALLY_PAID',
+      'REFUND_PENDING',
+      'PARTIALLY_REFUNDED',
+      'REFUNDED',
+      'CANCELLED',
+    ],
+    CONFIRMED: ['REVIEW_REQUIRED', 'REFUND_PENDING', 'PARTIALLY_REFUNDED', 'REFUNDED'],
+    REFUND_PENDING: ['CONFIRMED', 'PARTIALLY_REFUNDED', 'REFUNDED'],
+    PARTIALLY_REFUNDED: ['REFUND_PENDING', 'REFUNDED'],
+    REFUNDED: [],
+    FAILED: ['PENDING', 'PROCESSING', 'REVIEW_REQUIRED'],
+    // If a transfer arrives late after EXPIRED or CANCELLED, it MUST move to REVIEW_REQUIRED, not directly CONFIRMED
+    EXPIRED: ['REVIEW_REQUIRED'],
+    CANCELLED: ['REVIEW_REQUIRED'],
+  }
+
+  return Boolean(allowed[current]?.includes(target))
+}
+
+/**
+ * Checks whether an incoming webhook event is stale/out-of-order compared to the current payment state.
+ * For example, a stale PENDING/FAILED/EXPIRED event must never overwrite an already CONFIRMED or REFUNDED payment.
+ */
+export function isPaymentEventStale(currentStatus: string, incomingStatus: string): boolean {
+  const current = mapProviderStatusToInternal(currentStatus)
+  const incoming = mapProviderStatusToInternal(incomingStatus)
+
+  const settledStates: PaymentStatus[] = [
+    'CONFIRMED',
+    'REFUND_PENDING',
+    'PARTIALLY_REFUNDED',
+    'REFUNDED',
+  ]
+  const preSettlementStates: PaymentStatus[] = [
+    'PENDING',
+    'PROCESSING',
+    'FAILED',
+    'EXPIRED',
+    'CANCELLED',
+  ]
+
+  if (settledStates.includes(current) && preSettlementStates.includes(incoming)) {
+    return true
+  }
+  if (current === 'REFUNDED' && incoming !== 'REFUNDED') {
+    return true
+  }
+  if (
+    current === 'PARTIALLY_PAID' &&
+    ['PENDING', 'PROCESSING', 'FAILED', 'EXPIRED', 'CANCELLED'].includes(incoming)
+  ) {
+    return true
+  }
+  return false
+}
+
+export function roundVndInteger(amount: number | null | undefined): number {
+  if (amount === null || amount === undefined || !Number.isFinite(Number(amount))) return 0
+  return Math.max(0, Math.round(Number(amount)))
+}
+
+export function calculateReservationDeposit(
+  totalRentalPrice: number,
+  options?: {
+    policyMode?: 'PERCENT_OF_RENTAL' | 'VEHICLE_FIXED'
+    depositPercent?: number | null
+    fixedDepositAmount?: number | null
+  },
+): number {
+  const cleanRental = roundVndInteger(totalRentalPrice)
+  const mode = options?.policyMode ?? 'PERCENT_OF_RENTAL'
+  if (mode === 'VEHICLE_FIXED' && options?.fixedDepositAmount != null) {
+    return roundVndInteger(options.fixedDepositAmount)
+  }
+  const pct =
+    options?.depositPercent != null && Number.isFinite(Number(options.depositPercent))
+      ? Math.max(0, Math.min(100, Math.round(Number(options.depositPercent))))
+      : 30
+  return roundVndInteger((cleanRental * pct) / 100)
+}
+
+export type PaymentLedgerRecordLike = {
+  id?: string
+  reference?: string | null
+  paymentType: string
+  method?: string | null
+  provider?: string | null
+  amount: number
+  expectedAmount?: number | null
+  receivedAmount?: number | null
+  refundedAmount?: number | null
+  overpaidAmount?: number | null
+  status: string
+  reconciliationStatus?: string | null
+  expiresAt?: string | null
+  paidAt?: string | null
+  createdAt?: string | null
+}
+
+export type RefundRecordLike = {
+  id?: string
+  paymentId?: string | null
+  bookingId?: string | null
+  amount: number
+  refundType?: string | null
+  status: string
+}
+
+export type BookingFinancialInput = {
+  bookingStatus: string
+  totalRentalPrice: number
+  baseRentPrice?: number | null
+  discountAmount?: number | null
+  promoDiscountAmount?: number | null
+  weekendSurchargeTotal?: number | null
+  deliveryFee?: number | null
+  addonFeeTotal?: number | null
+  extraFee?: number | null
+  /** Reservation deposit required to lock the vehicle (if part of rental fee, deducted from remaining rental) */
+  reservationDepositRequired?: number | null
+  /** Percentage used if reservationDepositRequired is not explicitly provided */
+  reservationDepositPercent?: number | null
+  /** Whether reservation deposit is part of the total rental price (default true when percentage-based, or configurable) */
+  deductReservationDepositFromRental?: boolean
+  /** Separate asset security deposit (e.g. 5,000,000 VND) — NEVER counted as rental revenue */
+  securityDepositAmount?: number | null
+  payments?: PaymentLedgerRecordLike[]
+  refunds?: RefundRecordLike[]
+  now?: Date
+}
+
+export type BookingFinancialSummary = {
+  baseRentPrice: number
+  discountAmount: number
+  promoDiscountAmount: number
+  weekendSurchargeTotal: number
+  deliveryFee: number
+  addonFeeTotal: number
+  totalRentalPrice: number
+  extraFee: number
+  totalRentalWithExtra: number
+  reservationDepositRequired: number
+  deductReservationDepositFromRental: boolean
+  securityDepositAmount: number
+  paidDepositAmount: number
+  paidRentalAmount: number
+  paidExtraFeeAmount: number
+  paidSecurityDepositAmount: number
+  totalVerifiedReceived: number
+  rentalRevenueCollected: number
+  securityDepositHeld: number
+  overpaidAmount: number
+  totalRefundedAmount: number
+  pendingRefundAmount: number
+  netCollectedAmount: number
+  netRentalRevenue: number
+  remainingDepositDue: number
+  remainingRentalBeforeExtra: number
+  remainingExtraFeeDue: number
+  totalRemainingRentalObligation: number
+  remainingSecurityDepositDue: number
+  refundableBalance: number
+  paymentStatusSummary: BookingPaymentSummaryStatus
+  hasPendingPayment: boolean
+  hasAnomaly: boolean
+  activePendingPaymentId: string | null
+}
+
+/**
+ * Authoritative financial calculation engine for a booking across Customer UI, Admin Dashboard,
+ * Reports, and Database verification.
+ */
+export function calculateBookingFinancialSummary(
+  input: BookingFinancialInput,
+): BookingFinancialSummary {
+  const totalRentalPrice = roundVndInteger(input.totalRentalPrice)
+  const baseRentPrice = roundVndInteger(input.baseRentPrice ?? totalRentalPrice)
+  const discountAmount = roundVndInteger(input.discountAmount)
+  const promoDiscountAmount = roundVndInteger(input.promoDiscountAmount)
+  const weekendSurchargeTotal = roundVndInteger(input.weekendSurchargeTotal)
+  const deliveryFee = roundVndInteger(input.deliveryFee)
+  const addonFeeTotal = roundVndInteger(input.addonFeeTotal)
+  const extraFee = roundVndInteger(input.extraFee)
+  const totalRentalWithExtra = totalRentalPrice + extraFee
+
+  const deductDeposit = input.deductReservationDepositFromRental !== false
+  const reservationDepositRequired =
+    input.reservationDepositRequired != null
+      ? roundVndInteger(input.reservationDepositRequired)
+      : input.reservationDepositPercent != null
+        ? calculateReservationDeposit(totalRentalPrice, {
+            policyMode: 'PERCENT_OF_RENTAL',
+            depositPercent: input.reservationDepositPercent,
+          })
+        : 0
+
+  const securityDepositAmount = roundVndInteger(input.securityDepositAmount)
+
+  let paidDepositAmount = 0
+  let paidRentalAmount = 0
+  let paidExtraFeeAmount = 0
+  let paidSecurityDepositAmount = 0
+  let overpaidAmount = 0
+  let directRefundRecordsTotal = 0
+  let refundedOnPaymentFields = 0
+  let refundedSecurityDeposit = 0
+  let hasPendingPayment = false
+  let hasReviewRequired = false
+  let hasPartiallyPaidRecord = false
+  let hasRefundPendingRecord = false
+  let activePendingPaymentId: string | null = null
+  const nowMs = (input.now ?? new Date()).getTime()
+
+  const verifiedInboundStatuses = new Set([
+    'CONFIRMED',
+    'PARTIALLY_PAID',
+    'REVIEW_REQUIRED',
+    'REFUND_PENDING',
+    'PARTIALLY_REFUNDED',
+    'REFUNDED',
+  ])
+
+  for (const p of input.payments ?? []) {
+    const normStatus = mapProviderStatusToInternal(p.status)
+    const pType = String(p.paymentType ?? 'DEPOSIT').toUpperCase()
+
+    if (normStatus === 'PENDING' || normStatus === 'PROCESSING') {
+      const expMs = p.expiresAt ? Date.parse(p.expiresAt) : NaN
+      if (!Number.isFinite(expMs) || expMs > nowMs) {
+        hasPendingPayment = true
+        if (!activePendingPaymentId && p.id) activePendingPaymentId = p.id
+      }
+    }
+    if (normStatus === 'REVIEW_REQUIRED') hasReviewRequired = true
+    if (normStatus === 'PARTIALLY_PAID') hasPartiallyPaidRecord = true
+    if (normStatus === 'REFUND_PENDING') hasRefundPendingRecord = true
+
+    if (
+      p.reconciliationStatus &&
+      ['UNDERPAID', 'OVERPAID', 'LATE_PAYMENT', 'UNMATCHED'].includes(p.reconciliationStatus)
+    ) {
+      hasReviewRequired = true
+    }
+
+    if (pType === 'REFUND') {
+      if (normStatus === 'CONFIRMED' || normStatus === 'REFUNDED') {
+        directRefundRecordsTotal += roundVndInteger(p.receivedAmount ?? p.amount)
+      } else if (
+        normStatus === 'PENDING' ||
+        normStatus === 'PROCESSING' ||
+        normStatus === 'REFUND_PENDING'
+      ) {
+        hasRefundPendingRecord = true
+      }
+      continue
+    }
+
+    if (!verifiedInboundStatuses.has(normStatus)) {
+      continue
+    }
+
+    // For verified inbound payments, use receivedAmount if explicitly recorded, otherwise amount (for CONFIRMED/REFUNDED)
+    const rawReceived =
+      p.receivedAmount != null
+        ? roundVndInteger(p.receivedAmount)
+        : ['CONFIRMED', 'REFUND_PENDING', 'PARTIALLY_REFUNDED', 'REFUNDED'].includes(normStatus)
+          ? roundVndInteger(p.amount)
+          : 0
+
+    if (rawReceived <= 0) continue
+
+    if (p.refundedAmount != null && Number(p.refundedAmount) > 0) {
+      const refAmt = roundVndInteger(p.refundedAmount)
+      refundedOnPaymentFields += refAmt
+      if (pType === 'SECURITY_DEPOSIT') {
+        refundedSecurityDeposit += refAmt
+      }
+    }
+    if (p.overpaidAmount != null && Number(p.overpaidAmount) > 0) {
+      overpaidAmount += roundVndInteger(p.overpaidAmount)
+    }
+
+    if (pType === 'SECURITY_DEPOSIT') {
+      paidSecurityDepositAmount += rawReceived
+    } else if (pType === 'EXTRA_FEE') {
+      paidExtraFeeAmount += rawReceived
+    } else if (pType === 'DEPOSIT') {
+      paidDepositAmount += rawReceived
+    } else if (pType === 'RENTAL_FEE' || pType === 'FULL_PAYMENT') {
+      paidRentalAmount += rawReceived
+    }
+  }
+
+  let refundCollectionCompleted = 0
+  let pendingRefundAmount = 0
+  let refundCollectionSecDep = 0
+  for (const r of input.refunds ?? []) {
+    const rStatus = String(r.status ?? '').toUpperCase()
+    const rAmt = roundVndInteger(r.amount)
+    if (rStatus === 'REFUNDED') {
+      refundCollectionCompleted += rAmt
+      if (r.refundType === 'SECURITY_DEPOSIT_RETURN') {
+        refundCollectionSecDep += rAmt
+      }
+    } else if (['REQUESTED', 'APPROVED', 'PROCESSING'].includes(rStatus)) {
+      pendingRefundAmount += rAmt
+      hasRefundPendingRecord = true
+    }
+  }
+
+  const totalRefundedAmount = Math.max(
+    refundCollectionCompleted + directRefundRecordsTotal,
+    refundedOnPaymentFields + directRefundRecordsTotal,
+  )
+  const totalSecDepRefunded = Math.max(refundCollectionSecDep, refundedSecurityDeposit)
+
+  // Rental revenue collected strictly excludes SECURITY_DEPOSIT
+  const rentalRevenueCollected = paidDepositAmount + paidRentalAmount + paidExtraFeeAmount
+  const totalVerifiedReceived = rentalRevenueCollected + paidSecurityDepositAmount
+
+  // Calculate remaining obligations
+  // When deductDeposit is true (e.g. 30% reservation deposit is part of the 100% rental fee),
+  // any paid deposit or full payment satisfies the deposit requirement AND reduces remaining rental.
+  const effectiveDepositCovered = Math.min(
+    reservationDepositRequired,
+    paidDepositAmount + paidRentalAmount,
+  )
+  const remainingDepositDue = ['CANCELLED', 'REJECTED'].includes(input.bookingStatus)
+    ? 0
+    : Math.max(0, reservationDepositRequired - effectiveDepositCovered)
+
+  const rentalAppliedPaid = deductDeposit ? paidDepositAmount + paidRentalAmount : paidRentalAmount
+  const remainingRentalBeforeExtra = ['CANCELLED', 'REJECTED'].includes(input.bookingStatus)
+    ? 0
+    : Math.max(0, totalRentalPrice - rentalAppliedPaid)
+
+  const excessRentalPaidForExtra = Math.max(0, rentalAppliedPaid - totalRentalPrice)
+  const remainingExtraFeeDue = ['CANCELLED', 'REJECTED'].includes(input.bookingStatus)
+    ? 0
+    : Math.max(0, extraFee - (paidExtraFeeAmount + excessRentalPaidForExtra))
+
+  const totalRemainingRentalObligation = remainingRentalBeforeExtra + remainingExtraFeeDue
+
+  // Detect overall overpayment against total obligation
+  const maxExpectedInbound =
+    (deductDeposit ? totalRentalWithExtra : totalRentalWithExtra + reservationDepositRequired) +
+    securityDepositAmount
+  if (totalVerifiedReceived > maxExpectedInbound && maxExpectedInbound > 0) {
+    overpaidAmount = Math.max(overpaidAmount, totalVerifiedReceived - maxExpectedInbound)
+  }
+
+  const remainingSecurityDepositDue = ['CANCELLED', 'REJECTED', 'COMPLETED'].includes(
+    input.bookingStatus,
+  )
+    ? 0
+    : Math.max(0, securityDepositAmount - paidSecurityDepositAmount)
+
+  const securityDepositHeld = Math.max(0, paidSecurityDepositAmount - totalSecDepRefunded)
+  const nonSecurityRefunded = Math.max(0, totalRefundedAmount - totalSecDepRefunded)
+  const netRentalRevenue = Math.max(0, rentalRevenueCollected - nonSecurityRefunded)
+  const netCollectedAmount = Math.max(0, totalVerifiedReceived - totalRefundedAmount)
+  const refundableBalance = Math.max(
+    0,
+    totalVerifiedReceived - totalRefundedAmount - pendingRefundAmount,
+  )
+
+  let paymentStatusSummary: BookingPaymentSummaryStatus = 'UNPAID'
+  if (hasRefundPendingRecord && pendingRefundAmount > 0) {
+    paymentStatusSummary = 'REFUND_PENDING'
+  } else if (totalRefundedAmount > 0 && totalVerifiedReceived > 0) {
+    paymentStatusSummary =
+      totalRefundedAmount >= totalVerifiedReceived ? 'REFUNDED' : 'PARTIALLY_REFUNDED'
+  } else if (overpaidAmount > 0) {
+    paymentStatusSummary = 'OVERPAID'
+  } else if (hasReviewRequired) {
+    paymentStatusSummary = 'REVIEW_REQUIRED'
+  } else if (
+    totalVerifiedReceived > 0 &&
+    totalRemainingRentalObligation === 0 &&
+    totalRentalWithExtra > 0
+  ) {
+    paymentStatusSummary = 'FULLY_PAID'
+  } else if (
+    reservationDepositRequired > 0 &&
+    remainingDepositDue === 0 &&
+    totalRemainingRentalObligation > 0 &&
+    !hasPartiallyPaidRecord
+  ) {
+    paymentStatusSummary = 'DEPOSIT_PAID'
+  } else if (totalVerifiedReceived > 0 || hasPartiallyPaidRecord) {
+    paymentStatusSummary = 'PARTIALLY_PAID'
+  } else if (hasPendingPayment) {
+    paymentStatusSummary = 'PENDING_VERIFICATION'
+  }
+
+  return {
+    baseRentPrice,
+    discountAmount,
+    promoDiscountAmount,
+    weekendSurchargeTotal,
+    deliveryFee,
+    addonFeeTotal,
+    totalRentalPrice,
+    extraFee,
+    totalRentalWithExtra,
+    reservationDepositRequired,
+    deductReservationDepositFromRental: deductDeposit,
+    securityDepositAmount,
+    paidDepositAmount,
+    paidRentalAmount,
+    paidExtraFeeAmount,
+    paidSecurityDepositAmount,
+    totalVerifiedReceived,
+    rentalRevenueCollected,
+    securityDepositHeld,
+    overpaidAmount,
+    totalRefundedAmount,
+    pendingRefundAmount,
+    netCollectedAmount,
+    netRentalRevenue,
+    remainingDepositDue,
+    remainingRentalBeforeExtra,
+    remainingExtraFeeDue,
+    totalRemainingRentalObligation,
+    remainingSecurityDepositDue,
+    refundableBalance,
+    paymentStatusSummary,
+    hasPendingPayment,
+    hasAnomaly: overpaidAmount > 0 || hasReviewRequired || hasPartiallyPaidRecord,
+    activePendingPaymentId,
+  }
+}
+
+export type IncomingTransferEvaluationInput = {
+  expectedAmount: number
+  previouslyReceivedAmount?: number
+  incomingAmount: number
+  paymentStatus: string
+  bookingStatus?: string | null
+  expiresAt?: string | null
+  now?: Date
+}
+
+export type IncomingTransferEvaluationResult = {
+  nextPaymentStatus: PaymentStatus
+  reconciliationStatus: ReconciliationStatus
+  newReceivedAmount: number
+  shortfallAmount: number
+  overpaidAmount: number
+  isLateOrClosed: boolean
+  shouldConfirmBookingObligation: boolean
+  summaryMessage: string
+}
+
+/**
+ * Evaluates a verified incoming transfer from a webhook or reconciliation event.
+ * Handles exact amount, partial/underpaid, multi-transfer accumulation, overpaid,
+ * expired payment, and cancelled/rejected booking edge cases.
+ */
+export function evaluateIncomingTransfer(
+  input: IncomingTransferEvaluationInput,
+): IncomingTransferEvaluationResult {
+  const expected = roundVndInteger(input.expectedAmount)
+  const prevReceived = roundVndInteger(input.previouslyReceivedAmount)
+  const incoming = roundVndInteger(input.incomingAmount)
+  const cumulativeReceived = prevReceived + incoming
+  const currentPaymentStatus = mapProviderStatusToInternal(input.paymentStatus)
+  const bookingStatus = String(input.bookingStatus ?? 'CONFIRMED').toUpperCase()
+  const nowMs = (input.now ?? new Date()).getTime()
+  const expMs = input.expiresAt ? Date.parse(input.expiresAt) : NaN
+  const isExpiredTime = Number.isFinite(expMs) && nowMs > expMs
+
+  const isBookingClosed = ['CANCELLED', 'REJECTED'].includes(bookingStatus)
+  const isPaymentClosed = ['CANCELLED', 'EXPIRED'].includes(currentPaymentStatus)
+  const isLateOrClosed =
+    isBookingClosed || isPaymentClosed || (isExpiredTime && currentPaymentStatus === 'PENDING')
+
+  const shortfallAmount = Math.max(0, expected - cumulativeReceived)
+  const overpaidAmount = Math.max(0, cumulativeReceived - expected)
+
+  if (isLateOrClosed) {
+    return {
+      nextPaymentStatus: 'REVIEW_REQUIRED',
+      reconciliationStatus: 'LATE_PAYMENT',
+      newReceivedAmount: cumulativeReceived,
+      shortfallAmount,
+      overpaidAmount,
+      isLateOrClosed: true,
+      shouldConfirmBookingObligation: false,
+      summaryMessage: isBookingClosed
+        ? `Nhận khoản chuyển ${formatVnd(incoming)} cho đơn thuê đã ở trạng thái ${bookingStatus}. Giao dịch được ghi nhận vào danh sách Cần đối soát để hoàn tiền hoặc xử lý ngoại lệ.`
+        : `Nhận khoản chuyển ${formatVnd(incoming)} sau khi yêu cầu thanh toán đã hết hạn/hủy. Giao dịch được chuyển sang Cần đối soát, không tự động ghi đè lịch xe.`,
+    }
+  }
+
+  if (cumulativeReceived < expected) {
+    return {
+      nextPaymentStatus: 'PARTIALLY_PAID',
+      reconciliationStatus: 'UNDERPAID',
+      newReceivedAmount: cumulativeReceived,
+      shortfallAmount,
+      overpaidAmount: 0,
+      isLateOrClosed: false,
+      shouldConfirmBookingObligation: false,
+      summaryMessage: `Đã nhận ${formatVnd(cumulativeReceived)} / ${formatVnd(expected)} (còn thiếu ${formatVnd(shortfallAmount)}). Nghĩa vụ thanh toán chưa hoàn tất.`,
+    }
+  }
+
+  if (cumulativeReceived > expected) {
+    return {
+      nextPaymentStatus: 'CONFIRMED',
+      reconciliationStatus: 'OVERPAID',
+      newReceivedAmount: cumulativeReceived,
+      shortfallAmount: 0,
+      overpaidAmount,
+      isLateOrClosed: false,
+      shouldConfirmBookingObligation: true,
+      summaryMessage: `Đã nhận ${formatVnd(cumulativeReceived)} (vượt ${formatVnd(overpaidAmount)} so với yêu cầu ${formatVnd(expected)}). Đã xác nhận nghĩa vụ thanh toán và gắn cờ đối soát khoản tiền thừa.`,
+    }
+  }
+
+  return {
+    nextPaymentStatus: 'CONFIRMED',
+    reconciliationStatus: 'MATCHED',
+    newReceivedAmount: cumulativeReceived,
+    shortfallAmount: 0,
+    overpaidAmount: 0,
+    isLateOrClosed: false,
+    shouldConfirmBookingObligation: true,
+    summaryMessage: `Đã xác minh nhận đủ ${formatVnd(cumulativeReceived)}.`,
+  }
+}
+
+export type OnlinePaymentEligibilityInput = {
+  isLoggedIn: boolean
+  isCustomer: boolean
+  isOwner: boolean
+  bookingStatus: string
+  paymentType: PaymentType
+  requestedAmount: number
+  onlinePaymentEnabled?: boolean
+  environment?: PaymentEnvironment
+  productionApproved?: boolean
+  providerConfigured?: boolean
+}
+
+export type OnlinePaymentEligibilityResult = {
+  allowed: boolean
+  httpStatus: number
+  code:
+    | 'OK'
+    | 'UNAUTHORIZED'
+    | 'FORBIDDEN'
+    | 'BOOKING_NOT_APPROVED'
+    | 'BOOKING_CLOSED'
+    | 'NO_BALANCE_DUE'
+    | 'PAYMENT_DISABLED'
+    | 'PRODUCTION_NOT_ACTIVATED'
+    | 'PROVIDER_NOT_CONFIGURED'
+  message: string
+}
+
+export function canInitiateOnlinePayment(
+  input: OnlinePaymentEligibilityInput,
+): OnlinePaymentEligibilityResult {
+  if (!input.isLoggedIn) {
+    return {
+      allowed: false,
+      httpStatus: 401,
+      code: 'UNAUTHORIZED',
+      message: 'Vui lòng đăng nhập tài khoản khách hàng để thực hiện thanh toán.',
+    }
+  }
+  if (!input.isCustomer || !input.isOwner) {
+    return {
+      allowed: false,
+      httpStatus: 403,
+      code: 'FORBIDDEN',
+      message: 'Bạn không có quyền tạo giao dịch thanh toán cho đơn thuê này.',
+    }
+  }
+  if (input.bookingStatus === 'PENDING') {
+    return {
+      allowed: false,
+      httpStatus: 409,
+      code: 'BOOKING_NOT_APPROVED',
+      message:
+        'Đơn thuê đang chờ Admin xét duyệt. Quý khách chỉ thanh toán sau khi đơn được NORI duyệt hoặc yêu cầu đặt cọc.',
+    }
+  }
+  if (['CANCELLED', 'REJECTED'].includes(input.bookingStatus)) {
+    return {
+      allowed: false,
+      httpStatus: 409,
+      code: 'BOOKING_CLOSED',
+      message: 'Đơn thuê đã hủy hoặc bị từ chối, không thể tạo yêu cầu thanh toán.',
+    }
+  }
+  if (input.environment === 'PRODUCTION' && !input.productionApproved) {
+    return {
+      allowed: false,
+      httpStatus: 503,
+      code: 'PRODUCTION_NOT_ACTIVATED',
+      message:
+        'Chế độ thanh toán tiền thật (PRODUCTION) đang khóa theo chính sách an toàn. Vui lòng sử dụng phương thức chuyển khoản thủ công hoặc liên hệ nhân viên NORI.',
+    }
+  }
+  if (input.onlinePaymentEnabled === false) {
+    return {
+      allowed: false,
+      httpStatus: 503,
+      code: 'PAYMENT_DISABLED',
+      message:
+        'Cổng thanh toán trực tuyến hiện đang tạm ngưng. Quý khách vui lòng chọn chuyển khoản thủ công hoặc thanh toán khi nhận xe.',
+    }
+  }
+  if (input.providerConfigured === false) {
+    return {
+      allowed: false,
+      httpStatus: 503,
+      code: 'PROVIDER_NOT_CONFIGURED',
+      message:
+        'Nhà cung cấp thanh toán chưa được cấu hình đầy đủ thông tin kết nối (Sandbox/Production). Vui lòng sử dụng phương thức thanh toán dự phòng.',
+    }
+  }
+  if (!Number.isSafeInteger(input.requestedAmount) || input.requestedAmount <= 0) {
+    return {
+      allowed: false,
+      httpStatus: 409,
+      code: 'NO_BALANCE_DUE',
+      message: 'Đơn thuê không còn khoản công nợ cần thanh toán cho hạng mục này.',
+    }
+  }
+  return {
+    allowed: true,
+    httpStatus: 200,
+    code: 'OK',
+    message: 'Đủ điều kiện tạo yêu cầu thanh toán.',
+  }
+}
+
+export type RefundValidationInput = {
+  isAdmin: boolean
+  hasPaymentUpdatePermission: boolean
+  totalVerifiedReceived: number
+  alreadyRefundedAmount: number
+  pendingRefundAmount?: number
+  requestedRefundAmount: number
+  reason?: string | null
+  duplicateIdempotencyHit?: boolean
+}
+
+export type RefundValidationResult = {
+  allowed: boolean
+  httpStatus: number
+  code:
+    | 'OK'
+    | 'FORBIDDEN'
+    | 'INVALID_AMOUNT'
+    | 'REASON_REQUIRED'
+    | 'EXCEEDS_REFUNDABLE_BALANCE'
+    | 'DUPLICATE_REFUND'
+  maxRefundable: number
+  message: string
+}
+
+export function validateRefundRequest(input: RefundValidationInput): RefundValidationResult {
+  const received = roundVndInteger(input.totalVerifiedReceived)
+  const refunded = roundVndInteger(input.alreadyRefundedAmount)
+  const pending = roundVndInteger(input.pendingRefundAmount)
+  const maxRefundable = Math.max(0, received - refunded - pending)
+
+  if (!input.isAdmin || !input.hasPaymentUpdatePermission) {
+    return {
+      allowed: false,
+      httpStatus: 403,
+      code: 'FORBIDDEN',
+      maxRefundable,
+      message: 'Bạn không có quyền phê duyệt hoặc thực hiện hoàn tiền.',
+    }
+  }
+  if (input.duplicateIdempotencyHit) {
+    return {
+      allowed: false,
+      httpStatus: 409,
+      code: 'DUPLICATE_REFUND',
+      maxRefundable,
+      message: 'Yêu cầu hoàn tiền này đã được ghi nhận hoặc đang xử lý, không thể hoàn trùng.',
+    }
+  }
+  const requested = Number(input.requestedRefundAmount)
+  if (!Number.isSafeInteger(requested) || requested < 1) {
+    return {
+      allowed: false,
+      httpStatus: 400,
+      code: 'INVALID_AMOUNT',
+      maxRefundable,
+      message: 'Số tiền hoàn phải là số nguyên dương (VNĐ).',
+    }
+  }
+  if (!input.reason || !String(input.reason).trim()) {
+    return {
+      allowed: false,
+      httpStatus: 400,
+      code: 'REASON_REQUIRED',
+      maxRefundable,
+      message: 'Vui lòng nhập lý do hoàn tiền rõ ràng để phục vụ kiểm toán.',
+    }
+  }
+  if (requested > maxRefundable) {
+    return {
+      allowed: false,
+      httpStatus: 409,
+      code: 'EXCEEDS_REFUNDABLE_BALANCE',
+      maxRefundable,
+      message: `Số tiền yêu cầu hoàn (${formatVnd(requested)}) vượt quá số dư thực nhận có thể hoàn (${formatVnd(maxRefundable)}).`,
+    }
+  }
+  return {
+    allowed: true,
+    httpStatus: 200,
+    code: 'OK',
+    maxRefundable,
+    message: 'Yêu cầu hoàn tiền hợp lệ.',
+  }
+}
+
+export function checkHandoverFinancialEligibility(params: {
+  bookingStatus: string
+  financial: BookingFinancialSummary
+  requireDepositBeforeHandover?: boolean
+  hasPaymentRecords?: boolean
+}): { allowed: boolean; reason?: string } {
+  if (params.bookingStatus === 'PENDING' || params.bookingStatus === 'DEPOSIT_PENDING') {
+    return {
+      allowed: false,
+      reason:
+        'Đơn thuê chưa hoàn tất bước duyệt hoặc xác nhận tiền đặt cọc nên không thể bàn giao xe.',
+    }
+  }
+  if (params.financial.hasPendingPayment) {
+    return {
+      allowed: false,
+      reason:
+        'Đơn thuê đang có giao dịch chờ xác minh. Vui lòng hoàn tất xác minh hoặc đối soát trước khi bàn giao xe.',
+    }
+  }
+  if (params.financial.paymentStatusSummary === 'PARTIALLY_PAID') {
+    return {
+      allowed: false,
+      reason: `Khách hàng mới thanh toán một phần (${formatVnd(params.financial.totalVerifiedReceived)}), vẫn còn thiếu tiền cọc/tiền thuê bắt buộc trước khi nhận xe.`,
+    }
+  }
+  if (
+    params.requireDepositBeforeHandover &&
+    params.financial.reservationDepositRequired > 0 &&
+    params.financial.remainingDepositDue > 0
+  ) {
+    return {
+      allowed: false,
+      reason: `Chưa thu đủ tiền đặt cọc giữ xe (${formatVnd(params.financial.remainingDepositDue)} còn thiếu). Không thể chuyển trạng thái bàn giao xe.`,
+    }
+  }
+  return { allowed: true }
+}
+
+export function checkSettlementCompletionEligibility(params: {
+  financial: BookingFinancialSummary
+  hasOnlineOrRecordedPayments: boolean
+  approveFinancialException?: boolean
+  exceptionNote?: string | null
+}): { allowed: boolean; reason?: string } {
+  if (params.financial.pendingRefundAmount > 0) {
+    return {
+      allowed: false,
+      reason: `Đơn thuê đang có yêu cầu hoàn tiền chờ xử lý (${formatVnd(params.financial.pendingRefundAmount)}). Vui lòng hoàn tất đối soát hoàn tiền trước khi đóng hợp đồng.`,
+    }
+  }
+  if (params.financial.hasPendingPayment) {
+    return {
+      allowed: false,
+      reason:
+        'Đơn thuê đang có giao dịch thanh toán chờ xác minh. Vui lòng đối soát trước khi hoàn tất đơn.',
+    }
+  }
+  if (
+    params.hasOnlineOrRecordedPayments &&
+    params.financial.remainingExtraFeeDue > 0 &&
+    !(params.approveFinancialException && params.exceptionNote?.trim())
+  ) {
+    return {
+      allowed: false,
+      reason: `Đơn thuê còn khoản phụ phí phát sinh chưa thanh toán (${formatVnd(params.financial.remainingExtraFeeDue)}). Vui lòng thu phụ phí hoặc xác nhận ngoại lệ có lý do kiểm toán.`,
+    }
+  }
+  if (
+    params.hasOnlineOrRecordedPayments &&
+    params.financial.paymentStatusSummary === 'REVIEW_REQUIRED' &&
+    !(params.approveFinancialException && params.exceptionNote?.trim())
+  ) {
+    return {
+      allowed: false,
+      reason:
+        'Đơn thuê đang có giao dịch bất thường cần đối soát (Review Required). Vui lòng hoàn tất đối soát trước khi đóng đơn.',
+    }
+  }
+  return { allowed: true }
+}

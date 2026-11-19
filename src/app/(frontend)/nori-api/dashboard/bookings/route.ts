@@ -1,13 +1,20 @@
 import { requireAdmin, resolveCustomerDisplayNames } from '@/lib/admin-api'
 import { apiError, assertOrigin, body, fail, json, text } from '@/lib/api-utils'
+import {
+  buildSitePaymentConfigFromDoc,
+  computeBookingFinancialsSync,
+  sweepExpiredPayments,
+} from '@/lib/payment-service'
 import { withBookingWriteLock } from '@/lib/promo-service'
 import {
   businessToday,
   calculateNextContactSlot,
   isDepositExpired,
+  relationId,
   type BookingStatus,
 } from '@/lib/rental-rules'
 import type { ConsultationView } from '@/lib/domain-types'
+import type { Payment, Refund } from '@/payload-types'
 
 const VALID_BOOKING_STATUSES = [
   'PENDING',
@@ -54,6 +61,7 @@ export async function GET(request: Request) {
       return fail('Bộ lọc tư vấn chưa hợp lệ.')
     }
 
+    await sweepExpiredPayments(payload)
     const [res, consultRes, site] = await Promise.all([
       payload.find({
         collection: 'bookings',
@@ -79,6 +87,52 @@ export async function GET(request: Request) {
         depth: 0,
       }),
     ])
+
+    const siteRec = site as unknown as Record<string, unknown>
+    const siteConfig = buildSitePaymentConfigFromDoc(siteRec)
+    const bookingIds = res.docs.map((b) => b.id)
+
+    const [paymentsRes, refundsRes] =
+      bookingIds.length > 0
+        ? await Promise.all([
+            payload.find({
+              collection: 'payments',
+              overrideAccess: true,
+              depth: 0,
+              limit: 1000,
+              sort: '-createdAt',
+              where: { booking: { in: bookingIds } },
+            }),
+            payload
+              .find({
+                collection: 'refunds',
+                overrideAccess: true,
+                depth: 0,
+                limit: 1000,
+                sort: '-createdAt',
+                where: { booking: { in: bookingIds } },
+              })
+              .catch(() => ({ docs: [] as Refund[] })),
+          ])
+        : [{ docs: [] as Payment[] }, { docs: [] as Refund[] }]
+
+    const payByBooking = new Map<string, Payment[]>()
+    for (const p of paymentsRes.docs) {
+      const bId = relationId(p.booking)
+      if (!bId) continue
+      const list = payByBooking.get(String(bId)) ?? []
+      list.push(p)
+      payByBooking.set(String(bId), list)
+    }
+
+    const refundByBooking = new Map<string, Refund[]>()
+    for (const r of refundsRes.docs) {
+      const bId = relationId(r.booking)
+      if (!bId) continue
+      const list = refundByBooking.get(String(bId)) ?? []
+      list.push(r)
+      refundByBooking.set(String(bId), list)
+    }
 
     const consultByBooking = new Map<string, ConsultationView>()
     for (const c of consultRes.docs) {
@@ -121,7 +175,6 @@ export async function GET(request: Request) {
       })
     }
 
-    const siteRec = site as unknown as Record<string, unknown>
     const bhConfig = {
       timezone: String(siteRec.businessTimezone ?? 'Asia/Ho_Chi_Minh'),
       workingDays: String(siteRec.workingDays ?? '1,2,3,4,5'),
@@ -151,6 +204,9 @@ export async function GET(request: Request) {
         consultation?.isUrgent ||
         (['PENDING', 'DEPOSIT_PENDING'].includes(b.status ?? 'PENDING') && previewSlot.isUrgent),
       )
+      const bPayments = payByBooking.get(String(b.id)) ?? []
+      const bRefunds = refundByBooking.get(String(b.id)) ?? []
+      const financial = computeBookingFinancialsSync(b, bPayments, bRefunds, siteConfig)
 
       return {
         id: b.id,
@@ -242,8 +298,86 @@ export async function GET(request: Request) {
         discountAmount: b.discountAmount ?? 0,
         totalPrice: b.totalPrice ?? 0,
         depositSnapshot: b.depositSnapshot ?? 0,
-        initialPaymentDue: b.initialPaymentDue ?? b.depositSnapshot ?? 0,
-        remainingAmount: b.totalPrice ?? 0,
+        initialPaymentDue:
+          financial.reservationDepositRequired ?? b.initialPaymentDue ?? b.depositSnapshot ?? 0,
+        remainingAmount: financial.totalRemainingRentalObligation ?? b.totalPrice ?? 0,
+        hasPaymentRecord: bPayments.length > 0,
+        paymentConfirmed: bPayments.some((p) =>
+          ['CONFIRMED', 'PARTIALLY_REFUNDED'].includes(p.status),
+        ),
+        paymentStatusSummary: financial.paymentStatusSummary,
+        financial: {
+          reservationDepositRequired: financial.reservationDepositRequired,
+          securityDepositAmount: financial.securityDepositAmount,
+          paidDepositAmount: financial.paidDepositAmount,
+          paidRentalAmount: financial.paidRentalAmount,
+          paidExtraFeeAmount: financial.paidExtraFeeAmount,
+          paidSecurityDepositAmount: financial.paidSecurityDepositAmount,
+          totalVerifiedReceived: financial.totalVerifiedReceived,
+          rentalRevenueCollected: financial.rentalRevenueCollected,
+          securityDepositHeld: financial.securityDepositHeld,
+          overpaidAmount: financial.overpaidAmount,
+          totalRefundedAmount: financial.totalRefundedAmount,
+          pendingRefundAmount: financial.pendingRefundAmount,
+          netCollectedAmount: financial.netCollectedAmount,
+          remainingDepositDue: financial.remainingDepositDue,
+          remainingRentalBeforeExtra: financial.remainingRentalBeforeExtra,
+          remainingExtraFeeDue: financial.remainingExtraFeeDue,
+          totalRemainingRentalObligation: financial.totalRemainingRentalObligation,
+          remainingSecurityDepositDue: financial.remainingSecurityDepositDue,
+          refundableBalance: financial.refundableBalance,
+          paymentStatusSummary: financial.paymentStatusSummary,
+          hasPendingPayment: financial.hasPendingPayment,
+          hasAnomaly: financial.hasAnomaly,
+          activePendingPaymentId: financial.activePendingPaymentId,
+        },
+        payments: bPayments.map((p) => ({
+          id: p.id,
+          reference: p.reference ?? p.id,
+          bookingId: b.id,
+          bookingKey: b.bookingKey ?? b.id,
+          paymentType: p.paymentType,
+          method: p.method,
+          provider: p.provider ?? 'MANUAL',
+          environment: p.environment ?? siteConfig.environment,
+          amount: p.amount,
+          expectedAmount: p.expectedAmount ?? p.amount,
+          receivedAmount: p.receivedAmount ?? 0,
+          refundedAmount: p.refundedAmount ?? 0,
+          overpaidAmount: p.overpaidAmount ?? 0,
+          status: p.status,
+          reconciliationStatus: p.reconciliationStatus ?? 'NONE',
+          providerTransactionId: p.providerTransactionId ?? null,
+          providerPaymentRef: p.providerPaymentRef ?? null,
+          expiresAt: p.expiresAt ?? null,
+          verifiedAt: p.verifiedAt ?? null,
+          paidAt: p.paidAt ?? null,
+          recordedBy: p.recordedBy ?? null,
+          failureReason: p.failureReason ?? null,
+          reconciliationNote: p.reconciliationNote ?? null,
+          note: p.note ?? null,
+          createdAt: p.createdAt,
+        })),
+        refunds: bRefunds.map((r) => ({
+          id: r.id,
+          reference: r.reference ?? r.id,
+          bookingId: b.id,
+          bookingKey: b.bookingKey ?? b.id,
+          paymentId: relationId(r.payment) ?? null,
+          refundType: r.refundType,
+          amount: r.amount,
+          reason: r.reason,
+          status: r.status,
+          provider: r.provider ?? 'MANUAL',
+          providerRefundId: r.providerRefundId ?? null,
+          requestedBy: r.requestedBy ?? null,
+          approvedBy: r.approvedBy ?? null,
+          completedBy: r.completedBy ?? null,
+          requestedAt: r.requestedAt ?? r.createdAt,
+          approvedAt: r.approvedAt ?? null,
+          completedAt: r.completedAt ?? null,
+          createdAt: r.createdAt,
+        })),
         depositExpired: isDepositExpired(b.createdAt, b.status ?? 'PENDING'),
         createdAt: b.createdAt,
       }
@@ -311,9 +445,13 @@ export async function PATCH(request: Request) {
       'contractNumber',
       'returnOdometer',
       'returnCondition',
+      'enforceFinancialClearance',
+      'approveFinancialException',
     ])
     const id = text(data.id, 100)
     const status = text(data.status, 30)
+    const enforceFinancialClearance = Boolean(data.enforceFinancialClearance)
+    const approveFinancialException = Boolean(data.approveFinancialException)
     const expectedRevision =
       data.expectedRevision !== undefined &&
       data.expectedRevision !== null &&
@@ -362,6 +500,8 @@ export async function PATCH(request: Request) {
         overrideAccess: false,
         context: {
           ...(expectedRevision !== undefined ? { expectedRevision } : {}),
+          ...(enforceFinancialClearance ? { enforceFinancialClearance: true } : {}),
+          ...(approveFinancialException ? { approveFinancialException: true } : {}),
         },
         data: {
           status: status as BookingStatus,

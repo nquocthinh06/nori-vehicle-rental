@@ -168,6 +168,113 @@ export type NotificationView = {
   createdAt: string
 }
 
+export type PaymentItemView = {
+  id: string
+  reference: string
+  bookingId?: string | null
+  bookingKey?: string | null
+  customerId?: string | null
+  customerName?: string | null
+  paymentType: string
+  method: string
+  provider: string
+  environment: string
+  amount: number
+  expectedAmount: number
+  receivedAmount: number
+  refundedAmount: number
+  overpaidAmount: number
+  status: string
+  reconciliationStatus: string
+  providerTransactionId?: string | null
+  providerPaymentRef?: string | null
+  qrImageUrl?: string | null
+  paymentUrl?: string | null
+  bankCode?: string | null
+  bankAccountNumber?: string | null
+  bankAccountName?: string | null
+  transferContent?: string | null
+  expiresAt?: string | null
+  verifiedAt?: string | null
+  paidAt?: string | null
+  recordedBy?: string | null
+  failureReason?: string | null
+  reconciliationNote?: string | null
+  note?: string | null
+  createdAt: string
+}
+
+export type RefundItemView = {
+  id: string
+  reference: string
+  bookingId: string
+  bookingKey?: string | null
+  paymentId?: string | null
+  paymentReference?: string | null
+  customerName?: string | null
+  refundType: string
+  amount: number
+  reason: string
+  status: string
+  provider: string
+  providerRefundId?: string | null
+  requestedBy?: string | null
+  approvedBy?: string | null
+  completedBy?: string | null
+  requestedAt?: string | null
+  approvedAt?: string | null
+  completedAt?: string | null
+  reconciliationNote?: string | null
+  bankAccountInfo?: string | null
+  createdAt: string
+}
+
+export type PaymentEventView = {
+  id: string
+  eventId: string
+  provider: string
+  environment: string
+  externalTransactionId?: string | null
+  paymentReference?: string | null
+  eventType: string
+  transferAmount: number
+  verificationResult: string
+  processingStatus: string
+  retryCount: number
+  receivedAt: string
+  processedAt?: string | null
+  errorReason?: string | null
+  paymentId?: string | null
+  bookingId?: string | null
+  sanitizedPayload?: string | null
+}
+
+export type BookingFinancialView = {
+  reservationDepositRequired: number
+  securityDepositAmount: number
+  paidDepositAmount: number
+  paidRentalAmount: number
+  paidExtraFeeAmount: number
+  paidSecurityDepositAmount: number
+  totalVerifiedReceived: number
+  rentalRevenueCollected: number
+  securityDepositHeld: number
+  overpaidAmount: number
+  totalRefundedAmount: number
+  pendingRefundAmount: number
+  netCollectedAmount: number
+  remainingDepositDue: number
+  remainingRentalBeforeExtra: number
+  remainingExtraFeeDue: number
+  totalRemainingRentalObligation: number
+  remainingSecurityDepositDue: number
+  refundableBalance: number
+  paymentStatusSummary: string
+  hasPendingPayment: boolean
+  hasAnomaly: boolean
+  activePendingPaymentId: string | null
+}
+
 export type BookingView = {
   id: string
   bookingKey: string
@@ -214,6 +321,10 @@ export type BookingView = {
   isUrgentApproval?: boolean
   hasPaymentRecord?: boolean
   paymentConfirmed?: boolean
+  paymentStatusSummary?: string
+  financial?: BookingFinancialView
+  payments?: PaymentItemView[]
+  refunds?: RefundItemView[]
   canModify?: boolean
   modifyLockReason?: string | null
   statusHistory?: StatusHistoryItem[]

@@ -173,6 +173,8 @@ export interface Config {
     'sales-inquiries': SalesInquiry;
     promotions: Promotion;
     payments: Payment;
+    'payment-events': PaymentEvent;
+    refunds: Refund;
     reviews: Review;
     posts: Post;
     'payload-kv': PayloadKv;
@@ -199,6 +201,8 @@ export interface Config {
     'sales-inquiries': SalesInquiriesSelect<false> | SalesInquiriesSelect<true>;
     promotions: PromotionsSelect<false> | PromotionsSelect<true>;
     payments: PaymentsSelect<false> | PaymentsSelect<true>;
+    'payment-events': PaymentEventsSelect<false> | PaymentEventsSelect<true>;
+    refunds: RefundsSelect<false> | RefundsSelect<true>;
     reviews: ReviewsSelect<false> | ReviewsSelect<true>;
     posts: PostsSelect<false> | PostsSelect<true>;
     'payload-kv': PayloadKvSelect<false> | PayloadKvSelect<true>;
@@ -1008,7 +1012,20 @@ export interface Notification {
   eventKey?: string | null;
   customer: string | User;
   booking?: (string | null) | Booking;
-  type: 'BOOKING_CONFIRMED' | 'BOOKING_UPDATED' | 'CONSULTATION_UPDATE' | 'SYSTEM';
+  type:
+    | 'BOOKING_CONFIRMED'
+    | 'BOOKING_UPDATED'
+    | 'CONSULTATION_UPDATE'
+    | 'PAYMENT_REQUIRED'
+    | 'PAYMENT_CONFIRMED'
+    | 'PAYMENT_FAILED'
+    | 'PAYMENT_EXPIRING_SOON'
+    | 'PAYMENT_EXPIRED'
+    | 'REFUND_PROCESSING'
+    | 'REFUND_COMPLETED'
+    | 'BOOKING_CANCELLED'
+    | 'BOOKING_COMPLETED'
+    | 'SYSTEM';
   title: string;
   message: string;
   bookingKey?: string | null;
@@ -1163,13 +1180,137 @@ export interface Payment {
   booking?: (string | null) | Booking;
   inquiry?: (string | null) | SalesInquiry;
   customer?: (string | null) | User;
-  paymentType: 'DEPOSIT' | 'RENTAL_FEE' | 'EXTRA_FEE' | 'PURCHASE_DEPOSIT' | 'REFUND';
-  method: 'BANK_TRANSFER' | 'CASH' | 'CARD_POS';
+  paymentType:
+    'DEPOSIT' | 'RENTAL_FEE' | 'FULL_PAYMENT' | 'SECURITY_DEPOSIT' | 'EXTRA_FEE' | 'PURCHASE_DEPOSIT' | 'REFUND';
+  method: 'VIETQR_SEPAY' | 'ONLINE_MOCK' | 'BANK_TRANSFER' | 'CASH' | 'CARD_POS';
+  provider?: ('MANUAL' | 'MOCK' | 'SEPAY' | 'PAYOS' | 'VNPAY' | 'MOMO' | 'ZALOPAY') | null;
+  environment?: ('MOCK' | 'SANDBOX' | 'PRODUCTION') | null;
+  currency?: string | null;
   amount: number;
-  status: 'PENDING' | 'CONFIRMED' | 'REFUNDED' | 'CANCELLED';
+  expectedAmount?: number | null;
+  receivedAmount?: number | null;
+  refundedAmount?: number | null;
+  overpaidAmount?: number | null;
+  status:
+    | 'PENDING'
+    | 'PROCESSING'
+    | 'CONFIRMED'
+    | 'PARTIALLY_PAID'
+    | 'REVIEW_REQUIRED'
+    | 'FAILED'
+    | 'EXPIRED'
+    | 'REFUND_PENDING'
+    | 'PARTIALLY_REFUNDED'
+    | 'REFUNDED'
+    | 'CANCELLED';
+  reconciliationStatus?:
+    | ('NONE' | 'MATCHED' | 'UNDERPAID' | 'OVERPAID' | 'LATE_PAYMENT' | 'UNMATCHED' | 'MANUAL_OVERRIDE' | 'RESOLVED')
+    | null;
+  providerTransactionId?: string | null;
+  providerPaymentRef?: string | null;
+  qrImageUrl?: string | null;
+  paymentUrl?: string | null;
+  bankCode?: string | null;
+  bankAccountNumber?: string | null;
+  bankAccountName?: string | null;
+  transferContent?: string | null;
+  expiresAt?: string | null;
+  idempotencyKey?: string | null;
+  verifiedAt?: string | null;
   paidAt?: string | null;
   recordedBy?: string | null;
+  failureReason?: string | null;
+  reconciliationNote?: string | null;
   note?: string | null;
+  createdBy?:
+    | ({
+        relationTo: 'admins';
+        value: string | Admin;
+      } | null)
+    | ({
+        relationTo: 'users';
+        value: string | User;
+      } | null);
+  updatedBy?:
+    | ({
+        relationTo: 'admins';
+        value: string | Admin;
+      } | null)
+    | ({
+        relationTo: 'users';
+        value: string | User;
+      } | null);
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "payment-events".
+ */
+export interface PaymentEvent {
+  id: string;
+  eventId: string;
+  provider: 'SEPAY' | 'MOCK' | 'MANUAL';
+  environment: 'MOCK' | 'SANDBOX' | 'PRODUCTION';
+  externalTransactionId?: string | null;
+  paymentReference?: string | null;
+  eventType: string;
+  transferAmount?: number | null;
+  verificationResult: 'VERIFIED' | 'INVALID_SIGNATURE' | 'INVALID_PAYLOAD' | 'ENVIRONMENT_MISMATCH' | 'DUPLICATE';
+  processingStatus: 'PROCESSED' | 'IGNORED_DUPLICATE' | 'REVIEW_REQUIRED' | 'FAILED' | 'REJECTED';
+  retryCount?: number | null;
+  receivedAt: string;
+  processedAt?: string | null;
+  errorReason?: string | null;
+  payment?: (string | null) | Payment;
+  booking?: (string | null) | Booking;
+  sanitizedPayload?: string | null;
+  createdBy?:
+    | ({
+        relationTo: 'admins';
+        value: string | Admin;
+      } | null)
+    | ({
+        relationTo: 'users';
+        value: string | User;
+      } | null);
+  updatedBy?:
+    | ({
+        relationTo: 'admins';
+        value: string | Admin;
+      } | null)
+    | ({
+        relationTo: 'users';
+        value: string | User;
+      } | null);
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "refunds".
+ */
+export interface Refund {
+  id: string;
+  reference?: string | null;
+  payment?: (string | null) | Payment;
+  booking: string | Booking;
+  customer?: (string | null) | User;
+  refundType: 'CANCELLATION' | 'DEPOSIT_RETURN' | 'OVERPAYMENT' | 'PARTIAL_ADJUSTMENT' | 'SECURITY_DEPOSIT_RETURN';
+  amount: number;
+  reason: string;
+  status: 'REQUESTED' | 'APPROVED' | 'PROCESSING' | 'REFUNDED' | 'REJECTED' | 'FAILED';
+  provider?: ('MANUAL' | 'MOCK' | 'SEPAY') | null;
+  providerRefundId?: string | null;
+  requestedBy?: string | null;
+  requestedByType?: ('CUSTOMER' | 'ADMIN' | 'SYSTEM') | null;
+  approvedBy?: string | null;
+  completedBy?: string | null;
+  requestedAt?: string | null;
+  approvedAt?: string | null;
+  completedAt?: string | null;
+  reconciliationNote?: string | null;
+  bankAccountInfo?: string | null;
   createdBy?:
     | ({
         relationTo: 'admins';
@@ -2016,11 +2157,87 @@ export interface PaymentsSelect<T extends boolean = true> {
   customer?: T;
   paymentType?: T;
   method?: T;
+  provider?: T;
+  environment?: T;
+  currency?: T;
   amount?: T;
+  expectedAmount?: T;
+  receivedAmount?: T;
+  refundedAmount?: T;
+  overpaidAmount?: T;
   status?: T;
+  reconciliationStatus?: T;
+  providerTransactionId?: T;
+  providerPaymentRef?: T;
+  qrImageUrl?: T;
+  paymentUrl?: T;
+  bankCode?: T;
+  bankAccountNumber?: T;
+  bankAccountName?: T;
+  transferContent?: T;
+  expiresAt?: T;
+  idempotencyKey?: T;
+  verifiedAt?: T;
   paidAt?: T;
   recordedBy?: T;
+  failureReason?: T;
+  reconciliationNote?: T;
   note?: T;
+  createdBy?: T;
+  updatedBy?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "payment-events_select".
+ */
+export interface PaymentEventsSelect<T extends boolean = true> {
+  eventId?: T;
+  provider?: T;
+  environment?: T;
+  externalTransactionId?: T;
+  paymentReference?: T;
+  eventType?: T;
+  transferAmount?: T;
+  verificationResult?: T;
+  processingStatus?: T;
+  retryCount?: T;
+  receivedAt?: T;
+  processedAt?: T;
+  errorReason?: T;
+  payment?: T;
+  booking?: T;
+  sanitizedPayload?: T;
+  createdBy?: T;
+  updatedBy?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "refunds_select".
+ */
+export interface RefundsSelect<T extends boolean = true> {
+  reference?: T;
+  payment?: T;
+  booking?: T;
+  customer?: T;
+  refundType?: T;
+  amount?: T;
+  reason?: T;
+  status?: T;
+  provider?: T;
+  providerRefundId?: T;
+  requestedBy?: T;
+  requestedByType?: T;
+  approvedBy?: T;
+  completedBy?: T;
+  requestedAt?: T;
+  approvedAt?: T;
+  completedAt?: T;
+  reconciliationNote?: T;
+  bankAccountInfo?: T;
   createdBy?: T;
   updatedBy?: T;
   updatedAt?: T;
@@ -2240,6 +2457,23 @@ export interface NoriSite {
   maxPendingBookings?: number | null;
   maintenanceBannerEnabled?: boolean | null;
   maintenanceBannerText?: string | null;
+  onlinePaymentEnabled?: boolean | null;
+  activePaymentProvider?: ('SEPAY' | 'MOCK' | 'MANUAL') | null;
+  allowSepayQr?: boolean | null;
+  allowManualBankTransfer?: boolean | null;
+  allowCashOnHandover?: boolean | null;
+  allowFullPaymentOnline?: boolean | null;
+  reservationDepositPolicyMode?: ('VEHICLE_FIXED' | 'PERCENT_OF_RENTAL') | null;
+  reservationDepositPercent?: number | null;
+  paymentExpiryMinutes?: number | null;
+  requireDepositBeforeHandover?: boolean | null;
+  requireSettlementBeforeComplete?: boolean | null;
+  bankName?: string | null;
+  bankCode?: string | null;
+  bankAccountNumber?: string | null;
+  bankAccountHolder?: string | null;
+  paymentInstructionNote?: string | null;
+  refundPolicySummary?: string | null;
   createdBy?:
     | ({
         relationTo: 'admins';
@@ -2380,6 +2614,23 @@ export interface NoriSiteSelect<T extends boolean = true> {
   maxPendingBookings?: T;
   maintenanceBannerEnabled?: T;
   maintenanceBannerText?: T;
+  onlinePaymentEnabled?: T;
+  activePaymentProvider?: T;
+  allowSepayQr?: T;
+  allowManualBankTransfer?: T;
+  allowCashOnHandover?: T;
+  allowFullPaymentOnline?: T;
+  reservationDepositPolicyMode?: T;
+  reservationDepositPercent?: T;
+  paymentExpiryMinutes?: T;
+  requireDepositBeforeHandover?: T;
+  requireSettlementBeforeComplete?: T;
+  bankName?: T;
+  bankCode?: T;
+  bankAccountNumber?: T;
+  bankAccountHolder?: T;
+  paymentInstructionNote?: T;
+  refundPolicySummary?: T;
   createdBy?: T;
   updatedBy?: T;
   _status?: T;
@@ -2430,6 +2681,8 @@ export interface CollectionQueryWidget {
       | 'sales-inquiries'
       | 'promotions'
       | 'payments'
+      | 'payment-events'
+      | 'refunds'
       | 'reviews'
       | 'posts';
     where?:
@@ -2470,6 +2723,8 @@ export interface ActivityWidget {
           | 'sales-inquiries'
           | 'promotions'
           | 'payments'
+          | 'payment-events'
+          | 'refunds'
           | 'reviews'
           | 'posts'
         )[]

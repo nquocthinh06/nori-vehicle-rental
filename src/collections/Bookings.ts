@@ -19,10 +19,13 @@ import {
   BOOKING_CONFIRMED_LOCK_MESSAGE,
   bookingStatusLabels,
   businessToday,
+  calculateBookingFinancialSummary,
   calculateNextContactSlot,
   calculateRentalQuote,
   canModifyBooking,
   canTransition,
+  checkHandoverFinancialEligibility,
+  checkSettlementCompletionEligibility,
   computeRentalDayDiff,
   formatDate,
   formatVnd,
@@ -345,9 +348,11 @@ export const Bookings: CollectionConfig = {
         }
 
         // ====================================================================
-        // UPDATE OPERATION (Customer Modify vs Customer Cancel vs Admin Transition)
+        // UPDATE OPERATION (Customer Modify vs Customer Cancel vs Admin/System Transition)
         // ====================================================================
-        const actor = req.user?.collection === 'admins' ? 'admin' : 'customer'
+        const isSystemPaymentSync = req.context?.noriSystemPaymentSync === true
+        const actor =
+          req.user?.collection === 'admins' || isSystemPaymentSync ? 'admin' : 'customer'
         if (
           actor === 'customer' &&
           (req.user?.collection !== 'users' ||
@@ -390,7 +395,20 @@ export const Bookings: CollectionConfig = {
             where: {
               and: [
                 { booking: { equals: originalDoc.id } },
-                { status: { in: ['PENDING', 'CONFIRMED', 'REFUNDED'] } },
+                {
+                  status: {
+                    in: [
+                      'PENDING',
+                      'PROCESSING',
+                      'CONFIRMED',
+                      'PARTIALLY_PAID',
+                      'REVIEW_REQUIRED',
+                      'REFUND_PENDING',
+                      'PARTIALLY_REFUNDED',
+                      'REFUNDED',
+                    ],
+                  },
+                },
               ],
             },
           })
@@ -860,7 +878,17 @@ export const Bookings: CollectionConfig = {
             where: {
               and: [
                 { booking: { equals: originalDoc.id } },
-                { status: { equals: 'CONFIRMED' } },
+                {
+                  status: {
+                    in: [
+                      'CONFIRMED',
+                      'PARTIALLY_PAID',
+                      'REVIEW_REQUIRED',
+                      'REFUND_PENDING',
+                      'PARTIALLY_REFUNDED',
+                    ],
+                  },
+                },
                 { paymentType: { not_equals: 'REFUND' } },
               ],
             },
@@ -870,6 +898,133 @@ export const Bookings: CollectionConfig = {
               'Đơn thuê đã có giao dịch thanh toán được xác nhận; vui lòng liên hệ NORI để được hỗ trợ hủy và hoàn tiền.',
               409,
             )
+          }
+        }
+
+        // Enforce pre-handover financial eligibility (Section 7.7 & PAY-039)
+        if (actor === 'admin' && next === 'ONGOING' && originalDoc.status !== 'ONGOING') {
+          const payRes = await req.payload.find({
+            collection: 'payments',
+            req,
+            overrideAccess: true,
+            depth: 0,
+            limit: 50,
+            where: { booking: { equals: originalDoc.id } },
+          })
+          const enforceClearance =
+            req.context?.enforceFinancialClearance === true || payRes.docs.length > 0
+          if (enforceClearance) {
+            const reqDeposit = Number(
+              originalDoc.initialPaymentDue ?? originalDoc.depositSnapshot ?? 0,
+            )
+            const fin = calculateBookingFinancialSummary({
+              bookingStatus: String(freshDoc.status ?? originalDoc.status),
+              totalRentalPrice: Number(originalDoc.totalPrice ?? 0),
+              extraFee: Number(data.extraFee ?? originalDoc.extraFee ?? 0),
+              reservationDepositRequired: reqDeposit,
+              payments: payRes.docs.map((p) => ({
+                id: p.id,
+                paymentType: p.paymentType,
+                amount: p.amount,
+                expectedAmount: p.expectedAmount ?? p.amount,
+                receivedAmount: p.receivedAmount ?? null,
+                refundedAmount: p.refundedAmount ?? 0,
+                overpaidAmount: p.overpaidAmount ?? 0,
+                status: p.status,
+                reconciliationStatus: p.reconciliationStatus ?? null,
+                expiresAt: p.expiresAt ?? null,
+              })),
+            })
+            const check = checkHandoverFinancialEligibility({
+              bookingStatus: String(freshDoc.status ?? originalDoc.status),
+              financial: fin,
+              requireDepositBeforeHandover: enforceClearance,
+              hasPaymentRecords: payRes.docs.length > 0,
+            })
+            if (!check.allowed) {
+              throw new APIError(
+                check.reason ??
+                  'Chưa đủ điều kiện tài chính để bàn giao xe. Vui lòng kiểm tra giao dịch đặt cọc/thanh toán.',
+                409,
+              )
+            }
+          }
+        }
+
+        // Enforce post-return settlement before COMPLETED (Section 7.8 & PAY-040)
+        if (actor === 'admin' && next === 'COMPLETED' && originalDoc.status !== 'COMPLETED') {
+          const [payRes, refundRes] = await Promise.all([
+            req.payload.find({
+              collection: 'payments',
+              req,
+              overrideAccess: true,
+              depth: 0,
+              limit: 50,
+              where: { booking: { equals: originalDoc.id } },
+            }),
+            req.payload
+              .find({
+                collection: 'refunds',
+                req,
+                overrideAccess: true,
+                depth: 0,
+                limit: 50,
+                where: { booking: { equals: originalDoc.id } },
+              })
+              .catch(() => ({ docs: [] })),
+          ])
+          const hasFinancialRecords =
+            payRes.docs.length > 0 ||
+            refundRes.docs.length > 0 ||
+            req.context?.enforceFinancialClearance === true
+          if (hasFinancialRecords) {
+            const nextExtraFee =
+              data.extraFee !== undefined && data.extraFee !== null
+                ? Number(data.extraFee)
+                : Number(originalDoc.extraFee ?? 0)
+            const fin = calculateBookingFinancialSummary({
+              bookingStatus: String(freshDoc.status ?? originalDoc.status),
+              totalRentalPrice: Number(originalDoc.totalPrice ?? 0),
+              extraFee: nextExtraFee,
+              reservationDepositRequired: Number(
+                originalDoc.initialPaymentDue ?? originalDoc.depositSnapshot ?? 0,
+              ),
+              payments: payRes.docs.map((p) => ({
+                id: p.id,
+                paymentType: p.paymentType,
+                amount: p.amount,
+                expectedAmount: p.expectedAmount ?? p.amount,
+                receivedAmount: p.receivedAmount ?? null,
+                refundedAmount: p.refundedAmount ?? 0,
+                overpaidAmount: p.overpaidAmount ?? 0,
+                status: p.status,
+                reconciliationStatus: p.reconciliationStatus ?? null,
+                expiresAt: p.expiresAt ?? null,
+              })),
+              refunds: refundRes.docs.map((r) => ({
+                id: r.id,
+                amount: r.amount,
+                refundType: r.refundType,
+                status: r.status,
+              })),
+            })
+            const exceptionNote =
+              (typeof data.handoverNote === 'string' && data.handoverNote.trim()) ||
+              (typeof data.extraFeeNote === 'string' && data.extraFeeNote.trim()) ||
+              null
+            const settleCheck = checkSettlementCompletionEligibility({
+              financial: fin,
+              hasOnlineOrRecordedPayments: hasFinancialRecords,
+              approveFinancialException: Boolean(req.context?.approveFinancialException),
+              exceptionNote,
+            })
+            if (!settleCheck.allowed) {
+              throw new APIError(
+                settleCheck.reason ??
+                  'Đơn thuê còn nghĩa vụ tài chính hoặc hoàn tiền chưa được quyết toán.',
+                409,
+              )
+            }
           }
         }
 
@@ -923,7 +1078,9 @@ export const Bookings: CollectionConfig = {
                   changedBy:
                     req.user?.collection === 'admins'
                       ? (req.user.email ?? 'Admin NORI')
-                      : (req.user?.email ?? 'Khách hàng'),
+                      : isSystemPaymentSync
+                        ? String(req.context?.noriSystemActorLabel ?? 'Hệ thống thanh toán NORI')
+                        : (req.user?.email ?? 'Khách hàng'),
                   note:
                     typeof data.handoverNote === 'string' && data.handoverNote.trim()
                       ? data.handoverNote.trim().slice(0, 500)
@@ -1006,6 +1163,41 @@ export const Bookings: CollectionConfig = {
         if (operation === 'update' && previousDoc?.status !== doc.status) {
           const vehicleId = relationId(doc.vehicle)
           const customerId = relationId(doc.customer)
+
+          // Create Customer Notification when Admin requires Deposit (DEPOSIT_PENDING)
+          if (doc.status === 'DEPOSIT_PENDING' && customerId) {
+            try {
+              const dueAmount = Number(
+                doc.initialPaymentDue || doc.depositSnapshot || doc.totalPrice || 0,
+              )
+              const vehicleLabel = doc.vehicleNameSnapshot || 'Phương tiện NORI'
+              await req.payload.create({
+                collection: 'notifications',
+                req,
+                overrideAccess: true,
+                data: {
+                  eventKey: `PAYMENT_REQUIRED:${doc.id}:${doc.revision ?? 1}`,
+                  customer: customerId,
+                  booking: doc.id,
+                  type: 'PAYMENT_REQUIRED',
+                  title: 'Yêu cầu thanh toán đặt cọc giữ xe',
+                  message: `Đơn thuê ${doc.bookingKey} (${vehicleLabel}) đã được Admin xét duyệt và yêu cầu đặt cọc ${formatVnd(dueAmount)} để xác nhận giữ lịch xe. Quý khách có thể thanh toán trực tuyến qua VietQR ngay tại trang Đơn thuê của tôi.`,
+                  bookingKey: String(doc.bookingKey ?? doc.id),
+                  vehicleName: vehicleLabel,
+                  startDate: doc.startDate,
+                  endDate: doc.endDate,
+                  pickupTime: doc.pickupTime ?? '08:00',
+                  returnTime: doc.returnTime ?? '20:00',
+                  paymentConfirmed: false,
+                  superseded: false,
+                  isRead: false,
+                  popupDismissed: true,
+                },
+              })
+            } catch {
+              // Ignore duplicate eventKey or non-blocking notification error
+            }
+          }
 
           // Create Customer Notification + Staff Consultation Request on Approval (CONFIRMED)
           if (doc.status === 'CONFIRMED' && customerId) {
@@ -1197,7 +1389,10 @@ export const Bookings: CollectionConfig = {
               depth: 0,
               limit: 20,
               where: {
-                and: [{ booking: { equals: doc.id } }, { status: { equals: 'PENDING' } }],
+                and: [
+                  { booking: { equals: doc.id } },
+                  { status: { in: ['PENDING', 'PROCESSING'] } },
+                ],
               },
             })
             for (const p of pendingPayments.docs) {
@@ -1213,6 +1408,65 @@ export const Bookings: CollectionConfig = {
                     : `Tự động hủy do đơn thuê chuyển trạng thái ${doc.status}`,
                 },
               })
+            }
+            if (customerId) {
+              try {
+                const vehicleLabel = doc.vehicleNameSnapshot || 'Phương tiện NORI'
+                await req.payload.create({
+                  collection: 'notifications',
+                  req,
+                  overrideAccess: true,
+                  data: {
+                    eventKey: `BOOKING_${doc.status}:${doc.id}`,
+                    customer: customerId,
+                    booking: doc.id,
+                    type: 'BOOKING_CANCELLED',
+                    title:
+                      doc.status === 'REJECTED'
+                        ? 'Đơn thuê bị từ chối xác nhận'
+                        : 'Đơn thuê đã được hủy',
+                    message: `Đơn thuê ${doc.bookingKey} (${vehicleLabel}) đã chuyển sang trạng thái ${bookingStatusLabels[doc.status] ?? doc.status}. Lịch giữ xe đã được giải phóng.`,
+                    bookingKey: String(doc.bookingKey ?? doc.id),
+                    vehicleName: vehicleLabel,
+                    startDate: doc.startDate,
+                    endDate: doc.endDate,
+                    superseded: false,
+                    isRead: false,
+                    popupDismissed: true,
+                  },
+                })
+              } catch {
+                // Non-blocking notification
+              }
+            }
+          }
+
+          if (doc.status === 'COMPLETED' && customerId) {
+            try {
+              const vehicleLabel = doc.vehicleNameSnapshot || 'Phương tiện NORI'
+              await req.payload.create({
+                collection: 'notifications',
+                req,
+                overrideAccess: true,
+                data: {
+                  eventKey: `BOOKING_COMPLETED:${doc.id}`,
+                  customer: customerId,
+                  booking: doc.id,
+                  type: 'BOOKING_COMPLETED',
+                  title: 'Hợp đồng thuê xe đã hoàn tất!',
+                  message: `Cảm ơn quý khách đã đồng hành cùng NORI. Đơn thuê ${doc.bookingKey} (${vehicleLabel}) đã được quyết toán và hoàn tất.`,
+                  bookingKey: String(doc.bookingKey ?? doc.id),
+                  vehicleName: vehicleLabel,
+                  startDate: doc.startDate,
+                  endDate: doc.endDate,
+                  paymentConfirmed: true,
+                  superseded: false,
+                  isRead: false,
+                  popupDismissed: true,
+                },
+              })
+            } catch {
+              // Non-blocking notification
             }
           }
 

@@ -7,6 +7,7 @@ import { api, RequestError } from '@/lib/client-api'
 import {
   PROMO_REMOVED_MESSAGE,
   RENTAL_ADDONS,
+  calculateReservationDeposit,
   formatDate,
   formatMoney,
   formatVnd,
@@ -831,14 +832,56 @@ export function CheckoutPanel({ address }: { address: string | null }) {
             </span>
             Phương thức thanh toán
           </Heading>
-          <div className="mt-5 flex items-start gap-3 rounded-control border border-brand bg-brand-soft p-5 text-brand">
-            <Icon name="wallet" className="mt-0.5" />
-            <div>
-              <Text className="font-semibold">Thanh toán khi xác nhận & bàn giao xe</Text>
-              <Text className="mt-2 text-small">
-                Website không thu tiền trực tuyến, không xử lý thẻ. Khoản tiền cọc đảm bảo được ghi
-                nhận tách riêng khỏi tiền thuê và hoàn trả sau khi kiểm tra xe kết thúc chuyến đi.
-              </Text>
+          <div className="mt-5 space-y-4">
+            <div className="flex items-start gap-3 rounded-control border border-brand bg-brand-soft p-5 text-brand">
+              <Icon name="wallet" className="mt-0.5 shrink-0" />
+              <div>
+                <Text className="font-semibold">
+                  Thanh toán đặt cọc trực tuyến VietQR / SePay sau khi đơn được duyệt
+                </Text>
+                <Text className="mt-2 text-small">
+                  Tại bước tạo đơn (<strong>Chờ xác nhận</strong>), hệ thống chưa thu tiền để chuyên
+                  viên NORI kiểm tra xe và đối chiếu lịch trình. Ngay sau khi đơn được duyệt, bạn có
+                  thể quét mã <strong>VietQR / SePay</strong> hoặc chuyển khoản trực tiếp tại trang{' '}
+                  <strong>Đơn thuê của tôi</strong> để xác nhận giữ xe tự động.
+                </Text>
+              </div>
+            </div>
+            <div className="grid gap-3 text-caption sm:grid-cols-3">
+              <div className="rounded-control border border-line bg-subtle p-3.5">
+                <Text className="font-semibold text-ink">1. Khi gửi đơn thuê</Text>
+                <Text className="mt-1 text-muted">
+                  Chưa thu tiền (0 ₫). Giữ lịch tạm thời để chờ NORI duyệt đơn.
+                </Text>
+              </div>
+              <div className="rounded-control border border-line bg-subtle p-3.5">
+                <Text className="font-semibold text-ink">2. Sau khi NORI duyệt đơn</Text>
+                <Text className="mt-1 text-muted">
+                  Thanh toán cọc giữ chỗ dự kiến{' '}
+                  <strong className="text-brand">
+                    {formatVnd(
+                      quote.depositAmount > quote.estimatedTotal
+                        ? calculateReservationDeposit(quote.estimatedTotal, {
+                            policyMode: 'PERCENT_OF_RENTAL',
+                            depositPercent: 30,
+                          })
+                        : quote.initialPaymentDue ||
+                            calculateReservationDeposit(quote.estimatedTotal, {
+                              policyMode: 'PERCENT_OF_RENTAL',
+                              depositPercent: 30,
+                            }),
+                    )}
+                  </strong>{' '}
+                  qua VietQR / SePay hoặc toàn bộ tiền thuê.
+                </Text>
+              </div>
+              <div className="rounded-control border border-line bg-subtle p-3.5">
+                <Text className="font-semibold text-ink">3. Khi nhận & trả xe</Text>
+                <Text className="mt-1 text-muted">
+                  Thanh toán phần tiền thuê còn lại và cọc bảo đảm tài sản (hoàn trả sau khi kết
+                  thúc hợp đồng).
+                </Text>
+              </div>
             </div>
           </div>
         </section>
@@ -978,12 +1021,47 @@ export function CheckoutPanel({ address }: { address: string | null }) {
           </Text>
         </div>
 
-        {quote.depositAmount > 0 && (
-          <div className="mt-3 flex flex-wrap items-baseline justify-between gap-3 rounded-control bg-subtle p-3 text-caption">
-            <span className="text-muted">Tiền cọc đảm bảo (tách riêng, hoàn trả sau thuê)</span>
-            <span className="font-semibold text-ink">{formatMoney(quote.depositAmount)}</span>
-          </div>
-        )}
+        {isQuoteFresh &&
+          (() => {
+            const estReservationDeposit =
+              quote.depositAmount > quote.estimatedTotal
+                ? calculateReservationDeposit(quote.estimatedTotal, {
+                    policyMode: 'PERCENT_OF_RENTAL',
+                    depositPercent: 30,
+                  })
+                : quote.initialPaymentDue ||
+                  calculateReservationDeposit(quote.estimatedTotal, {
+                    policyMode: 'PERCENT_OF_RENTAL',
+                    depositPercent: 30,
+                  })
+            const estRemainingRental = Math.max(0, quote.estimatedTotal - estReservationDeposit)
+            return (
+              <div className="mt-3 space-y-2 rounded-control border border-line bg-subtle p-3 text-caption">
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                  <span className="text-muted">Cọc giữ chỗ dự kiến (sau khi duyệt đơn)</span>
+                  <span className="font-semibold text-brand">
+                    {formatVnd(estReservationDeposit)}
+                  </span>
+                </div>
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                  <span className="text-muted">
+                    Tiền thuê còn lại (thanh toán trước/khi nhận xe)
+                  </span>
+                  <span className="font-medium text-ink">{formatVnd(estRemainingRental)}</span>
+                </div>
+                {quote.depositAmount > 0 && (
+                  <div className="flex flex-wrap items-baseline justify-between gap-2 border-t border-line pt-2">
+                    <span className="text-muted">
+                      Tiền cọc đảm bảo tài sản (tách riêng, hoàn trả sau thuê)
+                    </span>
+                    <span className="font-semibold text-ink">
+                      {formatMoney(quote.depositAmount)}
+                    </span>
+                  </div>
+                )}
+              </div>
+            )
+          })()}
 
         {(quote.kmLimitPerDay || quote.lateReturnFeePerHour) && (
           <Text className="mt-3 text-micro text-muted">

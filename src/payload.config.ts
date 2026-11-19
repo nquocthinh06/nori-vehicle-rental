@@ -13,9 +13,11 @@ import { Folders } from './collections/Folders'
 import { MaintenanceSchedules } from './collections/MaintenanceSchedules'
 import { Media } from './collections/Media'
 import { Notifications } from './collections/Notifications'
+import { PaymentEvents } from './collections/PaymentEvents'
 import { Payments } from './collections/Payments'
 import { Posts } from './collections/Posts'
 import { Promotions } from './collections/Promotions'
+import { Refunds } from './collections/Refunds'
 import { RentalDays } from './collections/RentalDays'
 import { Reviews } from './collections/Reviews'
 import { SalesInquiries } from './collections/SalesInquiries'
@@ -38,6 +40,14 @@ export default buildConfig({
   secret: payloadSecret || 'nori-local-dev-secret-9b4df14a-91bb-4c9b-b923-b2dfa62da7e4',
   db: sqliteAdapter({
     idType: 'uuid',
+    // Schema evolution is managed explicitly via additive migrations (`pnpm db:migrate`).
+    // Keeping `push: false` prevents Drizzle's interactive dev STDIN prompt from deadlocking
+    // `getPayload()` in `pnpm dev` whenever legacy/drifted columns exist in SQLite.
+    push: false,
+    wal: {
+      synchronous: 'NORMAL',
+    },
+    busyTimeout: 5000,
     transactionOptions: {},
     client: {
       url: process.env.DATABASE_URI || 'file:./nori.db',
@@ -79,6 +89,8 @@ export default buildConfig({
     SalesInquiries,
     Promotions,
     Payments,
+    PaymentEvents,
+    Refunds,
     Reviews,
     Posts,
   ],

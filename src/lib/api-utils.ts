@@ -131,13 +131,16 @@ export function apiError(error: unknown) {
       'status' in error &&
       typeof (error as { status?: unknown }).status === 'number')
   if (isApiError) {
-    const err = error as { status: number; message: string }
+    const err = error as { status: number; message: string; data?: { code?: string } | null }
     if (err.status === 404)
       return fail('Không tìm thấy thông tin được yêu cầu.', 404, 'RESOURCE_NOT_FOUND')
     if (err.status >= 500 && err.status !== 503)
       return fail('NORI chưa thể xử lý yêu cầu. Vui lòng thử lại sau.', 503, 'SERVICE_UNAVAILABLE')
+    const explicitCode =
+      typeof err.data?.code === 'string' && err.data.code.trim() ? err.data.code.trim() : null
     const code =
-      err.status === 409
+      explicitCode ??
+      (err.status === 409
         ? 'CONFLICT'
         : err.status === 401
           ? 'UNAUTHORIZED'
@@ -145,7 +148,7 @@ export function apiError(error: unknown) {
             ? 'FORBIDDEN'
             : err.status === 429
               ? 'RATE_LIMITED'
-              : 'VALIDATION_ERROR'
+              : 'VALIDATION_ERROR')
     return fail(err.message, err.status, code)
   }
   console.error('[NORI] Request failed:', error)

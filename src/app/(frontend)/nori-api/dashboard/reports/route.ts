@@ -1,6 +1,8 @@
 import { requireAdmin } from '@/lib/admin-api'
 import { apiError, json } from '@/lib/api-utils'
-import { HOLD_STATUSES } from '@/lib/rental-rules'
+import { getSitePaymentConfig, sweepExpiredPayments } from '@/lib/payment-service'
+import { HOLD_STATUSES, roundVndInteger } from '@/lib/rental-rules'
+import type { Refund } from '@/payload-types'
 
 export async function GET(request: Request) {
   try {
@@ -21,49 +23,85 @@ export async function GET(request: Request) {
           }
         : undefined
 
-    const [vehiclesRes, bookingsRes, inquiriesRes, activeUsersCount, disabledUsersCount] =
-      await Promise.all([
-        payload.find({
-          collection: 'vehicles',
-          user,
-          overrideAccess: false,
-          depth: 1,
-          limit: 500,
-        }),
-        payload.find({
-          collection: 'bookings',
-          user,
-          overrideAccess: false,
-          depth: 0,
-          limit: 500,
-          ...(createdAtFilter ? { where: createdAtFilter } : {}),
-        }),
-        payload.find({
-          collection: 'sales-inquiries',
-          user,
-          overrideAccess: false,
-          depth: 0,
-          limit: 500,
-          ...(createdAtFilter ? { where: createdAtFilter } : {}),
-        }),
-        payload.count({
-          collection: 'users',
+    await sweepExpiredPayments(payload)
+    const [
+      vehiclesRes,
+      bookingsRes,
+      inquiriesRes,
+      activeUsersCount,
+      disabledUsersCount,
+      paymentsRes,
+      refundsRes,
+      siteConfig,
+    ] = await Promise.all([
+      payload.find({
+        collection: 'vehicles',
+        user,
+        overrideAccess: false,
+        depth: 0,
+        limit: 500,
+        select: { status: true, operationStatus: true, isDemo: true },
+      }),
+      payload.find({
+        collection: 'bookings',
+        user,
+        overrideAccess: false,
+        depth: 0,
+        limit: 500,
+        select: { status: true, totalPrice: true, extraFee: true, depositSnapshot: true },
+        ...(createdAtFilter ? { where: createdAtFilter } : {}),
+      }),
+      payload.find({
+        collection: 'sales-inquiries',
+        user,
+        overrideAccess: false,
+        depth: 0,
+        limit: 500,
+        select: { status: true },
+        ...(createdAtFilter ? { where: createdAtFilter } : {}),
+      }),
+      payload.count({
+        collection: 'users',
+        overrideAccess: true,
+        where: {
+          and: [{ status: { equals: 'ACTIVE' } }, ...(createdAtFilter ? [createdAtFilter] : [])],
+        },
+      }),
+      payload.count({
+        collection: 'users',
+        overrideAccess: true,
+        where: {
+          and: [{ status: { equals: 'DISABLED' } }, ...(createdAtFilter ? [createdAtFilter] : [])],
+        },
+      }),
+      payload.find({
+        collection: 'payments',
+        overrideAccess: true,
+        depth: 0,
+        limit: 1000,
+        select: {
+          status: true,
+          method: true,
+          provider: true,
+          paymentType: true,
+          reconciliationStatus: true,
+          amount: true,
+          receivedAmount: true,
+        },
+        ...(createdAtFilter ? { where: createdAtFilter } : {}),
+      }),
+      payload
+        .find({
+          collection: 'refunds',
           overrideAccess: true,
-          where: {
-            and: [{ status: { equals: 'ACTIVE' } }, ...(createdAtFilter ? [createdAtFilter] : [])],
-          },
-        }),
-        payload.count({
-          collection: 'users',
-          overrideAccess: true,
-          where: {
-            and: [
-              { status: { equals: 'DISABLED' } },
-              ...(createdAtFilter ? [createdAtFilter] : []),
-            ],
-          },
-        }),
-      ])
+          depth: 0,
+          limit: 1000,
+          select: { amount: true, status: true, refundType: true },
+          ...(createdAtFilter ? { where: createdAtFilter } : {}),
+        })
+        .catch(() => ({ docs: [] as Refund[] })),
+      getSitePaymentConfig(payload),
+    ])
 
     const fleetByOp: Record<string, number> = {}
     let demoVehicles = 0
@@ -95,6 +133,73 @@ export async function GET(request: Request) {
         depositTotal += Number(b.depositSnapshot ?? 0)
       }
     }
+
+    // Verified payment & refund financial aggregation (separated strictly by business rules)
+    let totalVerifiedReceived = 0
+    let depositCollected = 0
+    let rentalFeeCollected = 0
+    let extraFeeCollected = 0
+    let securityDepositHeld = 0
+    let pendingReconciliationCount = 0
+    const paymentsByStatus: Record<string, number> = {}
+    const paymentsByMethod: Record<string, number> = {}
+    const paymentsByProvider: Record<string, number> = {}
+
+    for (const p of paymentsRes.docs) {
+      const st = p.status ?? 'PENDING'
+      const method = p.method ?? 'BANK_TRANSFER'
+      const provider = p.provider ?? 'MANUAL'
+      paymentsByStatus[st] = (paymentsByStatus[st] ?? 0) + 1
+
+      if (p.reconciliationStatus && p.reconciliationStatus !== 'NONE') {
+        pendingReconciliationCount += 1
+      }
+
+      if (st === 'CONFIRMED' || st === 'PARTIALLY_REFUNDED' || st === 'REFUNDED') {
+        const verifiedAmt = roundVndInteger(
+          p.receivedAmount !== null && p.receivedAmount !== undefined && p.receivedAmount > 0
+            ? p.receivedAmount
+            : p.amount,
+        )
+        totalVerifiedReceived += verifiedAmt
+        paymentsByMethod[method] = (paymentsByMethod[method] ?? 0) + verifiedAmt
+        paymentsByProvider[provider] = (paymentsByProvider[provider] ?? 0) + verifiedAmt
+
+        if (p.paymentType === 'DEPOSIT') {
+          depositCollected += verifiedAmt
+        } else if (p.paymentType === 'RENTAL_FEE' || p.paymentType === 'FULL_PAYMENT') {
+          rentalFeeCollected += verifiedAmt
+        } else if (p.paymentType === 'EXTRA_FEE') {
+          extraFeeCollected += verifiedAmt
+        } else if (p.paymentType === 'SECURITY_DEPOSIT') {
+          // Asset security deposit is strictly separated from rental revenue
+          securityDepositHeld += verifiedAmt
+        }
+      }
+    }
+
+    let totalRefunded = 0
+    let securityDepositRefunded = 0
+    let pendingRefundTotal = 0
+    for (const r of refundsRes.docs) {
+      const amt = roundVndInteger(r.amount)
+      if (r.status === 'REFUNDED') {
+        totalRefunded += amt
+        if (r.refundType === 'SECURITY_DEPOSIT_RETURN') {
+          securityDepositRefunded += amt
+        }
+      } else if (['REQUESTED', 'APPROVED', 'PROCESSING'].includes(r.status)) {
+        pendingRefundTotal += amt
+      }
+    }
+
+    const rentalRevenueGrossCollected = depositCollected + rentalFeeCollected + extraFeeCollected
+    const rentalRefunded = Math.max(0, totalRefunded - securityDepositRefunded)
+    const netRentalRevenueCollected = Math.max(0, rentalRevenueGrossCollected - rentalRefunded)
+    const netSecurityDepositHeld = Math.max(0, securityDepositHeld - securityDepositRefunded)
+    const netCollectedTotal = Math.max(0, totalVerifiedReceived - totalRefunded)
+    const totalContractExpected = completedValue + activeHoldValue + extraFeeTotal
+    const remainingReceivable = Math.max(0, totalContractExpected - rentalRevenueGrossCollected)
 
     const inquiriesByStatus: Record<string, number> = {}
     for (const inq of inquiriesRes.docs) {
@@ -133,9 +238,26 @@ export async function GET(request: Request) {
         activeHoldExpectedValue: activeHoldValue,
         extraFeeTotal,
         depositExpectedOnActive: depositTotal,
-        onlinePaymentIntegrated: false,
+        totalVerifiedReceived,
+        depositCollected,
+        rentalFeeCollected,
+        extraFeeCollected,
+        rentalRevenueGrossCollected,
+        netRentalRevenueCollected,
+        securityDepositHeld: netSecurityDepositHeld,
+        totalRefunded,
+        pendingRefundTotal,
+        netCollectedTotal,
+        remainingReceivable,
+        pendingReconciliationCount,
+        paymentsByStatus,
+        paymentsByMethod,
+        paymentsByProvider,
+        onlinePaymentIntegrated: siteConfig.onlinePaymentEnabled,
+        activeProvider: siteConfig.activeProvider,
+        environment: siteConfig.environment,
         realizedPaymentNote:
-          'Hệ thống hiện thanh toán trực tiếp / chuyển khoản ngoại tuyến khi nhận xe; chưa tích hợp cổng thanh toán trực tuyến.',
+          'Chỉ các giao dịch đã xác thực (CONFIRMED / PARTIALLY_REFUNDED) mới được cộng vào thực thu. Tiền cọc bảo đảm tài sản (SECURITY_DEPOSIT) được theo dõi độc lập và không gộp vào doanh thu tiền thuê xe.',
       },
     })
   } catch (error) {

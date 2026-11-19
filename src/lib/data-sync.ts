@@ -3,6 +3,11 @@ import crypto from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
+import {
+  PAYMENT_COLUMN_ADDITIONS,
+  PAYMENT_COLUMN_INDEXES_SQL,
+  PAYMENT_TABLES_AND_INDEXES_SQL,
+} from '../migrations/20261120_010000_online_payment_integration.ts'
 
 export const CURRENT_SCHEMA_VERSION = 'nori-payload-sqlite-v2.5'
 export const SNAPSHOT_FORMAT_VERSION = '1.0.0'
@@ -323,6 +328,28 @@ export function writeAuditLogSql(
   }
 }
 
+export function applyAdditivePaymentSchema(db: DatabaseSync): void {
+  for (const stmt of PAYMENT_TABLES_AND_INDEXES_SQL) {
+    db.exec(stmt)
+  }
+  const colsCache = new Map<string, Set<string>>()
+  for (const [tableName, columnName, colDef] of PAYMENT_COLUMN_ADDITIONS) {
+    let colSet = colsCache.get(tableName)
+    if (!colSet) {
+      const rows = db.prepare(`PRAGMA table_info('${tableName}')`).all() as { name?: string }[]
+      colSet = new Set(rows.map((r) => String(r.name ?? '')))
+      colsCache.set(tableName, colSet)
+    }
+    if (!colSet.has(columnName)) {
+      db.exec(`ALTER TABLE \`${tableName}\` ADD COLUMN \`${columnName}\` ${colDef};`)
+      colSet.add(columnName)
+    }
+  }
+  for (const idxStmt of PAYMENT_COLUMN_INDEXES_SQL) {
+    db.exec(idxStmt)
+  }
+}
+
 export function runDatabaseMigration(options?: { rootDir?: string; dbPath?: string }) {
   const paths = resolvePaths(options)
   const schemaSqlPath = path.join(paths.seedDir, 'schema.sql')
@@ -338,6 +365,7 @@ export function runDatabaseMigration(options?: { rootDir?: string; dbPath?: stri
     db.exec('BEGIN IMMEDIATE')
     try {
       db.exec(sqlContent)
+      applyAdditivePaymentSchema(db)
       const now = new Date().toISOString()
       const existingDev = db
         .prepare("SELECT id FROM payload_migrations WHERE name = 'dev' LIMIT 1")
@@ -354,6 +382,15 @@ export function runDatabaseMigration(options?: { rootDir?: string; dbPath?: stri
         db.prepare(
           'INSERT INTO payload_migrations (id, name, batch, updated_at, created_at) VALUES (?, ?, ?, ?, ?)',
         ).run(crypto.randomUUID(), CURRENT_SCHEMA_VERSION, 1, now, now)
+      }
+      const paymentMigName = '20261120_010000_online_payment_integration'
+      const existingPaymentMig = db
+        .prepare('SELECT id FROM payload_migrations WHERE name = ? LIMIT 1')
+        .get(paymentMigName) as { id?: string } | undefined
+      if (!existingPaymentMig) {
+        db.prepare(
+          'INSERT INTO payload_migrations (id, name, batch, updated_at, created_at) VALUES (?, ?, ?, ?, ?)',
+        ).run(crypto.randomUUID(), paymentMigName, 2, now, now)
       }
       db.exec('COMMIT')
     } catch (err) {
@@ -1969,7 +2006,7 @@ export function restoreFromBackup(options?: {
     }
   }
 
-  if (!fs.existsSync(selectedDbPath)) {
+  if (!fs.existsSync(/*turbopackIgnore: true*/ selectedDbPath)) {
     throw new Error(`Không tìm thấy file database trong bản sao lưu: ${selectedDbPath}`)
   }
 
@@ -2021,8 +2058,8 @@ export function restoreFromBackup(options?: {
     fs.mkdirSync(path.dirname(target), { recursive: true })
     for (const suffix of ['-wal', '-shm', '-journal']) {
       const sidecar = `${target}${suffix}`
-      if (fs.existsSync(sidecar)) {
-        fs.unlinkSync(sidecar)
+      if (fs.existsSync(/*turbopackIgnore: true*/ sidecar)) {
+        fs.unlinkSync(/*turbopackIgnore: true*/ sidecar)
       }
     }
     fs.copyFileSync(selectedDbPath, target)

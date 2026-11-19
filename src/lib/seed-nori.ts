@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import type { Payload } from 'payload'
+import { up as ensureOnlinePaymentMigration } from '../migrations/20261120_010000_online_payment_integration'
 import manifest from './seed-media-manifest.json'
 import {
   SEED_DEMO_FLEET,
@@ -201,7 +202,24 @@ async function ensureOfficialAdmin(payload: Payload): Promise<void> {
   })
 }
 
+let ensuredPaymentSchemaOnce = false
+
 export async function seedNoriIfEmpty(payload: Payload): Promise<void> {
+  if (!ensuredPaymentSchemaOnce) {
+    try {
+      const dbAdapter = payload.db as unknown as { drizzle?: unknown }
+      if (dbAdapter?.drizzle) {
+        await ensureOnlinePaymentMigration({
+          db: dbAdapter.drizzle as never,
+          payload,
+          req: undefined as never,
+        })
+        ensuredPaymentSchemaOnce = true
+      }
+    } catch {
+      // Non-blocking if schema is already up to date
+    }
+  }
   await ensureOfficialAdmin(payload)
   if (process.env.NORI_DISABLE_DEMO_SEED === '1') {
     return

@@ -30,6 +30,7 @@ export async function GET(request: Request) {
       vehicles: 'vehicles',
       customers: 'customers',
       financial: 'reports',
+      payments: 'payments',
     }
     const targetModule = entityModuleMap[exportType]
     if (exportType === 'customers' && !adminHasPermission(admin, 'customers', 'read')) {
@@ -206,19 +207,66 @@ export async function GET(request: Request) {
       )
       filename = 'nori-customers.csv'
     } else if (exportType === 'financial') {
-      const result = await payload.find({
-        collection: 'bookings',
-        user,
-        overrideAccess: false,
-        depth: 1,
-        limit: 500,
-        sort: '-createdAt',
-        ...(createdAtFilter ? { where: createdAtFilter } : {}),
-      })
+      const [result, paymentsRes, refundsRes] = await Promise.all([
+        payload.find({
+          collection: 'bookings',
+          user,
+          overrideAccess: false,
+          depth: 1,
+          limit: 500,
+          sort: '-createdAt',
+          ...(createdAtFilter ? { where: createdAtFilter } : {}),
+        }),
+        payload.find({
+          collection: 'payments',
+          overrideAccess: true,
+          depth: 0,
+          limit: 1000,
+        }),
+        payload
+          .find({
+            collection: 'refunds',
+            overrideAccess: true,
+            depth: 0,
+            limit: 1000,
+          })
+          .catch(() => ({ docs: [] })),
+      ])
       const nameMap = await resolveCustomerDisplayNames(
         payload,
         result.docs.map((b) => (typeof b.customer === 'string' ? b.customer : '')).filter(Boolean),
       )
+      const verifiedPaidByBooking = new Map<string, number>()
+      const securityHeldByBooking = new Map<string, number>()
+      for (const p of paymentsRes.docs) {
+        const bId = typeof p.booking === 'object' && p.booking ? p.booking.id : p.booking
+        if (!bId) continue
+        if (['CONFIRMED', 'PARTIALLY_REFUNDED', 'REFUNDED'].includes(p.status)) {
+          const amt = Number(p.receivedAmount ?? p.amount ?? 0)
+          if (p.paymentType === 'SECURITY_DEPOSIT') {
+            securityHeldByBooking.set(
+              String(bId),
+              (securityHeldByBooking.get(String(bId)) ?? 0) + amt,
+            )
+          } else {
+            verifiedPaidByBooking.set(
+              String(bId),
+              (verifiedPaidByBooking.get(String(bId)) ?? 0) + amt,
+            )
+          }
+        }
+      }
+      const refundedByBooking = new Map<string, number>()
+      for (const r of refundsRes.docs) {
+        const bId = typeof r.booking === 'object' && r.booking ? r.booking.id : r.booking
+        if (!bId) continue
+        if (r.status === 'REFUNDED') {
+          refundedByBooking.set(
+            String(bId),
+            (refundedByBooking.get(String(bId)) ?? 0) + Number(r.amount ?? 0),
+          )
+        }
+      }
       csv = buildCsv(
         [
           'MaDon',
@@ -233,27 +281,100 @@ export async function GET(request: Request) {
           'PhuPhiPhatSinhVND',
           'TongDuKienVND',
           'TienCocDamBaoVND',
+          'ThucThuTienThueVND',
+          'CocBaoDamTaiSanThuVND',
+          'DaHoanTienVND',
+          'DoanhThuRongVND',
           'NgayTao',
         ],
-        result.docs.map((b) => [
-          b.bookingKey ?? b.id,
-          b.status ?? 'PENDING',
-          typeof b.customer === 'object'
-            ? (b.customer?.fullName ?? '')
-            : (nameMap.get(String(b.customer ?? ''))?.fullName ?? ''),
-          b.vehicleReferenceSnapshot ?? '',
-          b.baseRentPrice ?? 0,
-          b.weekendSurchargeTotal ?? 0,
-          b.deliveryFeeSnapshot ?? 0,
-          b.addonFeeTotal ?? 0,
-          b.discountAmount ?? 0,
-          b.extraFee ?? 0,
-          b.totalPrice ?? 0,
-          b.depositSnapshot ?? 0,
-          b.createdAt,
-        ]),
+        result.docs.map((b) => {
+          const paidRent = verifiedPaidByBooking.get(String(b.id)) ?? 0
+          const secHeld = securityHeldByBooking.get(String(b.id)) ?? 0
+          const refunded = refundedByBooking.get(String(b.id)) ?? 0
+          const netRev = Math.max(0, paidRent - refunded)
+          return [
+            b.bookingKey ?? b.id,
+            b.status ?? 'PENDING',
+            typeof b.customer === 'object'
+              ? (b.customer?.fullName ?? '')
+              : (nameMap.get(String(b.customer ?? ''))?.fullName ?? ''),
+            b.vehicleReferenceSnapshot ?? '',
+            b.baseRentPrice ?? 0,
+            b.weekendSurchargeTotal ?? 0,
+            b.deliveryFeeSnapshot ?? 0,
+            b.addonFeeTotal ?? 0,
+            b.discountAmount ?? 0,
+            b.extraFee ?? 0,
+            b.totalPrice ?? 0,
+            b.depositSnapshot ?? 0,
+            paidRent,
+            secHeld,
+            refunded,
+            netRev,
+            b.createdAt,
+          ]
+        }),
       )
       filename = 'nori-financial.csv'
+    } else if (exportType === 'payments') {
+      const result = await payload.find({
+        collection: 'payments',
+        user,
+        overrideAccess: false,
+        depth: 1,
+        limit: 1000,
+        sort: '-createdAt',
+        ...(createdAtFilter ? { where: createdAtFilter } : {}),
+      })
+      const nameMap = await resolveCustomerDisplayNames(
+        payload,
+        result.docs.map((p) => (typeof p.customer === 'string' ? p.customer : '')).filter(Boolean),
+      )
+      csv = buildCsv(
+        [
+          'MaGiaoDich',
+          'MaDonThue',
+          'KhachHang',
+          'LoaiThanhToan',
+          'PhuongThuc',
+          'CongThanhToan',
+          'MoiTruong',
+          'SoTienYeuCauVND',
+          'SoTienThucNhanVND',
+          'SoTienDaHoanVND',
+          'TrangThai',
+          'TrangThaiDoiSoat',
+          'MaThamChieuProvider',
+          'MaGiaoDichNganHang',
+          'ThoiGianThanhToan',
+          'GhiChu',
+          'NgayTao',
+        ],
+        result.docs.map((p) => [
+          p.reference ?? p.id,
+          typeof p.booking === 'object' && p.booking
+            ? (p.booking.bookingKey ?? p.booking.id)
+            : (p.booking ?? ''),
+          typeof p.customer === 'object' && p.customer
+            ? (p.customer.fullName ?? p.customer.email ?? '')
+            : (nameMap.get(String(p.customer ?? ''))?.fullName ?? ''),
+          p.paymentType,
+          p.method,
+          p.provider ?? 'MANUAL',
+          p.environment ?? 'MOCK',
+          p.expectedAmount ?? p.amount ?? 0,
+          p.receivedAmount ?? 0,
+          p.refundedAmount ?? 0,
+          p.status,
+          p.reconciliationStatus ?? 'NONE',
+          p.providerPaymentRef ?? '',
+          p.providerTransactionId ?? '',
+          p.paidAt ?? '',
+          p.note ?? '',
+          p.createdAt,
+        ]),
+      )
+      filename = 'nori-payments.csv'
     } else {
       return fail('Loại dữ liệu xuất không hợp lệ.', 400, 'VALIDATION_ERROR')
     }

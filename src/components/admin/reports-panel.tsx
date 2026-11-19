@@ -7,6 +7,7 @@ import {
   formatMoney,
   inquiryStatusLabels,
   operationStatusLabels,
+  paymentMethodLabels,
 } from '@/lib/rental-rules'
 import { Badge, Button, Heading, Input, Notice, Skeleton, Text } from '@/components/ui'
 import { Icon } from '@/components/ui/icon'
@@ -29,7 +30,24 @@ type ReportsData = {
     activeHoldExpectedValue: number
     extraFeeTotal: number
     depositExpectedOnActive: number
+    totalVerifiedReceived?: number
+    depositCollected?: number
+    rentalFeeCollected?: number
+    extraFeeCollected?: number
+    rentalRevenueGrossCollected?: number
+    netRentalRevenueCollected?: number
+    securityDepositHeld?: number
+    totalRefunded?: number
+    pendingRefundTotal?: number
+    netCollectedTotal?: number
+    remainingReceivable?: number
+    pendingReconciliationCount?: number
+    paymentsByStatus?: Record<string, number>
+    paymentsByMethod?: Record<string, number>
+    paymentsByProvider?: Record<string, number>
     onlinePaymentIntegrated: boolean
+    activeProvider?: string
+    environment?: string
     realizedPaymentNote: string
   }
 }
@@ -102,6 +120,7 @@ export function ReportsPanel() {
           )}
           {[
             { type: 'bookings', label: 'CSV Đơn thuê' },
+            { type: 'payments', label: 'CSV Giao dịch' },
             { type: 'inquiries', label: 'CSV Yêu cầu mua' },
             { type: 'vehicles', label: 'CSV Đội xe' },
             { type: 'customers', label: 'CSV Khách hàng' },
@@ -127,6 +146,89 @@ export function ReportsPanel() {
       ) : (
         <div className="space-y-6">
           <Notice tone="info">{data.financial.realizedPaymentNote}</Notice>
+
+          {/* Verified Cashflow & Revenue Separation */}
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="rounded-card border border-line bg-canvas p-5">
+              <Text className="text-caption text-muted">Thực thu tiền thuê đã xác thực</Text>
+              <Text className="mt-1 text-title font-bold text-brand">
+                {formatMoney(data.financial.rentalRevenueGrossCollected ?? 0)}
+              </Text>
+              <Text className="mt-1 text-caption text-muted">
+                Cọc giữ chỗ: {formatMoney(data.financial.depositCollected ?? 0)} · Tiền thuê:{' '}
+                {formatMoney(data.financial.rentalFeeCollected ?? 0)}
+              </Text>
+            </div>
+            <div className="rounded-card border border-line bg-canvas p-5">
+              <Text className="text-caption text-muted">Doanh thu ròng sau hoàn tiền</Text>
+              <Text className="mt-1 text-title font-bold text-brand">
+                {formatMoney(data.financial.netRentalRevenueCollected ?? 0)}
+              </Text>
+              <Text className="mt-1 text-caption text-muted">
+                Đã hoàn trả: {formatMoney(data.financial.totalRefunded ?? 0)} · Phụ phí thu:{' '}
+                {formatMoney(data.financial.extraFeeCollected ?? 0)}
+              </Text>
+            </div>
+            <div className="rounded-card border border-line bg-canvas p-5">
+              <Text className="text-caption text-muted">
+                Cọc bảo đảm tài sản (tách riêng doanh thu)
+              </Text>
+              <Text className="mt-1 text-title font-bold text-ink">
+                {formatMoney(data.financial.securityDepositHeld ?? 0)}
+              </Text>
+              <Text className="mt-1 text-caption text-muted">
+                Không cộng gộp vào doanh thu tiền thuê xe
+              </Text>
+            </div>
+            <div className="rounded-card border border-line bg-canvas p-5">
+              <Text className="text-caption text-muted">Còn phải thu & Đối soát</Text>
+              <Text className="mt-1 text-title font-bold text-ink">
+                {formatMoney(data.financial.remainingReceivable ?? 0)}
+              </Text>
+              <Text className="mt-1 text-caption text-warning">
+                Chờ đối soát: {data.financial.pendingReconciliationCount ?? 0} giao dịch
+              </Text>
+            </div>
+          </div>
+
+          {/* Payment Method & Provider Breakdown */}
+          {data.financial.paymentsByMethod &&
+            Object.keys(data.financial.paymentsByMethod).length > 0 && (
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="rounded-card border border-line bg-canvas p-5">
+                  <Heading as="h2" size="subtitle" className="mb-3">
+                    Thực thu theo phương thức thanh toán
+                  </Heading>
+                  <div className="space-y-2 text-small">
+                    {Object.entries(data.financial.paymentsByMethod).map(([m, val]) => (
+                      <div
+                        key={m}
+                        className="flex items-center justify-between border-b border-line py-1.5 last:border-0"
+                      >
+                        <span>{paymentMethodLabels[m] ?? m}</span>
+                        <strong className="text-brand">{formatMoney(val)}</strong>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div className="rounded-card border border-line bg-canvas p-5">
+                  <Heading as="h2" size="subtitle" className="mb-3">
+                    Thực thu theo cổng thanh toán (Provider)
+                  </Heading>
+                  <div className="space-y-2 text-small">
+                    {Object.entries(data.financial.paymentsByProvider ?? {}).map(([prov, val]) => (
+                      <div
+                        key={prov}
+                        className="flex items-center justify-between border-b border-line py-1.5 last:border-0"
+                      >
+                        <span>{prov}</span>
+                        <strong className="text-brand">{formatMoney(val)}</strong>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
 
           {/* Financial + Utilization */}
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">

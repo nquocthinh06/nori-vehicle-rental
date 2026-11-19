@@ -2,7 +2,7 @@
 
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import type { BookingView, Quote } from '@/lib/domain-types'
+import type { BookingView, PaymentItemView, Quote } from '@/lib/domain-types'
 import { api, RequestError } from '@/lib/client-api'
 import {
   BOOKING_CONFIRMED_LOCK_MESSAGE,
@@ -11,10 +11,17 @@ import {
   addDays,
   bookingStatusLabels,
   businessToday,
+  canInitiateOnlinePayment,
   formatDate,
   formatMoney,
   formatVnd,
   parseAddonKeys,
+  paymentMethodLabels,
+  paymentStatusLabels,
+  paymentSummaryLabels,
+  paymentTypeLabels,
+  reconciliationStatusLabels,
+  refundStatusLabels,
   validateRentalDates,
   type AddonDefinition,
 } from '@/lib/rental-rules'
@@ -40,6 +47,72 @@ import { Dialog } from './ui/dialog'
 import { Icon } from './ui/icon'
 
 type BookingList = { docs: BookingView[]; page: number; totalPages: number; totalDocs: number }
+
+type ActivePaymentSession = {
+  id: string
+  reference: string
+  bookingId: string
+  bookingKey?: string | null
+  bookingStatus?: string | null
+  paymentType: string
+  method: string
+  provider: string
+  environment: string
+  amount: number
+  expectedAmount: number
+  receivedAmount: number
+  refundedAmount: number
+  overpaidAmount: number
+  status: string
+  reconciliationStatus: string
+  providerPaymentRef: string | null
+  providerTransactionId?: string | null
+  qrImageUrl: string | null
+  qrSvgDataUri?: string | null
+  paymentUrl: string | null
+  bankName?: string
+  bankCode: string
+  bankAccountNumber: string
+  bankAccountName: string
+  transferContent: string
+  expiresAt: string | null
+  verifiedAt?: string | null
+  paidAt: string | null
+  failureReason: string | null
+  instructions?: string[]
+  createdAt: string
+}
+
+type CreateOrStatusPaymentResponse = {
+  reused?: boolean
+  payment: ActivePaymentSession
+  financial: NonNullable<BookingView['financial']>
+}
+
+function paymentSummaryTone(summary?: string): 'muted' | 'warning' | 'brand' | 'danger' {
+  switch (summary) {
+    case 'FULLY_PAID':
+    case 'PAID_IN_FULL':
+      return 'brand'
+    case 'DEPOSIT_PAID':
+    case 'PARTIALLY_PAID':
+    case 'PARTIALLY_REFUNDED':
+    case 'REFUNDED':
+      return 'warning'
+    case 'REVIEW_REQUIRED':
+    case 'DISCREPANCY_REVIEW':
+      return 'danger'
+    default:
+      return 'muted'
+  }
+}
+
+function formatCountdown(seconds: number): string {
+  if (seconds <= 0) return '00:00'
+  const mins = Math.floor(seconds / 60)
+  const secs = seconds % 60
+  return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`
+}
 
 const TIME_OPTIONS = [
   '07:00',
@@ -100,6 +173,28 @@ function BookingsPanelInner() {
 
   // Detail modal state
   const [detailBooking, setDetailBooking] = useState<BookingView | null>(null)
+
+  // Online Payment modal state
+  const [paymentBooking, setPaymentBooking] = useState<BookingView | null>(null)
+  const [paymentTypeChoice, setPaymentTypeChoice] = useState<
+    'DEPOSIT' | 'RENTAL_FEE' | 'FULL_PAYMENT' | 'EXTRA_FEE'
+  >('DEPOSIT')
+  const [activePayment, setActivePayment] = useState<ActivePaymentSession | null>(null)
+  const [paymentFinancial, setPaymentFinancial] = useState<BookingView['financial'] | null>(null)
+  const [paymentBusy, setPaymentBusy] = useState(false)
+  const [paymentPollingBusy, setPaymentPollingBusy] = useState(false)
+  const [paymentSimulating, setPaymentSimulating] = useState(false)
+  const [paymentError, setPaymentError] = useState('')
+  const [paymentNotice, setPaymentNotice] = useState('')
+  const [copiedField, setCopiedField] = useState('')
+  const [countdownSeconds, setCountdownSeconds] = useState<number | null>(null)
+  const pollCountRef = useRef(0)
+  const pollInFlightRef = useRef(false)
+  const pollAbortRef = useRef<AbortController | null>(null)
+  const pollConsecutiveErrorsRef = useRef(0)
+  const expiredCheckSentForRef = useRef('')
+  const paymentCreatingRef = useRef(false)
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Edit modal state
   const [editingBooking, setEditingBooking] = useState<BookingView | null>(null)
@@ -593,6 +688,362 @@ function BookingsPanelInner() {
     }
   }
 
+  const createOrLoadPaymentSession = useCallback(
+    async (
+      booking: BookingView,
+      paymentType: 'DEPOSIT' | 'RENTAL_FEE' | 'FULL_PAYMENT' | 'EXTRA_FEE',
+    ) => {
+      if (paymentCreatingRef.current) return
+      paymentCreatingRef.current = true
+      setPaymentBusy(true)
+      setPaymentError('')
+      setPaymentNotice('')
+      try {
+        const res = await api<CreateOrStatusPaymentResponse>('/payments/create', {
+          method: 'POST',
+          timeoutMs: 15_000,
+          body: JSON.stringify({
+            bookingId: booking.id,
+            paymentType,
+          }),
+        })
+        setActivePayment(res.payment)
+        setPaymentFinancial(res.financial)
+        pollCountRef.current = 0
+        pollConsecutiveErrorsRef.current = 0
+        expiredCheckSentForRef.current = ''
+        if (res.reused) {
+          setPaymentNotice('Đang hiển thị mã thanh toán đang còn hiệu lực của bạn.')
+        }
+      } catch (e) {
+        const isTimeout =
+          e instanceof RequestError && (e.code === 'REQUEST_TIMEOUT' || e.status === 408)
+        setPaymentError(
+          isTimeout
+            ? 'Yêu cầu khởi tạo mã thanh toán phản hồi chậm. Vui lòng tải lại danh sách đơn để kiểm tra trước khi thử lại, tránh tạo trùng giao dịch.'
+            : (e as Error).message,
+        )
+      } finally {
+        paymentCreatingRef.current = false
+        setPaymentBusy(false)
+      }
+    },
+    [],
+  )
+
+  async function openPaymentModal(
+    booking: BookingView,
+    preferredType?: 'DEPOSIT' | 'RENTAL_FEE' | 'FULL_PAYMENT' | 'EXTRA_FEE',
+  ) {
+    setUrlLockNotice('')
+    setSuccess('')
+    setPaymentError('')
+    setPaymentNotice('')
+    setCopiedField('')
+    pollConsecutiveErrorsRef.current = 0
+    expiredCheckSentForRef.current = ''
+    const fin = booking.financial
+    const pendingItem = (booking.payments ?? []).find(
+      (p) => p.status === 'PENDING' || p.status === 'PROCESSING',
+    )
+    const defaultType: 'DEPOSIT' | 'RENTAL_FEE' | 'FULL_PAYMENT' | 'EXTRA_FEE' =
+      preferredType ??
+      (pendingItem?.paymentType as
+        | 'DEPOSIT'
+        | 'RENTAL_FEE'
+        | 'FULL_PAYMENT'
+        | 'EXTRA_FEE'
+        | undefined) ??
+      ((fin?.remainingDepositDue ?? 1) > 0 ? 'DEPOSIT' : 'RENTAL_FEE')
+
+    setPaymentBooking(booking)
+    setPaymentTypeChoice(defaultType)
+    setPaymentFinancial(booking.financial ?? null)
+
+    if (pendingItem && (!preferredType || preferredType === pendingItem.paymentType)) {
+      setPaymentBusy(true)
+      try {
+        const res = await api<CreateOrStatusPaymentResponse>(
+          `/payments/status?id=${encodeURIComponent(pendingItem.id)}`,
+          { timeoutMs: 12_000 },
+        )
+        setActivePayment(res.payment)
+        setPaymentFinancial(res.financial)
+        pollCountRef.current = 0
+      } catch {
+        await createOrLoadPaymentSession(booking, defaultType)
+      } finally {
+        setPaymentBusy(false)
+      }
+    } else {
+      await createOrLoadPaymentSession(booking, defaultType)
+    }
+  }
+
+  const checkActivePaymentStatus = useCallback(
+    async (paymentId: string, silent = false): Promise<'ok' | 'terminal' | 'error' | 'skipped'> => {
+      if (silent && pollInFlightRef.current) {
+        return 'skipped'
+      }
+      pollAbortRef.current?.abort()
+      const controller = new AbortController()
+      pollAbortRef.current = controller
+      pollInFlightRef.current = true
+      if (!silent) {
+        setPaymentPollingBusy(true)
+        setPaymentError('')
+      }
+      try {
+        const res = await api<CreateOrStatusPaymentResponse>(
+          `/payments/status?id=${encodeURIComponent(paymentId)}`,
+          { signal: controller.signal, timeoutMs: 12_000 },
+        )
+        if (controller.signal.aborted) return 'skipped'
+        pollConsecutiveErrorsRef.current = 0
+        setActivePayment(res.payment)
+        setPaymentFinancial(res.financial)
+        if (['CONFIRMED', 'PARTIALLY_REFUNDED'].includes(res.payment.status)) {
+          setPaymentNotice(
+            'Giao dịch đã được xác nhận thành công! Trạng thái đơn thuê đã cập nhật.',
+          )
+          setSuccess('Đã xác nhận thanh toán trực tuyến thành công.')
+          setRetry((r) => r + 1)
+          return 'terminal'
+        } else if (res.payment.status === 'EXPIRED') {
+          setPaymentNotice('Mã thanh toán đã hết hạn. Bạn có thể tạo mã thanh toán mới.')
+          setRetry((r) => r + 1)
+          return 'terminal'
+        } else if (res.payment.status === 'FAILED') {
+          setPaymentError(
+            res.payment.failureReason || 'Giao dịch không thành công hoặc cần đối soát số tiền.',
+          )
+          setRetry((r) => r + 1)
+          return 'terminal'
+        } else if (['CANCELLED', 'REFUNDED', 'REVIEW_REQUIRED'].includes(res.payment.status)) {
+          setRetry((r) => r + 1)
+          return 'terminal'
+        } else if (!silent) {
+          setPaymentNotice(
+            'Hệ thống đang chờ ghi nhận giao dịch từ ngân hàng. Nếu bạn vừa chuyển khoản, vui lòng đợi thêm ít giây.',
+          )
+        }
+        return 'ok'
+      } catch (e) {
+        if (controller.signal.aborted || (e instanceof Error && e.name === 'AbortError')) {
+          return 'skipped'
+        }
+        pollConsecutiveErrorsRef.current += 1
+        const isTimeout =
+          e instanceof RequestError && (e.code === 'REQUEST_TIMEOUT' || e.status === 408)
+        if (!silent) {
+          setPaymentError(
+            isTimeout
+              ? 'Kết nối kiểm tra giao dịch đang chậm. Giao dịch có thể vẫn đang được ngân hàng xử lý — vui lòng bấm "Kiểm tra lại trạng thái" sau ít giây và không chuyển khoản trùng lặp.'
+              : (e as Error).message || 'Không thể kiểm tra trạng thái lúc này. Vui lòng thử lại.',
+          )
+        }
+        return 'error'
+      } finally {
+        pollInFlightRef.current = false
+        if (pollAbortRef.current === controller) {
+          pollAbortRef.current = null
+        }
+        if (!silent && !controller.signal.aborted) {
+          setPaymentPollingBusy(false)
+        }
+      }
+    },
+    [],
+  )
+
+  async function handleCancelActivePayment() {
+    if (!activePayment || paymentBusy) return
+    setPaymentBusy(true)
+    setPaymentError('')
+    setPaymentNotice('')
+    try {
+      await api('/payments/cancel', {
+        method: 'POST',
+        body: JSON.stringify({
+          paymentId: activePayment.id,
+          reason: 'Khách hàng hủy hoặc đổi hạng mục thanh toán',
+        }),
+      })
+      setActivePayment((prev) => (prev ? { ...prev, status: 'CANCELLED' } : null))
+      setPaymentNotice('Đã hủy mã thanh toán hiện tại. Bạn có thể chọn hạng mục để tạo mã mới.')
+      setRetry((r) => r + 1)
+    } catch (e) {
+      setPaymentError((e as Error).message)
+    } finally {
+      setPaymentBusy(false)
+    }
+  }
+
+  async function handleMockSimulate(
+    outcome: 'SUCCESS' | 'UNDERPAID' | 'OVERPAID' | 'FAILED' | 'EXPIRED',
+  ) {
+    if (!activePayment || paymentSimulating) return
+    setPaymentSimulating(true)
+    setPaymentError('')
+    setPaymentNotice('')
+    try {
+      await api('/payments/mock-simulate', {
+        method: 'POST',
+        body: JSON.stringify({
+          paymentId: activePayment.id,
+          scenario: outcome === 'SUCCESS' ? 'EXACT' : outcome,
+        }),
+      })
+      await checkActivePaymentStatus(activePayment.id, false)
+    } catch (e) {
+      setPaymentError((e as Error).message)
+    } finally {
+      setPaymentSimulating(false)
+    }
+  }
+
+  async function copyPaymentText(field: string, value: string) {
+    if (!value) return
+    try {
+      if (typeof navigator !== 'undefined' && navigator.clipboard) {
+        await navigator.clipboard.writeText(value)
+      }
+      setCopiedField(field)
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current)
+      copyTimerRef.current = setTimeout(() => {
+        setCopiedField((curr) => (curr === field ? '' : curr))
+      }, 2200)
+    } catch {
+      setCopiedField(field)
+    }
+  }
+
+  useEffect(() => {
+    return () => {
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current)
+      pollAbortRef.current?.abort()
+    }
+  }, [])
+
+  // Countdown timer for active PENDING / PROCESSING payment (fires expiry status check at most ONCE per payment)
+  useEffect(() => {
+    if (
+      !paymentBooking ||
+      !activePayment?.id ||
+      !activePayment?.expiresAt ||
+      !['PENDING', 'PROCESSING'].includes(activePayment.status)
+    ) {
+      setCountdownSeconds(null)
+      return
+    }
+    const paymentId = activePayment.id
+    const expiresAt = activePayment.expiresAt
+    let timer: ReturnType<typeof setInterval> | null = null
+
+    const updateRemaining = () => {
+      const expMs = Date.parse(expiresAt)
+      if (!Number.isFinite(expMs)) {
+        setCountdownSeconds(null)
+        return
+      }
+      const diffSec = Math.max(0, Math.floor((expMs - Date.now()) / 1000))
+      setCountdownSeconds(diffSec)
+      if (diffSec === 0) {
+        if (timer) {
+          clearInterval(timer)
+          timer = null
+        }
+        if (expiredCheckSentForRef.current !== paymentId) {
+          expiredCheckSentForRef.current = paymentId
+          void checkActivePaymentStatus(paymentId, true)
+        }
+      }
+    }
+    updateRemaining()
+    timer = setInterval(updateRemaining, 1000)
+    return () => {
+      if (timer) clearInterval(timer)
+    }
+  }, [
+    paymentBooking,
+    activePayment?.id,
+    activePayment?.expiresAt,
+    activePayment?.status,
+    checkActivePaymentStatus,
+  ])
+
+  // Smart Polling: bounded (45 attempts), single in-flight, exponential backoff on network/5xx errors,
+  // stops after 5 consecutive errors (user can manually retry; never auto-creates duplicate payment),
+  // pauses on hidden tab and resumes cleanly on visibility return.
+  useEffect(() => {
+    if (
+      !paymentBooking ||
+      !activePayment?.id ||
+      !['PENDING', 'PROCESSING'].includes(activePayment.status)
+    ) {
+      pollAbortRef.current?.abort()
+      return
+    }
+    const paymentId = activePayment.id
+    let cancelled = false
+    let timer: ReturnType<typeof setTimeout> | null = null
+    const MAX_ATTEMPTS = 45
+    const MAX_CONSECUTIVE_ERRORS = 5
+    const BACKOFF_MS = [4000, 6000, 10000, 15000, 20000]
+
+    const scheduleNext = () => {
+      if (cancelled) return
+      if (pollCountRef.current >= MAX_ATTEMPTS) return
+      if (pollConsecutiveErrorsRef.current >= MAX_CONSECUTIVE_ERRORS) {
+        setPaymentError(
+          'Tạm dừng tự động cập nhật do kết nối gián đoạn. Giao dịch của bạn chưa được coi là thất bại — vui lòng bấm "Kiểm tra lại trạng thái" sau ít giây và không chuyển khoản lại.',
+        )
+        return
+      }
+      const delay =
+        BACKOFF_MS[Math.min(pollConsecutiveErrorsRef.current, BACKOFF_MS.length - 1)] ?? 4000
+      timer = setTimeout(runPoll, delay)
+    }
+
+    const runPoll = async () => {
+      if (cancelled) return
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+        scheduleNext()
+        return
+      }
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+        scheduleNext()
+        return
+      }
+      if (pollCountRef.current >= MAX_ATTEMPTS) return
+      pollCountRef.current += 1
+      const outcome = await checkActivePaymentStatus(paymentId, true)
+      if (cancelled || outcome === 'terminal') return
+      scheduleNext()
+    }
+
+    const onVisibilityReturn = () => {
+      if (cancelled || document.visibilityState !== 'visible') return
+      if (pollConsecutiveErrorsRef.current >= MAX_CONSECUTIVE_ERRORS) return
+      if (pollCountRef.current >= MAX_ATTEMPTS) return
+      if (timer) {
+        clearTimeout(timer)
+        timer = null
+      }
+      void runPoll()
+    }
+
+    document.addEventListener('visibilitychange', onVisibilityReturn)
+    scheduleNext()
+
+    return () => {
+      cancelled = true
+      if (timer) clearTimeout(timer)
+      document.removeEventListener('visibilitychange', onVisibilityReturn)
+      pollAbortRef.current?.abort()
+    }
+  }, [paymentBooking, activePayment?.id, activePayment?.status, checkActivePaymentStatus])
+
   if (authLoading) return <Skeleton className="h-64" />
   if (isAdmin && user)
     return (
@@ -691,6 +1142,38 @@ function BookingsPanelInner() {
           {data.docs.map((booking) => {
             const canEdit = booking.status === 'PENDING' && booking.canModify !== false
             const canCancel = ['PENDING', 'DEPOSIT_PENDING'].includes(booking.status)
+            const fin = booking.financial
+            const paySummary = fin?.paymentStatusSummary ?? booking.paymentStatusSummary ?? 'UNPAID'
+            const pendingPayment = (booking.payments ?? []).find(
+              (p) => p.status === 'PENDING' || p.status === 'PROCESSING',
+            )
+            const hasFailedOrExpired = (booking.payments ?? []).some((p) =>
+              ['FAILED', 'EXPIRED', 'CANCELLED'].includes(p.status),
+            )
+            const depositGate = canInitiateOnlinePayment({
+              isLoggedIn: true,
+              isCustomer: true,
+              isOwner: true,
+              bookingStatus: booking.status,
+              paymentType: 'DEPOSIT',
+              requestedAmount: fin?.remainingDepositDue ?? booking.initialPaymentDue,
+              onlinePaymentEnabled: true,
+              providerConfigured: true,
+            })
+            const rentalGate = canInitiateOnlinePayment({
+              isLoggedIn: true,
+              isCustomer: true,
+              isOwner: true,
+              bookingStatus: booking.status,
+              paymentType: 'RENTAL_FEE',
+              requestedAmount: fin?.totalRemainingRentalObligation ?? booking.remainingAmount,
+              onlinePaymentEnabled: true,
+              providerConfigured: true,
+            })
+            const canPayDeposit = depositGate.allowed && (fin?.remainingDepositDue ?? 0) > 0
+            const canPayRemaining =
+              rentalGate.allowed && !canPayDeposit && (fin?.totalRemainingRentalObligation ?? 0) > 0
+
             return (
               <article
                 key={booking.id}
@@ -710,10 +1193,15 @@ function BookingsPanelInner() {
                       {booking.pickupLocation ? ` · ${booking.pickupLocation}` : ''}
                     </Text>
                   </div>
-                  <StatusBadge status={booking.status} />
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge tone={paymentSummaryTone(paySummary)}>
+                      {paymentSummaryLabels[paySummary] ?? paySummary}
+                    </Badge>
+                    <StatusBadge status={booking.status} />
+                  </div>
                 </div>
 
-                <div className="mt-5 grid gap-4 rounded-control bg-subtle p-4 sm:grid-cols-4">
+                <div className="mt-5 grid gap-4 rounded-control bg-subtle p-4 sm:grid-cols-2 lg:grid-cols-5">
                   <div>
                     <Text className="mb-1 text-caption text-muted">Nhận xe</Text>
                     <Text className="text-small font-medium">
@@ -735,6 +1223,18 @@ function BookingsPanelInner() {
                     </Text>
                   </div>
                   <div>
+                    <Text className="mb-1 text-caption text-muted">Đã thanh toán / Còn lại</Text>
+                    <Text className="text-small font-medium">
+                      <span className="text-brand">
+                        {formatVnd(fin?.rentalRevenueCollected ?? 0)}
+                      </span>{' '}
+                      /{' '}
+                      <span>
+                        {formatVnd(fin?.totalRemainingRentalObligation ?? booking.totalPrice)}
+                      </span>
+                    </Text>
+                  </div>
+                  <div>
                     <Text className="mb-1 text-caption text-muted">Đặt cọc tách riêng</Text>
                     <Text className="text-small font-medium">
                       {booking.depositSnapshot > 0
@@ -743,6 +1243,29 @@ function BookingsPanelInner() {
                     </Text>
                   </div>
                 </div>
+
+                {pendingPayment && (
+                  <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-control border border-warning/40 bg-soft px-3.5 py-2.5 text-caption">
+                    <span>
+                      Đang có mã thanh toán{' '}
+                      <strong>
+                        {paymentTypeLabels[pendingPayment.paymentType] ??
+                          pendingPayment.paymentType}
+                      </strong>{' '}
+                      ({formatVnd(pendingPayment.expectedAmount)}) chờ chuyển khoản
+                      {pendingPayment.expiresAt
+                        ? ` · Hạn: ${new Date(pendingPayment.expiresAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}`
+                        : ''}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => void openPaymentModal(booking)}
+                      className="font-semibold text-brand hover:underline"
+                    >
+                      Mở mã QR & Kiểm tra giao dịch →
+                    </button>
+                  </div>
+                )}
 
                 {booking.status === 'CONFIRMED' && booking.expectedContactDate && (
                   <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-control bg-soft px-3.5 py-2.5 text-caption">
@@ -768,7 +1291,18 @@ function BookingsPanelInner() {
 
                 <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4">
                   <div className="flex flex-wrap items-center gap-3 text-micro text-muted">
-                    <span>Thanh toán ngoài hệ thống · Chưa thu tiền tự động.</span>
+                    <span>
+                      {booking.status === 'PENDING'
+                        ? 'Đơn đang chờ NORI duyệt trước khi mở thanh toán đặt cọc trực tuyến.'
+                        : paySummary === 'PAID_IN_FULL'
+                          ? 'Đã hoàn tất nghĩa vụ thanh toán tiền thuê xe.'
+                          : (fin?.remainingDepositDue ?? 0) > 0 &&
+                              ['DEPOSIT_PENDING', 'CONFIRMED', 'READY_FOR_HANDOVER'].includes(
+                                booking.status,
+                              )
+                            ? `Cần đặt cọc giữ xe: ${formatVnd(fin?.remainingDepositDue ?? 0)} qua VietQR / SePay.`
+                            : 'Thanh toán trực tuyến VietQR / SePay hoặc đối soát tại quầy.'}
+                    </span>
                     {!canEdit &&
                       !['CANCELLED', 'REJECTED', 'COMPLETED'].includes(booking.status) && (
                         <NoriLink
@@ -788,8 +1322,49 @@ function BookingsPanelInner() {
                       className="text-caption"
                     >
                       <Icon name="eye" className="size-4" />
-                      Xem chi tiết
+                      {(booking.payments?.length ?? 0) > 0
+                        ? 'Xem chi tiết & Biên nhận'
+                        : 'Xem chi tiết'}
                     </Button>
+
+                    {pendingPayment ? (
+                      <Button
+                        size="sm"
+                        onClick={() => void openPaymentModal(booking)}
+                        className="text-caption"
+                      >
+                        <Icon name="wallet" className="size-4" />
+                        Kiểm tra giao dịch / Mã QR
+                      </Button>
+                    ) : canPayDeposit ? (
+                      <>
+                        <Button
+                          size="sm"
+                          onClick={() => void openPaymentModal(booking, 'DEPOSIT')}
+                          className="text-caption"
+                        >
+                          <Icon name="wallet" className="size-4" />
+                          {hasFailedOrExpired ? 'Thanh toán lại đặt cọc' : 'Thanh toán đặt cọc'}
+                        </Button>
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => void openPaymentModal(booking, 'FULL_PAYMENT')}
+                          className="text-caption"
+                        >
+                          Thanh toán toàn bộ
+                        </Button>
+                      </>
+                    ) : canPayRemaining ? (
+                      <Button
+                        size="sm"
+                        onClick={() => void openPaymentModal(booking, 'RENTAL_FEE')}
+                        className="text-caption"
+                      >
+                        <Icon name="wallet" className="size-4" />
+                        {hasFailedOrExpired ? 'Thanh toán lại' : 'Thanh toán phần còn lại'}
+                      </Button>
+                    ) : null}
 
                     {canEdit && (
                       <Button
@@ -930,9 +1505,110 @@ function BookingsPanelInner() {
                 <p className="pt-1 font-semibold text-brand">
                   Tổng tiền thuê dự kiến: {formatVnd(detailBooking.totalPrice)}
                 </p>
+                {detailBooking.financial && (
+                  <>
+                    <p>
+                      Cọc giữ chỗ cần đóng:{' '}
+                      <strong>
+                        {formatVnd(detailBooking.financial.reservationDepositRequired)}
+                      </strong>
+                    </p>
+                    <p className="text-brand">
+                      Đã thanh toán tiền thuê:{' '}
+                      <strong>{formatVnd(detailBooking.financial.rentalRevenueCollected)}</strong>
+                    </p>
+                    <p>
+                      Còn phải trả:{' '}
+                      <strong>
+                        {formatVnd(detailBooking.financial.totalRemainingRentalObligation)}
+                      </strong>
+                    </p>
+                    {detailBooking.financial.totalRefundedAmount > 0 && (
+                      <p className="text-warning">
+                        Đã hoàn tiền:{' '}
+                        <strong>{formatVnd(detailBooking.financial.totalRefundedAmount)}</strong>
+                      </p>
+                    )}
+                  </>
+                )}
                 <p>Tiền đặt cọc tách riêng: {formatMoney(detailBooking.depositSnapshot)}</p>
               </div>
             </div>
+
+            {detailBooking.payments && detailBooking.payments.length > 0 && (
+              <div className="space-y-2.5 rounded-control border border-line p-4">
+                <Text className="font-semibold text-ink">
+                  Lịch sử giao dịch & Biên nhận ({detailBooking.payments.length})
+                </Text>
+                <div className="space-y-2">
+                  {detailBooking.payments.map((p: PaymentItemView) => (
+                    <div
+                      key={p.id}
+                      className="flex flex-wrap items-center justify-between gap-2 rounded-control bg-subtle p-3 text-caption"
+                    >
+                      <div>
+                        <p className="font-semibold text-ink">
+                          {p.reference} · {paymentTypeLabels[p.paymentType] ?? p.paymentType}
+                        </p>
+                        <p className="text-micro text-muted">
+                          {paymentMethodLabels[p.method] ?? p.method} ({p.provider}) · Tạo lúc{' '}
+                          {new Date(p.createdAt).toLocaleString('vi-VN')}
+                          {p.providerTransactionId ? ` · Mã NH: ${p.providerTransactionId}` : ''}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <p className="font-semibold text-brand">
+                          {formatVnd(p.receivedAmount > 0 ? p.receivedAmount : p.expectedAmount)}
+                        </p>
+                        <Badge
+                          tone={
+                            p.status === 'CONFIRMED'
+                              ? 'brand'
+                              : p.status === 'PENDING'
+                                ? 'warning'
+                                : p.status === 'FAILED'
+                                  ? 'danger'
+                                  : 'muted'
+                          }
+                        >
+                          {paymentStatusLabels[p.status] ?? p.status}
+                        </Badge>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {detailBooking.refunds && detailBooking.refunds.length > 0 && (
+              <div className="space-y-2.5 rounded-control border border-line p-4">
+                <Text className="font-semibold text-ink">
+                  Lịch sử hoàn tiền ({detailBooking.refunds.length})
+                </Text>
+                <div className="space-y-2">
+                  {detailBooking.refunds.map((r) => (
+                    <div
+                      key={r.id}
+                      className="flex flex-wrap items-center justify-between gap-2 rounded-control bg-subtle p-3 text-caption"
+                    >
+                      <div>
+                        <p className="font-semibold text-ink">
+                          {r.reference} ·{' '}
+                          {r.refundType === 'FULL' ? 'Hoàn toàn bộ' : 'Hoàn một phần'}
+                        </p>
+                        <p className="text-micro text-muted">Lý do: {r.reason}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="font-semibold text-brand">{formatVnd(r.amount)}</p>
+                        <Badge tone={r.status === 'COMPLETED' ? 'brand' : 'warning'}>
+                          {refundStatusLabels[r.status] ?? r.status}
+                        </Badge>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {detailBooking.note && (
               <div className="rounded-control bg-subtle p-3.5 text-caption">
@@ -1349,6 +2025,440 @@ function BookingsPanelInner() {
               </>
             )}
           </form>
+        )}
+      </Dialog>
+
+      {/* Online Payment Screen Dialog (VietQR / SePay / Mock Sandbox) */}
+      <Dialog
+        open={Boolean(paymentBooking)}
+        onClose={() => {
+          if (!paymentBusy && !paymentSimulating) {
+            setPaymentBooking(null)
+            setActivePayment(null)
+          }
+        }}
+        title={`Thanh toán trực tuyến · Đơn ${paymentBooking?.bookingKey.slice(0, 11).toUpperCase() ?? ''}`}
+        wide
+      >
+        {paymentBooking && (
+          <div className="space-y-5 text-small" data-testid="online-payment-dialog">
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-card bg-subtle p-4">
+              <div>
+                <Heading as="h3" size="subtitle">
+                  {paymentBooking.modelName} ({paymentBooking.reference})
+                </Heading>
+                <Text className="mt-0.5 text-caption text-muted">
+                  Mã đơn: {paymentBooking.bookingKey.slice(0, 11).toUpperCase()} · Nhận{' '}
+                  {formatDate(paymentBooking.startDate)} — Trả {formatDate(paymentBooking.endDate)}
+                </Text>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                {activePayment && (
+                  <Badge tone="muted">
+                    {activePayment.provider} · {activePayment.environment}
+                  </Badge>
+                )}
+                <StatusBadge status={paymentBooking.status} />
+              </div>
+            </div>
+
+            {/* Payment Item Selector */}
+            {paymentFinancial && (
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-control border border-line p-3.5">
+                <div className="space-y-0.5 text-caption">
+                  <p>
+                    Tổng tiền thuê: <strong>{formatVnd(paymentBooking.totalPrice)}</strong> · Đã
+                    thu:{' '}
+                    <strong className="text-brand">
+                      {formatVnd(paymentFinancial.rentalRevenueCollected)}
+                    </strong>{' '}
+                    · Còn phải trả:{' '}
+                    <strong>{formatVnd(paymentFinancial.totalRemainingRentalObligation)}</strong>
+                  </p>
+                  <p className="text-micro text-muted">
+                    Cọc giữ chỗ yêu cầu: {formatVnd(paymentFinancial.reservationDepositRequired)}{' '}
+                    (Còn thiếu: {formatVnd(paymentFinancial.remainingDepositDue)})
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {paymentFinancial.remainingDepositDue > 0 && (
+                    <Button
+                      size="sm"
+                      variant={paymentTypeChoice === 'DEPOSIT' ? 'primary' : 'secondary'}
+                      disabled={paymentBusy}
+                      onClick={() => {
+                        setPaymentTypeChoice('DEPOSIT')
+                        void createOrLoadPaymentSession(paymentBooking, 'DEPOSIT')
+                      }}
+                    >
+                      Đặt cọc ({formatVnd(paymentFinancial.remainingDepositDue)})
+                    </Button>
+                  )}
+                  {paymentFinancial.totalRemainingRentalObligation > 0 && (
+                    <Button
+                      size="sm"
+                      variant={
+                        paymentTypeChoice === 'FULL_PAYMENT' || paymentTypeChoice === 'RENTAL_FEE'
+                          ? 'primary'
+                          : 'secondary'
+                      }
+                      disabled={paymentBusy}
+                      onClick={() => {
+                        const nextType =
+                          paymentFinancial.paidDepositAmount === 0 ? 'FULL_PAYMENT' : 'RENTAL_FEE'
+                        setPaymentTypeChoice(nextType)
+                        void createOrLoadPaymentSession(paymentBooking, nextType)
+                      }}
+                    >
+                      {paymentFinancial.paidDepositAmount === 0
+                        ? `Thanh toán toàn bộ (${formatVnd(paymentFinancial.totalRemainingRentalObligation)})`
+                        : `Thanh toán phần còn lại (${formatVnd(paymentFinancial.totalRemainingRentalObligation)})`}
+                    </Button>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {paymentError && <Notice tone="error">{paymentError}</Notice>}
+            {paymentNotice && <Notice tone="info">{paymentNotice}</Notice>}
+
+            {paymentBusy && !activePayment ? (
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Skeleton className="h-72" />
+                <Skeleton className="h-72" />
+              </div>
+            ) : activePayment ? (
+              <div className="space-y-5">
+                {['CONFIRMED', 'PARTIALLY_REFUNDED'].includes(activePayment.status) ? (
+                  <div
+                    className="rounded-card border border-brand bg-brand-soft p-6 text-center"
+                    data-testid="payment-confirmed-banner"
+                  >
+                    <div className="mx-auto mb-3 flex size-12 items-center justify-center rounded-pill bg-brand text-canvas">
+                      <Icon name="check" className="size-6" />
+                    </div>
+                    <Heading as="h4" size="subtitle" className="text-brand">
+                      Thanh toán đã được xác thực thành công
+                    </Heading>
+                    <Text className="mt-2 text-small">
+                      Mã giao dịch <strong>{activePayment.reference}</strong> · Số tiền đã ghi nhận:{' '}
+                      <strong className="text-brand">
+                        {formatVnd(
+                          activePayment.receivedAmount > 0
+                            ? activePayment.receivedAmount
+                            : activePayment.expectedAmount,
+                        )}
+                      </strong>
+                    </Text>
+                    {activePayment.paidAt && (
+                      <Text className="mt-1 text-micro text-muted">
+                        Thời gian xác nhận: {new Date(activePayment.paidAt).toLocaleString('vi-VN')}
+                      </Text>
+                    )}
+                  </div>
+                ) : (
+                  <div className="grid gap-5 md:grid-cols-2">
+                    {/* Left Column: Dynamic VietQR Code */}
+                    <div className="flex flex-col items-center justify-between rounded-card border border-line bg-subtle p-5 text-center">
+                      <div className="w-full">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <Badge tone="brand">VietQR · {activePayment.bankCode}</Badge>
+                          <Badge
+                            tone={
+                              activePayment.status === 'PENDING'
+                                ? 'warning'
+                                : activePayment.status === 'FAILED'
+                                  ? 'danger'
+                                  : 'muted'
+                            }
+                          >
+                            {paymentStatusLabels[activePayment.status] ?? activePayment.status}
+                          </Badge>
+                        </div>
+                        <Text className="mt-3 font-semibold text-ink">
+                          Quét mã VietQR bằng ứng dụng Ngân hàng
+                        </Text>
+                        <Text className="mt-0.5 text-micro text-muted">
+                          Số tiền và nội dung chuyển khoản được điền tự động chính xác
+                        </Text>
+                      </div>
+
+                      <div className="my-4 flex w-full max-w-[240px] items-center justify-center rounded-card border border-line bg-canvas p-3 shadow-sm">
+                        {activePayment.qrImageUrl || activePayment.qrSvgDataUri ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={activePayment.qrSvgDataUri || activePayment.qrImageUrl || ''}
+                            alt={`Mã VietQR thanh toán ${activePayment.reference}`}
+                            className="aspect-square h-auto w-full max-w-[216px] object-contain"
+                          />
+                        ) : (
+                          <div className="flex aspect-square w-full items-center justify-center text-caption text-muted">
+                            Chuyển khoản theo thông tin bên cạnh
+                          </div>
+                        )}
+                      </div>
+
+                      {countdownSeconds !== null &&
+                        ['PENDING', 'PROCESSING'].includes(activePayment.status) && (
+                          <div className="w-full rounded-control bg-canvas px-3 py-2 text-caption">
+                            Thời gian hiệu lực còn lại:{' '}
+                            <strong
+                              className={
+                                countdownSeconds < 120 ? 'text-danger' : 'font-mono text-brand'
+                              }
+                            >
+                              {formatCountdown(countdownSeconds)}
+                            </strong>
+                          </div>
+                        )}
+                    </div>
+
+                    {/* Right Column: Bank Transfer Details & Copy Controls */}
+                    <div className="flex flex-col justify-between space-y-4 rounded-card border border-line p-5">
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between border-b border-line pb-2.5">
+                          <span className="text-caption text-muted">Hạng mục</span>
+                          <span className="font-semibold text-ink">
+                            {paymentTypeLabels[activePayment.paymentType] ??
+                              activePayment.paymentType}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center justify-between border-b border-line pb-2.5">
+                          <span className="text-caption text-muted">Ngân hàng thụ hưởng</span>
+                          <span className="font-semibold text-ink">
+                            {activePayment.bankName || activePayment.bankCode} (
+                            {activePayment.bankCode})
+                          </span>
+                        </div>
+
+                        <div className="flex items-center justify-between gap-2 border-b border-line pb-2.5">
+                          <div>
+                            <span className="block text-caption text-muted">Số tài khoản</span>
+                            <span
+                              className="font-mono font-semibold text-ink"
+                              data-testid="payment-bank-account"
+                            >
+                              {activePayment.bankAccountNumber}
+                            </span>
+                          </div>
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            onClick={() =>
+                              void copyPaymentText('account', activePayment.bankAccountNumber)
+                            }
+                          >
+                            {copiedField === 'account' ? 'Đã sao chép' : 'Sao chép STK'}
+                          </Button>
+                        </div>
+
+                        <div className="flex items-center justify-between border-b border-line pb-2.5">
+                          <span className="text-caption text-muted">Chủ tài khoản</span>
+                          <span className="text-right font-semibold text-ink">
+                            {activePayment.bankAccountName}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center justify-between gap-2 border-b border-line pb-2.5">
+                          <div>
+                            <span className="block text-caption text-muted">
+                              Số tiền cần chuyển (VNĐ)
+                            </span>
+                            <span
+                              className="text-subtitle font-semibold text-brand"
+                              data-testid="payment-expected-amount"
+                            >
+                              {formatVnd(activePayment.expectedAmount)}
+                            </span>
+                          </div>
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            onClick={() =>
+                              void copyPaymentText('amount', String(activePayment.expectedAmount))
+                            }
+                          >
+                            {copiedField === 'amount' ? 'Đã sao chép' : 'Sao chép số tiền'}
+                          </Button>
+                        </div>
+
+                        <div className="flex items-center justify-between gap-2 rounded-control bg-subtle p-3">
+                          <div>
+                            <span className="block text-micro text-muted">
+                              Nội dung chuyển khoản bắt buộc
+                            </span>
+                            <span
+                              className="font-mono font-semibold text-brand"
+                              data-testid="payment-transfer-content"
+                            >
+                              {activePayment.transferContent}
+                            </span>
+                          </div>
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            onClick={() =>
+                              void copyPaymentText('content', activePayment.transferContent)
+                            }
+                          >
+                            {copiedField === 'content' ? 'Đã sao chép' : 'Sao chép nội dung'}
+                          </Button>
+                        </div>
+
+                        {activePayment.reconciliationStatus &&
+                          activePayment.reconciliationStatus !== 'NONE' && (
+                            <div className="rounded-control border border-warning bg-soft p-3 text-caption">
+                              <strong>Trạng thái đối soát:</strong>{' '}
+                              {reconciliationStatusLabels[activePayment.reconciliationStatus] ??
+                                activePayment.reconciliationStatus}
+                              {activePayment.receivedAmount > 0 && (
+                                <span>
+                                  {' '}
+                                  · Đã nhận: {formatVnd(activePayment.receivedAmount)} / Yêu cầu:{' '}
+                                  {formatVnd(activePayment.expectedAmount)}
+                                </span>
+                              )}
+                            </div>
+                          )}
+                      </div>
+
+                      <div className="space-y-1.5 rounded-control bg-subtle p-3 text-micro text-muted">
+                        <p className="font-semibold text-ink">Hướng dẫn thanh toán:</p>
+                        <p>1. Mở ứng dụng Ngân hàng và quét mã VietQR bên trái.</p>
+                        <p>
+                          2. Giữ nguyên nội dung chuyển khoản{' '}
+                          <strong>{activePayment.transferContent}</strong> để hệ thống tự động đối
+                          soát trong 3–10 giây.
+                        </p>
+                        <p>
+                          3. Màn hình này tự động cập nhật ngay khi nhận xác nhận từ cổng thanh
+                          toán.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Controlled Mock Provider Simulator (ONLY available in MOCK environment) */}
+                {activePayment.environment === 'MOCK' &&
+                  ['PENDING', 'PROCESSING', 'FAILED', 'EXPIRED'].includes(activePayment.status) && (
+                    <div
+                      className="rounded-card border border-brand/40 bg-soft p-4"
+                      data-testid="mock-payment-simulator"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div>
+                          <Text className="text-caption font-semibold text-ink">
+                            Bộ mô phỏng Webhook SePay / VietQR (Chế độ MOCK kiểm thử)
+                          </Text>
+                          <Text className="text-micro text-muted">
+                            Kích hoạt luồng xử lý Webhook thực tế tại Backend để kiểm thử xác nhận
+                            tự động và đối soát chênh lệch.
+                          </Text>
+                        </div>
+                        <Badge tone="warning">MOCK SANDBOX</Badge>
+                      </div>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <Button
+                          size="sm"
+                          loading={paymentSimulating}
+                          disabled={
+                            paymentSimulating ||
+                            !['PENDING', 'PROCESSING'].includes(activePayment.status)
+                          }
+                          onClick={() => void handleMockSimulate('SUCCESS')}
+                        >
+                          Mô phỏng chuyển khoản thành công (
+                          {formatVnd(activePayment.expectedAmount)})
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          loading={paymentSimulating}
+                          disabled={
+                            paymentSimulating ||
+                            !['PENDING', 'PROCESSING'].includes(activePayment.status)
+                          }
+                          onClick={() => void handleMockSimulate('UNDERPAID')}
+                        >
+                          Mô phỏng chuyển thiếu tiền
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          loading={paymentSimulating}
+                          disabled={
+                            paymentSimulating ||
+                            !['PENDING', 'PROCESSING'].includes(activePayment.status)
+                          }
+                          onClick={() => void handleMockSimulate('OVERPAID')}
+                        >
+                          Mô phỏng chuyển dư tiền
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          loading={paymentSimulating}
+                          disabled={
+                            paymentSimulating ||
+                            !['PENDING', 'PROCESSING'].includes(activePayment.status)
+                          }
+                          onClick={() => void handleMockSimulate('EXPIRED')}
+                        >
+                          Mô phỏng hết hạn
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+
+                <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line pt-3">
+                  <div className="flex flex-wrap gap-2">
+                    {['PENDING', 'PROCESSING'].includes(activePayment.status) && (
+                      <>
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          loading={paymentPollingBusy}
+                          onClick={() => void checkActivePaymentStatus(activePayment.id, false)}
+                        >
+                          Kiểm tra trạng thái
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          disabled={paymentBusy}
+                          onClick={() => void handleCancelActivePayment()}
+                        >
+                          Hủy mã thanh toán
+                        </Button>
+                      </>
+                    )}
+                    {['FAILED', 'EXPIRED', 'CANCELLED'].includes(activePayment.status) && (
+                      <Button
+                        size="sm"
+                        loading={paymentBusy}
+                        onClick={() =>
+                          void createOrLoadPaymentSession(paymentBooking, paymentTypeChoice)
+                        }
+                      >
+                        Tạo mã thanh toán mới
+                      </Button>
+                    )}
+                  </div>
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      setPaymentBooking(null)
+                      setActivePayment(null)
+                    }}
+                  >
+                    Đóng
+                  </Button>
+                </div>
+              </div>
+            ) : null}
+          </div>
         )}
       </Dialog>
 

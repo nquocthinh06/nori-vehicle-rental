@@ -2,9 +2,16 @@ import { appAuth } from '@/lib/app-auth'
 import { getPayloadClient } from '@/lib/payload'
 import { withBookingWriteLock } from '@/lib/promo-service'
 import { apiError, assertOrigin, assertRateLimit, body, fail, json, text } from '@/lib/api-utils'
-import { canModifyBooking } from '@/lib/rental-rules'
-import type { Booking } from '@/payload-types'
-import type { BookingView } from '@/lib/domain-types'
+import {
+  computeBookingFinancialsFromDb,
+  computeBookingFinancialsSync,
+  getSitePaymentConfig,
+  sweepExpiredPayments,
+  type SitePaymentConfiguration,
+} from '@/lib/payment-service'
+import { canModifyBooking, relationId, type BookingFinancialSummary } from '@/lib/rental-rules'
+import type { Booking, Payment, Refund } from '@/payload-types'
+import type { BookingView, PaymentItemView, RefundItemView } from '@/lib/domain-types'
 
 const VALID_BOOKING_STATUSES = [
   'PENDING',
@@ -18,9 +25,79 @@ const VALID_BOOKING_STATUSES = [
   'REJECTED',
 ]
 
+function toPaymentItemView(
+  p: Payment,
+  booking: Booking,
+  siteConfig?: SitePaymentConfiguration,
+): PaymentItemView {
+  return {
+    id: p.id,
+    reference: p.reference ?? p.id,
+    bookingId: booking.id,
+    bookingKey: booking.bookingKey ?? booking.id,
+    paymentType: p.paymentType,
+    method: p.method,
+    provider: p.provider ?? 'MANUAL',
+    environment: p.environment ?? siteConfig?.environment ?? 'MOCK',
+    amount: p.amount,
+    expectedAmount: p.expectedAmount ?? p.amount,
+    receivedAmount: p.receivedAmount ?? 0,
+    refundedAmount: p.refundedAmount ?? 0,
+    overpaidAmount: p.overpaidAmount ?? 0,
+    status: p.status,
+    reconciliationStatus: p.reconciliationStatus ?? 'NONE',
+    providerTransactionId: p.providerTransactionId ?? null,
+    providerPaymentRef: p.providerPaymentRef ?? null,
+    qrImageUrl: p.qrImageUrl ?? null,
+    paymentUrl: p.paymentUrl ?? null,
+    bankCode: p.bankCode ?? siteConfig?.bankConfig.bankCode ?? 'VCB',
+    bankAccountNumber:
+      p.bankAccountNumber ?? siteConfig?.bankConfig.bankAccountNumber ?? '1017588888',
+    bankAccountName:
+      p.bankAccountName ??
+      siteConfig?.bankConfig.bankAccountHolder ??
+      'CONG TY TNHH DICH VU PHUONG TIEN NORI',
+    transferContent: p.transferContent ?? p.providerPaymentRef ?? p.reference ?? p.id,
+    expiresAt: p.expiresAt ?? null,
+    verifiedAt: p.verifiedAt ?? null,
+    paidAt: p.paidAt ?? null,
+    failureReason: p.failureReason ?? null,
+    reconciliationNote: p.reconciliationNote ?? null,
+    note: p.note ?? null,
+    createdAt: p.createdAt,
+  }
+}
+
+function toRefundItemView(r: Refund, booking: Booking): RefundItemView {
+  return {
+    id: r.id,
+    reference: r.reference ?? r.id,
+    bookingId: booking.id,
+    bookingKey: booking.bookingKey ?? booking.id,
+    paymentId: relationId(r.payment) ?? null,
+    refundType: r.refundType,
+    amount: r.amount,
+    reason: r.reason,
+    status: r.status,
+    provider: r.provider ?? 'MANUAL',
+    providerRefundId: r.providerRefundId ?? null,
+    requestedAt: r.requestedAt ?? r.createdAt,
+    approvedAt: r.approvedAt ?? null,
+    completedAt: r.completedAt ?? null,
+    createdAt: r.createdAt,
+  }
+}
+
 function bookingView(
   booking: Booking,
-  paymentMeta?: { hasPaymentRecord: boolean; paymentConfirmed: boolean },
+  paymentMeta?: {
+    hasPaymentRecord: boolean
+    paymentConfirmed: boolean
+    financial?: BookingFinancialSummary
+    payments?: Payment[]
+    refunds?: Refund[]
+    siteConfig?: SitePaymentConfiguration
+  },
 ): BookingView {
   const vehicle = typeof booking.vehicle === 'object' ? booking.vehicle : null
   const modelObj = vehicle && typeof vehicle.model === 'object' ? vehicle.model : null
@@ -35,6 +112,7 @@ function bookingView(
     isOwner: true,
     hasPaymentRecord,
   })
+  const fin = paymentMeta?.financial
   return {
     id: booking.id,
     bookingKey: booking.bookingKey ?? booking.id,
@@ -66,16 +144,53 @@ function bookingView(
     deliveryFeeSnapshot: booking.deliveryFeeSnapshot ?? 0,
     addonFeeTotal: booking.addonFeeTotal ?? 0,
     discountAmount: booking.discountAmount ?? 0,
+    extraFee: booking.extraFee ?? 0,
+    extraFeeNote: booking.extraFeeNote ?? null,
     totalPrice,
     depositSnapshot: booking.depositSnapshot ?? 0,
-    initialPaymentDue: booking.initialPaymentDue ?? booking.depositSnapshot ?? 0,
-    remainingAmount: totalPrice,
+    initialPaymentDue:
+      fin?.reservationDepositRequired ?? booking.initialPaymentDue ?? booking.depositSnapshot ?? 0,
+    remainingAmount: fin?.totalRemainingRentalObligation ?? totalPrice,
     handoverNote: booking.handoverNote ?? null,
     expectedContactDate: booking.expectedContactDate ?? null,
     workingHoursSnapshot: booking.workingHoursSnapshot ?? null,
     isUrgentApproval: Boolean(booking.isUrgentApproval),
     hasPaymentRecord,
     paymentConfirmed: Boolean(paymentMeta?.paymentConfirmed),
+    paymentStatusSummary: fin?.paymentStatusSummary ?? 'UNPAID',
+    ...(fin
+      ? {
+          financial: {
+            reservationDepositRequired: fin.reservationDepositRequired,
+            securityDepositAmount: fin.securityDepositAmount,
+            paidDepositAmount: fin.paidDepositAmount,
+            paidRentalAmount: fin.paidRentalAmount,
+            paidExtraFeeAmount: fin.paidExtraFeeAmount,
+            paidSecurityDepositAmount: fin.paidSecurityDepositAmount,
+            totalVerifiedReceived: fin.totalVerifiedReceived,
+            rentalRevenueCollected: fin.rentalRevenueCollected,
+            securityDepositHeld: fin.securityDepositHeld,
+            overpaidAmount: fin.overpaidAmount,
+            totalRefundedAmount: fin.totalRefundedAmount,
+            pendingRefundAmount: fin.pendingRefundAmount,
+            netCollectedAmount: fin.netCollectedAmount,
+            remainingDepositDue: fin.remainingDepositDue,
+            remainingRentalBeforeExtra: fin.remainingRentalBeforeExtra,
+            remainingExtraFeeDue: fin.remainingExtraFeeDue,
+            totalRemainingRentalObligation: fin.totalRemainingRentalObligation,
+            remainingSecurityDepositDue: fin.remainingSecurityDepositDue,
+            refundableBalance: fin.refundableBalance,
+            paymentStatusSummary: fin.paymentStatusSummary,
+            hasPendingPayment: fin.hasPendingPayment,
+            hasAnomaly: fin.hasAnomaly,
+            activePendingPaymentId: fin.activePendingPaymentId,
+          },
+        }
+      : {}),
+    payments: (paymentMeta?.payments ?? []).map((p) =>
+      toPaymentItemView(p, booking, paymentMeta?.siteConfig),
+    ),
+    refunds: (paymentMeta?.refunds ?? []).map((r) => toRefundItemView(r, booking)),
     canModify: modCheck.allowed,
     modifyLockReason: modCheck.reason ?? null,
     statusHistory: (booking.statusHistory ?? []).map((h) => ({
@@ -117,6 +232,7 @@ export async function GET(request: Request) {
     const params = new URL(request.url).searchParams
     const singleId = params.get('id')
     const payload = await getPayloadClient()
+    const siteConfig = await getSitePaymentConfig(payload)
 
     if (singleId) {
       const booking = await payload.findByID({
@@ -126,22 +242,29 @@ export async function GET(request: Request) {
         overrideAccess: false,
         depth: 2,
       })
-      const payRes = await payload.find({
-        collection: 'payments',
-        overrideAccess: true,
-        depth: 0,
-        limit: 20,
-        where: {
-          and: [
-            { booking: { equals: booking.id } },
-            { status: { in: ['PENDING', 'CONFIRMED', 'REFUNDED'] } },
-          ],
-        },
-      })
+      await sweepExpiredPayments(payload, { bookingId: booking.id })
+      const { financial, payments, refunds } = await computeBookingFinancialsFromDb(
+        payload,
+        booking,
+        { siteConfig },
+      )
+      const activePayStatuses = [
+        'PENDING',
+        'PROCESSING',
+        'CONFIRMED',
+        'PARTIALLY_REFUNDED',
+        'REFUNDED',
+      ]
       return json(
         bookingView(booking, {
-          hasPaymentRecord: payRes.docs.length > 0,
-          paymentConfirmed: payRes.docs.some((p) => p.status === 'CONFIRMED'),
+          hasPaymentRecord: payments.some((p) => activePayStatuses.includes(p.status)),
+          paymentConfirmed: payments.some((p) =>
+            ['CONFIRMED', 'PARTIALLY_REFUNDED'].includes(p.status),
+          ),
+          financial,
+          payments,
+          refunds,
+          siteConfig,
         }),
       )
     }
@@ -165,36 +288,71 @@ export async function GET(request: Request) {
     })
 
     const bookingIds = result.docs.map((b) => b.id)
-    const payMap = new Map<string, { hasPaymentRecord: boolean; paymentConfirmed: boolean }>()
+    const payByBooking = new Map<string, Payment[]>()
+    const refundByBooking = new Map<string, Refund[]>()
     if (bookingIds.length > 0) {
-      const paymentsRes = await payload.find({
-        collection: 'payments',
-        overrideAccess: true,
-        depth: 0,
-        limit: 200,
-        where: {
-          and: [
-            { booking: { in: bookingIds } },
-            { status: { in: ['PENDING', 'CONFIRMED', 'REFUNDED'] } },
-          ],
-        },
-      })
+      await sweepExpiredPayments(payload, { bookingIds })
+      const [paymentsRes, refundsRes] = await Promise.all([
+        payload.find({
+          collection: 'payments',
+          overrideAccess: true,
+          depth: 0,
+          limit: 300,
+          sort: '-createdAt',
+          where: { booking: { in: bookingIds } },
+        }),
+        payload
+          .find({
+            collection: 'refunds',
+            overrideAccess: true,
+            depth: 0,
+            limit: 300,
+            sort: '-createdAt',
+            where: { booking: { in: bookingIds } },
+          })
+          .catch(() => ({ docs: [] as Refund[] })),
+      ])
       for (const p of paymentsRes.docs) {
-        const bId = typeof p.booking === 'object' && p.booking ? p.booking.id : p.booking
+        const bId = relationId(p.booking)
         if (!bId) continue
-        const prev = payMap.get(String(bId)) ?? {
-          hasPaymentRecord: false,
-          paymentConfirmed: false,
-        }
-        payMap.set(String(bId), {
-          hasPaymentRecord: true,
-          paymentConfirmed: prev.paymentConfirmed || p.status === 'CONFIRMED',
-        })
+        const list = payByBooking.get(String(bId)) ?? []
+        list.push(p)
+        payByBooking.set(String(bId), list)
+      }
+      for (const r of refundsRes.docs) {
+        const bId = relationId(r.booking)
+        if (!bId) continue
+        const list = refundByBooking.get(String(bId)) ?? []
+        list.push(r)
+        refundByBooking.set(String(bId), list)
       }
     }
 
+    const activePayStatuses = [
+      'PENDING',
+      'PROCESSING',
+      'CONFIRMED',
+      'PARTIALLY_REFUNDED',
+      'REFUNDED',
+    ]
+    const docs = result.docs.map((b) => {
+      const bPayments = payByBooking.get(String(b.id)) ?? []
+      const bRefunds = refundByBooking.get(String(b.id)) ?? []
+      const financial = computeBookingFinancialsSync(b, bPayments, bRefunds, siteConfig)
+      return bookingView(b, {
+        hasPaymentRecord: bPayments.some((p) => activePayStatuses.includes(p.status)),
+        paymentConfirmed: bPayments.some((p) =>
+          ['CONFIRMED', 'PARTIALLY_REFUNDED'].includes(p.status),
+        ),
+        financial,
+        payments: bPayments,
+        refunds: bRefunds,
+        siteConfig,
+      })
+    })
+
     return json({
-      docs: result.docs.map((b) => bookingView(b, payMap.get(String(b.id)))),
+      docs,
       page: result.page,
       totalPages: result.totalPages,
       totalDocs: result.totalDocs,

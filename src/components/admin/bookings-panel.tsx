@@ -11,6 +11,11 @@ import {
   formatDate,
   formatMoney,
   formatVnd,
+  paymentMethodLabels,
+  paymentStatusLabels,
+  paymentSummaryLabels,
+  paymentTypeLabels,
+  refundStatusLabels,
   type BookingStatus,
   type ConsultationStatus,
 } from '@/lib/rental-rules'
@@ -305,6 +310,27 @@ export function BookingsPanel() {
                         {b.modelName} ({b.reference})
                       </Heading>
                       <StatusBadge status={b.status} />
+                      {b.paymentStatusSummary && (
+                        <Badge
+                          tone={
+                            b.paymentStatusSummary === 'FULLY_PAID' ||
+                            b.paymentStatusSummary === 'PAID_IN_FULL'
+                              ? 'brand'
+                              : b.paymentStatusSummary === 'DEPOSIT_PAID' ||
+                                  b.paymentStatusSummary === 'PARTIALLY_PAID'
+                                ? 'warning'
+                                : b.paymentStatusSummary === 'REVIEW_REQUIRED' ||
+                                    b.paymentStatusSummary === 'DISCREPANCY_REVIEW'
+                                  ? 'danger'
+                                  : 'muted'
+                          }
+                        >
+                          {paymentSummaryLabels[b.paymentStatusSummary] ?? b.paymentStatusSummary}
+                        </Badge>
+                      )}
+                      {b.financial?.hasAnomaly && (
+                        <Badge tone="danger">Cần đối soát thanh toán</Badge>
+                      )}
                       {b.isUrgentApproval &&
                         !['CANCELLED', 'REJECTED', 'COMPLETED'].includes(b.status) && (
                           <Badge tone="warning">Đơn thuê gấp</Badge>
@@ -361,6 +387,16 @@ export function BookingsPanel() {
                       Cọc: {formatMoney(b.depositSnapshot)}
                       {b.extraFee ? ` · Phụ phí: ${formatMoney(b.extraFee)}` : ''}
                     </Text>
+                    {b.financial && (
+                      <Text className="mt-0.5 text-caption">
+                        Đã thu:{' '}
+                        <strong className="text-brand">
+                          {formatVnd(b.financial.rentalRevenueCollected)}
+                        </strong>{' '}
+                        · Còn lại:{' '}
+                        <strong>{formatVnd(b.financial.totalRemainingRentalObligation)}</strong>
+                      </Text>
+                    )}
                   </div>
                 </div>
 
@@ -466,7 +502,27 @@ export function BookingsPanel() {
             </div>
 
             <div className="rounded-control border border-line p-4">
-              <Text className="mb-2 font-semibold text-ink">Chi tiết chi phí & Đặt cọc</Text>
+              <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                <Text className="font-semibold text-ink">
+                  Chi tiết chi phí, Thanh toán & Đặt cọc
+                </Text>
+                {detail.paymentStatusSummary && (
+                  <Badge
+                    tone={
+                      detail.paymentStatusSummary === 'FULLY_PAID' ||
+                      detail.paymentStatusSummary === 'PAID_IN_FULL'
+                        ? 'brand'
+                        : detail.paymentStatusSummary === 'REVIEW_REQUIRED' ||
+                            detail.paymentStatusSummary === 'DISCREPANCY_REVIEW'
+                          ? 'danger'
+                          : 'warning'
+                    }
+                  >
+                    {paymentSummaryLabels[detail.paymentStatusSummary] ??
+                      detail.paymentStatusSummary}
+                  </Badge>
+                )}
+              </div>
               <div className="grid gap-2 sm:grid-cols-3">
                 <p>Tiền thuê cơ bản: {formatVnd(detail.baseRentPrice)}</p>
                 <p>Phụ phí cuối tuần/lễ: {formatVnd(detail.weekendSurchargeTotal)}</p>
@@ -485,12 +541,118 @@ export function BookingsPanel() {
                 <p>Tiền đặt cọc đảm bảo (tách riêng): {formatMoney(detail.depositSnapshot)}</p>
                 <p>Tiền thuê còn lại dự kiến: {formatVnd(detail.remainingAmount)}</p>
               </div>
+              {detail.financial && (
+                <div className="mt-3 grid gap-2 border-t border-line pt-3 text-caption sm:grid-cols-3">
+                  <p>
+                    Cọc giữ chỗ yêu cầu:{' '}
+                    <strong>{formatVnd(detail.financial.reservationDepositRequired)}</strong>
+                  </p>
+                  <p>
+                    Đã thu cọc giữ chỗ:{' '}
+                    <strong className="text-brand">
+                      {formatVnd(detail.financial.paidDepositAmount)}
+                    </strong>
+                  </p>
+                  <p>
+                    Đã thu tiền thuê & phụ phí:{' '}
+                    <strong className="text-brand">
+                      {formatVnd(
+                        detail.financial.paidRentalAmount + detail.financial.paidExtraFeeAmount,
+                      )}
+                    </strong>
+                  </p>
+                  <p>
+                    Tổng thực thu tiền thuê:{' '}
+                    <strong className="text-brand">
+                      {formatVnd(detail.financial.rentalRevenueCollected)}
+                    </strong>
+                  </p>
+                  <p>
+                    Còn phải thu nghĩa vụ thuê:{' '}
+                    <strong>{formatVnd(detail.financial.totalRemainingRentalObligation)}</strong>
+                  </p>
+                  <p>
+                    Đã hoàn trả:{' '}
+                    <strong className="text-warning">
+                      {formatVnd(detail.financial.totalRefundedAmount)}
+                    </strong>
+                  </p>
+                </div>
+              )}
               {detail.extraFeeNote && (
                 <Text className="mt-2 text-caption text-muted">
                   Lý do phụ phí: {detail.extraFeeNote}
                 </Text>
               )}
             </div>
+
+            {detail.payments && detail.payments.length > 0 && (
+              <div className="space-y-2 rounded-control border border-line p-4">
+                <Text className="font-semibold text-ink">
+                  Lịch sử giao dịch của đơn ({detail.payments.length})
+                </Text>
+                <div className="space-y-2">
+                  {detail.payments.map((p) => (
+                    <div
+                      key={p.id}
+                      className="flex flex-wrap items-center justify-between gap-2 rounded-control bg-subtle p-2.5 text-caption"
+                    >
+                      <div>
+                        <span className="font-semibold text-ink">{p.reference}</span> ·{' '}
+                        {paymentTypeLabels[p.paymentType] ?? p.paymentType} ·{' '}
+                        {paymentMethodLabels[p.method] ?? p.method} ({p.provider})
+                        {p.providerTransactionId ? ` · Mã NH: ${p.providerTransactionId}` : ''}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <strong className="text-brand">
+                          {formatVnd(p.receivedAmount > 0 ? p.receivedAmount : p.expectedAmount)}
+                        </strong>
+                        <Badge
+                          tone={
+                            p.status === 'CONFIRMED'
+                              ? 'brand'
+                              : p.status === 'PENDING'
+                                ? 'warning'
+                                : p.status === 'FAILED'
+                                  ? 'danger'
+                                  : 'muted'
+                          }
+                        >
+                          {paymentStatusLabels[p.status] ?? p.status}
+                        </Badge>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {detail.refunds && detail.refunds.length > 0 && (
+              <div className="space-y-2 rounded-control border border-line p-4">
+                <Text className="font-semibold text-ink">
+                  Lịch sử hoàn tiền của đơn ({detail.refunds.length})
+                </Text>
+                <div className="space-y-2">
+                  {detail.refunds.map((r) => (
+                    <div
+                      key={r.id}
+                      className="flex flex-wrap items-center justify-between gap-2 rounded-control bg-subtle p-2.5 text-caption"
+                    >
+                      <div>
+                        <span className="font-semibold text-ink">{r.reference}</span> ·{' '}
+                        {r.refundType} · Lý do: {r.reason}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <strong className="text-warning">{formatVnd(r.amount)}</strong>
+                        <Badge tone={r.status === 'COMPLETED' ? 'brand' : 'warning'}>
+                          {refundStatusLabels[r.status] ?? r.status}
+                        </Badge>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Section 10: Customer Consultation Tracking Panel */}
             <div className="rounded-card border border-brand/30 bg-soft/60 p-4 space-y-4">

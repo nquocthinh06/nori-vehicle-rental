@@ -1,6 +1,10 @@
 import { sql } from '@payloadcms/db-sqlite'
 import { APIError, type Payload, type PayloadRequest } from 'payload'
-import { evaluatePromotion, type PromoEvaluationResult, type PromoRecordLike } from './rental-rules'
+import {
+  evaluatePromotion,
+  type PromoEvaluationResult,
+  type PromoRecordLike,
+} from './rental-rules.ts'
 
 type SqlResult = { rowsAffected?: number; changes?: number }
 type SqlRunner = {
