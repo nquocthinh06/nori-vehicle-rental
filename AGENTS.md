@@ -4,6 +4,12 @@ React + Next.js + Payload + Tailwind CSS project running inside Figma Make.
 
 This file is supplied as project instructions at the start of each task. Do not
 reread it before opening source. Always load the `payload-framework` skill.
+Before editing frontend, backend, database, media, PWA, or payment code in NORI,
+also read and follow:
+
+- `SKILL.md` (`design-system-nori`) for design tokens, primitives, accessibility, and UX rules.
+- `.agents/skills/nori-performance/SKILL.md` (`nori-performance`) for mandatory performance budgets, minimal code reuse, media optimization, payment isolation, and production verification gates.
+
 Load `nextjs-docs` when the task involves routing, pages,
 components, caching, images, or metadata, not for schema-only, data-only, or style-only changes.
 Load `payload-content` before changing data.

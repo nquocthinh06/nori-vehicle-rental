@@ -95,19 +95,19 @@ graph TD
 
 ## 4. Công nghệ sử dụng
 
-| Lĩnh vực                | Công nghệ               | Phiên bản            | Vai trò                                                    |
-| :---------------------- | :---------------------- | :------------------- | :--------------------------------------------------------- |
-| **Framework**           | Next.js                 | 16.4.6               | App Router, Turbopack, Standalone deployment               |
-| **UI Library**          | React                   | 19.3.1               | Giao diện tương tác người dùng                             |
-| **Styling**             | Tailwind CSS            | 4.0.0                | Hệ thống semantic tokens, CSS biến thể mới                 |
-| **Headless CMS**        | Payload CMS             | 4.0.0-beta.8         | Quản trị dữ liệu, phân quyền và API cốt lõi                |
-| **Database**            | SQLite                  | 3.x                  | Lưu trữ dữ liệu quan hệ, transaction toàn vẹn              |
-| **Database Adapter**    | `@payloadcms/db-sqlite` | 4.0.0-beta.8         | Kết nối SQLite & Drizzle ORM                               |
-| **Runtime & Toolchain** | Node.js / pnpm          | >=24.22.1 / pnpm 10+ | Môi trường thực thi và quản lý gói phụ thuộc               |
-| **Testing Engine**      | Node Test Runner        | Node.js built-in     | Thực thi 247 Unit tests nghiệp vụ & phân quyền             |
-| **E2E Testing**         | Playwright              | 1.65.1               | 108 kịch bản E2E (Chromium Desktop/Mobile & Mobile WebKit) |
-| **A11y Testing**        | Axe Core                | 4.14.0               | Kiểm tra chuẩn tiếp cận WCAG 2.2 AA                        |
-| **Linter & Formatter**  | oxfmt & Custom AST      | 0.73.0               | Chuẩn hóa định dạng và quét bảo mật tĩnh                   |
+| Lĩnh vực                | Công nghệ               | Phiên bản            | Vai trò                                                      |
+| :---------------------- | :---------------------- | :------------------- | :----------------------------------------------------------- |
+| **Framework**           | Next.js                 | 16.4.6               | App Router, Turbopack, Standalone deployment                 |
+| **UI Library**          | React                   | 19.3.1               | Giao diện tương tác người dùng                               |
+| **Styling**             | Tailwind CSS            | 4.0.0                | Hệ thống semantic tokens, CSS biến thể mới                   |
+| **Headless CMS**        | Payload CMS             | 4.0.0-beta.8         | Quản trị dữ liệu, phân quyền và API cốt lõi                  |
+| **Database**            | SQLite                  | 3.x                  | Lưu trữ dữ liệu quan hệ, transaction toàn vẹn                |
+| **Database Adapter**    | `@payloadcms/db-sqlite` | 4.0.0-beta.8         | Kết nối SQLite & Drizzle ORM                                 |
+| **Runtime & Toolchain** | Node.js / pnpm          | >=24.22.1 / pnpm 10+ | Môi trường thực thi và quản lý gói phụ thuộc                 |
+| **Testing Engine**      | Node Test Runner        | Node.js built-in     | Thực thi 285 Unit, Integration & Payment Resilience tests    |
+| **E2E Testing**         | Playwright              | 1.65.1               | 97 kịch bản E2E cô lập DB + Media (Chromium & Mobile WebKit) |
+| **A11y Testing**        | Axe Core                | 4.14.0               | Kiểm tra chuẩn tiếp cận WCAG 2.2 AA                          |
+| **Linter & Formatter**  | oxfmt & Custom AST      | 0.73.0               | Chuẩn hóa định dạng và quét bảo mật tĩnh                     |
 
 ---
 
@@ -152,14 +152,14 @@ graph TD
 
 4. **Khởi tạo Database, Đồng bộ Snapshot & Khởi chạy Dev Server**:
    ```bash
-   # Khởi tạo cấu trúc 84 bảng SQLite
-   npm run db:migrate
+   # Khởi tạo cấu trúc 88 bảng SQLite + 7 composite indexes
+   pnpm db:migrate
 
    # Nhập bộ dữ liệu mẫu và hình ảnh mới nhất từ Snapshot
-   npm run data:import
+   pnpm data:import
 
    # Khởi tạo tài khoản Admin cục bộ an toàn
-   npm run seed:admin -- --init-env
+   pnpm seed:admin -- --init-env
 
    # Khởi chạy máy chủ phát triển
    pnpm dev
@@ -205,7 +205,7 @@ pnpm seed:admin
 
 ## 8. Hướng dẫn kiểm thử (Testing Suite)
 
-Dự án thiết lập hệ thống kiểm thử tự động toàn diện với **355 Automated Tests** (247 Unit Tests + 108 Playwright E2E Tests, 100% PASS):
+Dự án thiết lập hệ thống kiểm thử tự động toàn diện với **383 Automated Tests** (**285** Unit, Integration & Payment Resilience + **1** Isolated Admin Test + **97** Playwright E2E trên DB & Media cô lập, **100% PASS**):
 
 ```bash
 # 1. Kiểm tra định dạng mã nguồn
@@ -217,42 +217,45 @@ pnpm lint
 # 3. Kiểm tra kiểu dữ liệu TypeScript nghiêm ngặt
 pnpm typecheck
 
-# 4. Chạy toàn bộ 247 Unit Tests nghiệp vụ & RBAC
+# 4. Kiểm toán tính toàn vẹn Media & Snapshot
+pnpm media:audit
+pnpm data:validate
+
+# 5. Chạy toàn bộ 285 Unit, Integration & 10-scenario Payment Resilience Tests
 pnpm test
 
-# 5. Kiểm thử DB cô lập Admin
+# 6. Kiểm thử DB cô lập Admin
 pnpm test:admin
 
-# 6. Chạy toàn bộ 108 Playwright E2E Tests trên DB cô lập (Bảo vệ 100% nori.db)
+# 7. Chạy toàn bộ 97 Playwright E2E Tests trên DB & Media cô lập (Bảo vệ 100% nori.db & media/)
 pnpm test:e2e:isolated
+
+# 8. Chạy Load / Stress / SQLite WAL Write Concurrency Test (1–100 VUs, cô lập hoàn toàn)
+pnpm perf:load
 ```
-
-### Phân rã hệ thống kiểm thử:
-
-- **247 Unit Tests (`tests/rental-rules.test.mjs`, `tests/rbac-access.test.mjs`)**: Kiểm tra toàn diện công thức tính giá theo ngày/tuần/tháng, phụ phí ngày lễ, ma trận 9×9 trạng thái chuyển đổi đơn thuê, vòng đời voucher giảm giá (`evaluatePromotion`, `applyPromotionToQuote`), phân tách tiền cọc và tiền thuê còn lại, kiểm tra quá hạn cọc, cookie phiên động (`session-cookie.ts`) và ma trận phân quyền RBAC.
-- **108 Playwright E2E Tests (`tests/e2e/*.spec.ts` - 10 bộ kịch bản)**: Toàn trình tìm kiếm xe, xác thực & đồng bộ phiên khách hàng/Admin (`auth-session-booking-regression.spec.ts`), khuyến mãi & chống đặt trùng lúc checkout (`promo-checkout-regression.spec.ts`), quản trị Hero Carousel CMS (`hero-cms.spec.ts`), tin tức & liên kết khuyến mãi (`posts-banner.spec.ts`), duyệt đơn & bàn giao xe (`nori.spec.ts`, `upgrade-workflows.spec.ts`), kiểm toán QA tổng thể (`qa-comprehensive-audit.spec.ts`), đồng bộ dữ liệu & bảo mật (`data-sync.spec.ts`), Responsive/PWA (`mobile-pwa.spec.ts`) và Safari iOS (`mobile-webkit.spec.ts`).
 
 ---
 
-## 9. Hướng dẫn Production Build
+## 9. Hướng dẫn Production Build & Standalone
 
-Để đóng gói và chạy ứng dụng ở chế độ sản xuất:
+Để đóng gói và chạy ứng dụng ở chế độ sản xuất (khuyến nghị dùng `pnpm start:standalone`, tự động đồng bộ `.next/static`, `public/`, `libvips*.dll` trên Windows và neo đúng `nori.db` & `media/` ở thư mục gốc):
 
 ```bash
 # 1. Thực hiện biên dịch và sinh trang tĩnh
 pnpm build
 
 # 2. Khởi chạy máy chủ sản xuất (Next.js Standalone mode)
-node .next/standalone/server.js
+pnpm start:standalone
 ```
 
-Sau khi biên dịch thành công:
+Sau khi biên dịch thành công (`v2.6.1`):
 
-- **71/71 tuyến đường** được tối ưu hóa tĩnh (`○ Static` / `● SSG`).
-- Đo lường chỉ số Core Web Vitals trên máy chủ sản xuất:
-  - **CLS (Cumulative Layout Shift)**: `0.0038` (đạt xuất sắc ngưỡng chuẩn ≤ 0.1).
-  - **LCP (Largest Contentful Paint)**: `516 ms` (chuẩn < 2500 ms).
-  - **INP (Interaction to Next Paint)**: `40 ms` (chuẩn < 200 ms).
+- **87/87 tuyến đường công khai** được prerender tĩnh (`○ Static` / `● SSG`), `0` cảnh báo Turbopack, `0` lỗi TypeScript.
+- Đo lường Lab Metrics trên Production Build cô lập (5 lượt đo/route; Field RUM p75 chưa khả dụng do chưa có traffic thật):
+  - **Desktop `/`**: LCP `252 ms`, CLS `0.0026`, TBT `0 ms`, Images `332.2 KB` (`-78.4%`).
+  - **Desktop `/vehicles`**: LCP `332 ms`, CLS `0.0005`, Doc `14.2 KB` (`-60.4%`), Images `670.8 KB` (`-77.3%`).
+  - **Mobile `/vehicles/toyota-fortuner` (375px, Slow 4G, 4× CPU)**: LCP `1,876 ms` (`-41.1%`), CLS `0`, Images `85.1 KB` (`-73.7%`).
+  - **Load Test Standalone (`100 VUs`)**: `669.5 req/s`, `314.3 ms p95`, `0.00%` lỗi, `0` `SQLITE_BUSY`.
 
 ---
 
@@ -262,24 +265,24 @@ Dự án trang bị bộ công cụ đồng bộ dữ liệu nhóm (`data/snapsh
 
 ```bash
 # Kiểm tra trạng thái đồng bộ giữa Database cục bộ và Git Snapshot
-npm run data:status
+pnpm data:status
 
 # Xuất dữ liệu công khai & hình ảnh mới từ Admin ra Snapshot để chia sẻ qua GitHub
-npm run data:export
+pnpm data:export
 
 # Kiểm tra tính toàn vẹn JSON, khóa ngoại, checksum ảnh và quét chặn dữ liệu nhạy cảm
-npm run data:validate
-npm run media:validate
+pnpm data:validate
+pnpm media:audit
 
 # Xem trước thay đổi (Dry Run) và nhập dữ liệu từ Snapshot sau khi git pull
-npm run data:import -- --dry-run
-npm run data:sync
+pnpm data:import -- --dry-run
+pnpm data:sync
 
 # Sao lưu nhất quán (SQLite VACUUM INTO + Media files + SHA-256 Manifest)
-npm run data:backup
+pnpm data:backup
 
 # Khôi phục Database & Media từ bản sao lưu
-npm run data:restore
+pnpm data:restore
 ```
 
 Quản trị viên cấp cao (`SUPER_ADMIN`) cũng có thể theo dõi trạng thái đồng bộ, kiểm tra toàn vẹn, xuất/nhập Snapshot và tạo/khôi phục bản sao lưu trực tiếp trên giao diện **Quản trị hệ thống → Đồng bộ & Sao lưu dữ liệu** (`/dashboard/system`).
@@ -289,7 +292,7 @@ Quản trị viên cấp cao (`SUPER_ADMIN`) cũng có thể theo dõi trạng t
 ## 11. Các giới hạn hiện tại
 
 1. **Dữ liệu Xe Minh Họa**: Toàn bộ 21 cá thể xe trong kho hiện được gắn nhãn `DEMO` (`isDemo: true`) để phục vụ kiểm thử và nghiệm thu giao diện. Doanh nghiệp cần cập nhật xe thực tế qua Dashboard trước khi đưa vào khai thác thương mại.
-2. **Cổng Thanh Toán Trực Tuyến**: Hiện tại quy trình thanh toán đặt cọc và tiền thuê hoạt động theo cơ chế xác nhận chuyển khoản thủ công bởi Quản trị viên (Admin đối chiếu sao kê và xác nhận `CONFIRMED`). Chưa tích hợp trực tiếp webhook cổng thanh toán tự động (VNPay, MoMo, ZaloPay).
+2. **Cổng Thanh Toán Trực Tuyến (`SePay + VietQR`)**: Đã tích hợp hoàn chỉnh Payment Adapter Pattern, Webhook idempotency, đối soát và hoàn tiền trên môi trường `MOCK` (mặc định khóa `PRODUCTION`). Trước khi mở thanh toán tiền thật cần cấu hình credentials SePay Merchant thật, domain HTTPS công khai và bật `PAYMENT_PRODUCTION_APPROVED=true`.
 3. **Dịch Vụ SMS / Email**: Các thông báo thay đổi trạng thái đơn thuê hiện được hiển thị trực tiếp trên giao diện thông báo của tài khoản khách hàng (`/account`, `/my-bookings`), chưa kết nối nhà cung cấp dịch vụ SMS OTP / SendGrid thực tế.
 4. **Figma Make CLI**: Lệnh `figma make verify-deploy` phụ thuộc vào môi trường runtime do Figma Make cung cấp trên nền tảng đám mây; trên máy tính phát triển cục bộ lệnh kiểm định chính thức là `pnpm build` và bộ kiểm thử `pnpm test:e2e`.
 
@@ -301,6 +304,9 @@ Hệ thống tài liệu đầy đủ của dự án được lưu trữ trong t
 
 - [DESIGN.md](DESIGN.md) — Quy chuẩn Design System NORI, Semantic Tokens, Typography, Bảng màu và Components.
 - [SKILL.md](SKILL.md) — Kỹ năng triển khai & nguyên tắc xây dựng giao diện WCAG 2.2 AA.
+- [.agents/skills/nori-performance/SKILL.md](.agents/skills/nori-performance/SKILL.md) — Skill bắt buộc về hiệu năng, tối giản mã nguồn, tối ưu media và release gate.
+- [docs/PERFORMANCE_AUDIT.md](docs/PERFORMANCE_AUDIT.md) — Báo cáo kiểm toán hiệu năng Before/After, Root Cause Registry, Media Audit & Load Test.
+- [docs/CODE_QUALITY.md](docs/CODE_QUALITY.md) — Báo cáo chất lượng mã nguồn, kiểm toán dependency & chuẩn hóa kiến trúc.
 - [docs/SPEC.md](docs/SPEC.md) — Đặc tả yêu cầu hệ thống chi tiết (16 nhóm yêu cầu kỹ thuật & nghiệp vụ).
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — Bản vẽ kiến trúc toàn diện, sơ đồ thực thể ERD, máy trạng thái UML.
 - [docs/API.md](docs/API.md) — Tài liệu đặc tả 19 API endpoints (Public, Customer và Protected Admin Dashboard).

@@ -19,6 +19,7 @@ Khung ban đầu không có bộ nhận diện NORI hoặc component sẵn có. 
 2. `DESIGN.md` và semantic tokens trong `src/app/(frontend)/styles.css`.
 3. Primitives trong `src/components/ui/`.
 4. Dữ liệu và relationship thực tế trong Payload.
+5. `.agents/skills/nori-performance/SKILL.md` (`nori-performance`) — bộ quy tắc bắt buộc về hiệu năng, tối giản mã nguồn, tối ưu media, cô lập thanh toán và release gate.
 
 Component must dùng primitives NORI thay vì tái tạo button, input, heading hoặc badge cục bộ. Chỉ lớp primitive được định nghĩa HTML control và typography cơ bản.
 
@@ -98,7 +99,7 @@ Radius must dùng `control`, `card`, `panel`, `pill`. Elevation must dùng `card
 - Kiểm tra khả dụng must chỉ là báo giá tham khảo; tạo đơn phải kiểm tra lại.
 - Customer/giá/tổng tiền/trạng thái must do server quyết định.
 - Không có transaction an toàn must từ chối giữ lịch.
-- Checkout must ghi rõ không thu tiền trực tuyến; không mô phỏng thanh toán thành công.
+- Checkout must giữ rõ bước tạo đơn `PENDING` chưa thu tiền ngay; mọi giao dịch đặt cọc/thanh toán trực tuyến chỉ được khởi tạo sau khi đơn được duyệt tại `/my-bookings` thông qua Payment Adapter Pattern (`MOCK` / `SANDBOX` / `PRODUCTION`), không tự xác nhận thanh toán từ phía client và không dùng tiền thật trong kiểm thử.
 
 ### Account / Administration
 
@@ -161,10 +162,10 @@ Ngắn gọn, bình tĩnh, có hướng tiếp theo.
 - [ ] Dùng semantic tokens và primitives NORI.
 - [ ] Kiểm tra tất cả trạng thái liên quan, nội dung dài và dữ liệu thiếu.
 - [ ] Kiểm tra mobile, bàn phím, focus, reduced-motion và contrast.
-- [ ] `pnpm typecheck`, `pnpm test`, `pnpm test:e2e` thành công.
-- [ ] `pnpm format --check` trên file thay đổi thành công.
-- [ ] `figma make verify-deploy` thành công và xem route table.
+- [ ] `pnpm typecheck`, `pnpm lint`, `pnpm format:check`, `pnpm media:audit`, `pnpm test`, `pnpm test:admin`, `pnpm test:e2e:isolated` thành công.
+- [ ] Tuân thủ đầy đủ `.agents/skills/nori-performance/SKILL.md` (ngân sách ảnh, JS, API p95, cô lập thanh toán, không polling/fetch lặp).
+- [ ] `figma make verify-deploy` thành công khi chạy trong runtime Figma Make; trên local Windows kiểm chứng bằng `pnpm build` + `pnpm start:standalone` / `pnpm perf:load`.
 - [ ] Truy cập mọi public route trên production artifact.
 - [ ] Chứng minh CMS edit mới xuất hiện ở request production mới.
-- [ ] Kiểm tra ảnh có kích thước khác 0, kể cả sau khi thay upload.
+- [ ] Kiểm tra ảnh có `naturalWidth > 0 && naturalHeight > 0`, kể cả sau khi thay upload.
 - [ ] Ghi rõ chức năng chưa kiểm thử hoặc dữ liệu còn thiếu.

@@ -1,5 +1,68 @@
 # NHẬT KÝ THAY ĐỔI VÀ NÂNG CẤP HỆ THỐNG NORI (CHANGELOG)
 
+## [Phiên bản 2.6.1] — 2026-11-20: Kiểm Toán Hiệu Năng Toàn Hệ Thống, Khắc Phục Treo Dev/Mất Ảnh, Tối Ưu Media WebP, SQLite WAL & Chuẩn Hóa Production Standalone
+
+### 1. Xử lý Nguyên nhân Gốc Gây Treo `pnpm dev`, Mất Ảnh & Cảnh báo Image Quality (`src/payload.config.ts`, `next.config.ts`, `src/components/home/hero.tsx`)
+
+- Tắt Drizzle interactive `pushDevSchema` (`push: false`) trong `sqliteAdapter`, loại bỏ hoàn toàn tình trạng deadlock trên STDIN khiến mọi request `/nori-api/*` và `/api/media/file/*` bị treo vô hạn ở local `pnpm dev`; đồng thời kích hoạt `wal: { synchronous: 'NORMAL' }` và `busyTimeout: 5000`.
+- Bổ sung `images.qualities: [75, 80, 84]` trong `next.config.ts`, chuẩn hóa chất lượng ảnh Hero (`80` desktop / `75` mobile) và loại bỏ lời gọi trùng `getImageProps` khi ảnh mobile trùng desktop.
+- Siết chặt `typescript.ignoreBuildErrors: process.env.FIGMA === '1'` để bảo vệ build production cục bộ.
+
+### 2. Pipeline Tối ưu Ảnh WebP Runtime & Media Integrity Audit (`src/lib/media-optimizer.ts`, `src/collections/Media.ts`, `src/components/home/featured.tsx`, `scripts/media-validate.ts`)
+
+- Giữ nguyên `figma-image-loader.ts` và bổ sung `localMediaResizeHandler` (Payload `upload.handlers`, chỉ kích hoạt khi `FIGMA !== '1'`): tôn trọng `?w=&q=`, chuyển sang WebP bằng `sharp`, cache trên đĩa theo `filename + mtime + size + w + q + format` kèm `ETag/304`, tự động vô hiệu hóa khi Admin thay ảnh mới.
+- Chuyển 4 ảnh danh mục trong `Featured` sang dùng ảnh cover từ CMS thay vì JPEG gốc chưa nén và gỡ cơ chế trễ 1800ms.
+- Giảm **77.3%–90.9%** dung lượng ảnh tải đầu trên `/`, `/vehicles`, `/vehicles/[slug]`, đưa Mobile Detail LCP từ `3,184 ms` xuống **`1,876 ms`** (-41.1%).
+- Mở rộng `pnpm media:audit` (`scripts/media-validate.ts --audit`) kiểm tra thiếu tệp, 0 byte, Git LFS pointer, magic-byte header, ảnh gốc lớn và báo cáo tệp đĩa chưa gắn DB (không tự động xóa).
+
+### 3. Tối ưu Frontend RSC, Client Request Safety, Polling Thanh toán & PWA (`src/lib/catalogue.ts`, `src/lib/client-api.ts`, `src/components/{auth-provider,bookings-panel,booking-notification-center,pwa-manager,vehicle-detail}.tsx`, `public/sw.js`)
+
+- Bổ sung `getCatalogueSummary()` và `slimPostForCard()`, cắt giảm **-62.5%** HTML thô trang `/vehicles` (`237.1 KB → 88.9 KB`) và chỉ truyền 12 trường cần thiết (`VehicleDetailSiteInfo`) vào `VehicleDetail`; bỏ remount `<img>` khi đổi tab ảnh nội/ngoại thất và prefetch nhẹ khi hover nút lọc.
+- Thêm timeout mặc định `15s` (`REQUEST_TIMEOUT` / `408`) trong `client-api.ts`; deduplicate request `/nori-api/auth/me` trong `AuthProvider`; chuẩn hóa polling thanh toán với in-flight mutex, `AbortController`, exponential backoff hữu hạn (`4s→20s`, dừng sau 5 lỗi, coi timeout là trạng thái chưa xác định) và sửa lỗi bắn lặp 1 req/s khi đếm ngược về `00:00`.
+- Chỉ đăng ký Service Worker `/sw.js` ở `production` (tự unregister và xóa cache ở dev); nâng cấp `nori-pwa-v2`, thêm `/favorites` và `request.cache === 'no-store'` vào bypass, dọn cache khi đăng xuất.
+
+### 4. Tối ưu Truy vấn Backend, 7 SQLite Composite Indexes & Production Standalone (`src/lib/payment-service.ts`, `src/migrations/20261120_010000_online_payment_integration.ts`, `src/app/(frontend)/nori-api/**`, `scripts/start-standalone.mjs`)
+
+- Bổ sung 7 composite index additive cho `payments`, `bookings`, `notifications`, `vehicles`, `rental_days` — loại bỏ 100% `USE TEMP B-TREE` trên các truy vấn nóng.
+- Bổ sung `GET /nori-api/dashboard?summaryOnly=1` cho `AdminShell` (giảm 18 query → 4 count query nhẹ trên mỗi điều hướng `/dashboard/*`); tối ưu `sweepExpiredPayments` với SQL filter `expiresAt <= nowIso` + throttle 10s; loại bỏ query trùng `nori-site` và giới hạn phạm vi `payments/refunds` theo `bookingIds` trong `dashboard/bookings`; chuyển `dashboard/reports` sang `depth: 0` + `select`.
+- Tạo `scripts/start-standalone.mjs` (`pnpm start:standalone`) tự động copy `.next/static`, `public/`, đồng bộ `libvips*.dll` của `sharp` trên Windows và giữ nguyên đường dẫn `nori.db` / `media/` ở thư mục gốc; cập nhật `scripts/run-e2e-isolated.mjs` cô lập cả DB và thư mục Media.
+
+### 5. Dọn Dead Code, Mở rộng Kiểm thử Chịu lỗi / Load Test & Đăng ký Skill `nori-performance`
+
+- Xóa dead code `src/components/dashboard-panel.tsx` (1,245 dòng, 0 tham chiếu) và `package-lock.json` dư thừa; khử 5/5 cảnh báo Turbopack filesystem tracing.
+- Bổ sung `tests/payment-resilience.test.mjs` (10 kịch bản chịu lỗi thanh toán), `tests/e2e/performance-media-smoke.spec.ts` (3 kịch bản hiệu năng/WebP/cache revalidation) và `scripts/load-test.mjs` (`pnpm perf:load` — `16,061` reqs ở `1–100 VUs`, `0%` lỗi).
+- Đăng ký skill bắt buộc `.agents/skills/nori-performance/SKILL.md`, cập nhật `AGENTS.md`, `SKILL.md` và hoàn thiện `docs/PERFORMANCE_AUDIT.md`, `docs/CODE_QUALITY.md`.
+
+---
+
+## [Phiên bản 2.6.0] — 2026-11-20: Tích Hợp Hệ Thống Thanh Toán Trực Tuyến (SePay + VietQR + Webhook + Payment Adapter Pattern + Đối Soát & Hoàn Tiền)
+
+### 1. Kiến trúc Payment Adapter Pattern & Chuẩn hóa Công thức Tài chính (`src/lib/payment-providers.ts`, `src/lib/rental-rules.ts`, `src/lib/payment-service.ts`)
+
+- Triển khai **Payment Adapter Pattern** với giao diện thống nhất `PaymentProviderAdapter` gồm: `SePayProvider` (VietQR động + xác thực Webhook `Authorization: Apikey` hằng số thời gian + User API), `MockPaymentProvider` (SVG VietQR nội bộ + bộ mô phỏng kiểm soát), `ManualPaymentProvider`, và khung mở rộng cho `PayOSProvider`, `VNPayProvider`, `MoMoProvider`, `ZaloPayProvider`.
+- Phân tách 3 môi trường độc lập `MOCK` / `SANDBOX` / `PRODUCTION`, mặc định khóa cứng `PRODUCTION` (`PAYMENT_PRODUCTION_APPROVED=false`).
+- Chuẩn hóa công thức tài chính tập trung: tách biệt hoàn toàn **Tiền cọc giữ chỗ (`DEPOSIT`)**, **Tiền thuê còn lại (`RENTAL_FEE`)**, **Thanh toán toàn bộ (`FULL_PAYMENT`)**, **Phụ phí phát sinh (`EXTRA_FEE`)**, **Hoàn tiền (`REFUND`)** và **Tiền cọc bảo đảm tài sản (`SECURITY_DEPOSIT`, không bao giờ cộng gộp vào doanh thu thuê xe)**.
+- Áp dụng tuần tự hóa ghi `withBookingWriteLock`, chống trùng lặp Webhook (`payment_events.event_id`), chống sự kiện cũ đến sai thứ tự (`isPaymentEventStale`), và xử lý toàn bộ ngoại lệ (`UNDERPAID`, `OVERPAID`, `LATE_PAYMENT`, `UNMATCHED`).
+
+### 2. Mở rộng Schema Additive-Only & API Thanh toán (`src/migrations/20261120_010000_online_payment_integration.ts`, `src/collections/PaymentEvents.ts`, `src/collections/Refunds.ts`)
+
+- Bổ sung bảng `payment_events` và `refunds` (nâng tổng số bảng trong `nori.db` từ 84 lên 88, giữ nguyên 100% dữ liệu hiện có), mở rộng 21 cột thanh toán trực tuyến trên `payments` và 17 cột cấu hình thanh toán trên `nori_site`.
+- Xây dựng đầy đủ 12 nhóm API: Customer Payment (`/nori-api/payments/create`, `/status`, `/status/[id]`, `/history`, `/cancel`, `/mock-simulate`), SePay Webhook (`/nori-api/payments/webhook/sepay`), Admin Payment/Confirm/Reconcile/Refund/Config (`/nori-api/dashboard/payments/*`), và Xuất CSV giao dịch (`export?type=payments`).
+- Gắn chặt kiểm soát tài chính trước khi bàn giao (`ONGOING`) và quyết toán hoàn tất (`COMPLETED`) trên `src/collections/Bookings.ts`.
+
+### 3. Nâng cấp Giao diện Khách hàng & Quản trị (`/checkout`, `/my-bookings`, `/dashboard/bookings`, `/dashboard/payments`, `/dashboard/reports`)
+
+- `/checkout`: Hiển thị rõ cơ cấu tiền thuê, cọc giữ chỗ dự kiến sau duyệt, phần còn lại và cọc bảo đảm tài sản tách riêng; giữ nguyên nguyên tắc không thu tiền ở bước tạo đơn `PENDING`.
+- `/my-bookings`: Hiển thị trạng thái thanh toán, số tiền đã thu/còn lại, lịch sử giao dịch & hoàn tiền, cùng **Màn hình Thanh toán VietQR** tích hợp đếm ngược, nút sao chép nhanh, Smart Polling có giới hạn (tạm dừng khi ẩn tab) và bộ mô phỏng Webhook kiểm soát được ở chế độ `MOCK`.
+- `/dashboard/payments`: Nâng cấp thành không gian quản trị 5 tab (**Giao dịch**, **Đối soát & Ngoại lệ**, **Hoàn tiền**, **Sự kiện Webhook**, **Cấu hình Thanh toán**) kèm xác nhận thủ công bắt buộc lý do & mã chứng từ (`Audit Logs`).
+- `/dashboard/reports`: Tách bạch Thực thu tiền thuê đã xác thực, Doanh thu ròng sau hoàn tiền, Cọc bảo đảm tài sản đang giữ, Công nợ còn phải thu và phân bổ theo phương thức/cổng thanh toán.
+
+### 4. Kiểm thử Đa tầng (`PAY-001`..`PAY-050`) & Bộ tài liệu kỹ thuật (`docs/PAYMENT_*.md`)
+
+- Bổ sung bộ kiểm thử Unit (`tests/payment-rules.test.mjs`), Integration + Concurrency 3x + Fault Recovery (`tests/payment-integration.test.mjs`) và E2E (`tests/e2e/payment-workflow.spec.ts`) trên cơ sở dữ liệu cô lập, kèm 12 tài liệu kỹ thuật thanh toán có sơ đồ Mermaid.
+
+---
+
 ## [Phiên bản 2.5.0] — 2026-11-18: Chuẩn Hóa Đồng Bộ Dữ Liệu Nhóm (Data Snapshot), Đồng Bộ Hình Ảnh (Media Sync), Gói Sao Lưu Nhất Quán & Quản Trị Hệ Thống (`/dashboard/system`)
 
 ### 1. Kiến trúc Data Snapshot & Đồng bộ Nhóm qua GitHub (`src/lib/data-sync.ts`, `data/snapshots/*`, `data/seed/schema.sql`)
