@@ -22,7 +22,7 @@ jobs:
       NODE_ENV: test
       PAYLOAD_SECRET: ci-test-payload-secret-at-least-32-chars-long-for-testing
       NORI_SESSION_SECRET: ci-test-session-secret-at-least-32-chars-long-for-testing
-      DATABASE_URI: file:./test-ci.db
+      DATABASE_URI: file:./nori.db
       PAYMENT_MODE: MOCK
       PAYMENT_ENABLED: true
 
@@ -49,6 +49,11 @@ jobs:
 
       - name: Static Code Lint
         run: pnpm lint
+
+      - name: Initialize Database For Tests
+        run: |
+          pnpm db:migrate:safe
+          pnpm data:import
 
       - name: Run Test Suite
         run: pnpm test
