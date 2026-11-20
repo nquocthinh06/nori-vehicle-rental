@@ -52,8 +52,20 @@ jobs:
 
       - name: Initialize Database For Tests
         run: |
-          pnpm db:migrate
-          pnpm data:import --skip-backup
+          set +e
+          echo "### Database Initialization Diagnostic" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          node scripts/db-migrate.ts >> $GITHUB_STEP_SUMMARY 2>&1
+          MIGRATE_EXIT=$?
+          echo "db-migrate exit code: $MIGRATE_EXIT" >> $GITHUB_STEP_SUMMARY
+          node scripts/data-import.ts --skip-backup >> $GITHUB_STEP_SUMMARY 2>&1
+          IMPORT_EXIT=$?
+          echo "data-import exit code: $IMPORT_EXIT" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          if [ $MIGRATE_EXIT -ne 0 ] || [ $IMPORT_EXIT -ne 0 ]; then
+            echo "Database initialization failed: migrate=$MIGRATE_EXIT, import=$IMPORT_EXIT"
+            exit 1
+          fi
 
       - name: Run Test Suite
         run: pnpm test
