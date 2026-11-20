@@ -1,6 +1,8 @@
 import { adminHasPermission, type AdminModule } from '@/access/nori'
-import { requireAdmin, resolveCustomerDisplayNames } from '@/lib/admin-api'
+import { assertBranchScopeOrFail, requireAdmin, resolveCustomerDisplayNames } from '@/lib/admin-api'
 import { apiError, fail } from '@/lib/api-utils'
+import { aggregateMultiBranchRevenue, computeBranchFleetStats } from '@/lib/multi-branch-rules'
+import { relationId, roundVndInteger } from '@/lib/rental-rules'
 
 function escapeCsvCell(value: unknown): string {
   const raw = value === null || value === undefined ? '' : String(value)
@@ -31,6 +33,12 @@ export async function GET(request: Request) {
       customers: 'customers',
       financial: 'reports',
       payments: 'payments',
+      'branch-reports': 'reports',
+    }
+    const branchIdFilter = sp.get('branchId')?.trim() || ''
+    if (branchIdFilter) {
+      const deny = assertBranchScopeOrFail(admin, branchIdFilter)
+      if (deny) return deny
     }
     const targetModule = entityModuleMap[exportType]
     if (exportType === 'customers' && !adminHasPermission(admin, 'customers', 'read')) {
@@ -68,9 +76,16 @@ export async function GET(request: Request) {
         sort: '-createdAt',
         ...(createdAtFilter ? { where: createdAtFilter } : {}),
       })
+      const docs = branchIdFilter
+        ? result.docs.filter(
+            (b) =>
+              relationId(b.pickupBranch) === branchIdFilter ||
+              relationId(b.returnBranch) === branchIdFilter,
+          )
+        : result.docs
       const nameMap = await resolveCustomerDisplayNames(
         payload,
-        result.docs.map((b) => (typeof b.customer === 'string' ? b.customer : '')).filter(Boolean),
+        docs.map((b) => (typeof b.customer === 'string' ? b.customer : '')).filter(Boolean),
       )
       csv = buildCsv(
         [
@@ -83,11 +98,12 @@ export async function GET(request: Request) {
           'NgayNhan',
           'NgayTra',
           'SoNgay',
+          'MotChieu',
           'TongTienThueVND',
           'TienCocVND',
           'NgayTao',
         ],
-        result.docs.map((b) => [
+        docs.map((b) => [
           b.bookingKey ?? b.id,
           b.status ?? 'PENDING',
           typeof b.customer === 'object'
@@ -99,6 +115,7 @@ export async function GET(request: Request) {
           b.startDate,
           b.endDate,
           b.totalDays ?? 0,
+          b.isOneWay ? 'CO' : 'KHONG',
           b.totalPrice ?? 0,
           b.depositSnapshot ?? 0,
           b.createdAt,
@@ -157,6 +174,13 @@ export async function GET(request: Request) {
         limit: 500,
         sort: 'reference',
       })
+      const docs = branchIdFilter
+        ? result.docs.filter(
+            (v) =>
+              relationId(v.managingBranch) === branchIdFilter ||
+              relationId(v.currentBranch) === branchIdFilter,
+          )
+        : result.docs
       csv = buildCsv(
         [
           'MaXe',
@@ -170,7 +194,7 @@ export async function GET(request: Request) {
           'ODO_km',
           'DuLieuDemo',
         ],
-        result.docs.map((v) => [
+        docs.map((v) => [
           v.reference,
           v.licensePlate ?? '',
           typeof v.model === 'object' ? v.model?.name : '',
@@ -219,7 +243,8 @@ export async function GET(request: Request) {
         }),
         payload.find({
           collection: 'payments',
-          overrideAccess: true,
+          user,
+          overrideAccess: false,
           depth: 0,
           limit: 1000,
         }),
@@ -232,9 +257,16 @@ export async function GET(request: Request) {
           })
           .catch(() => ({ docs: [] })),
       ])
+      const docs = branchIdFilter
+        ? result.docs.filter(
+            (b) =>
+              relationId(b.pickupBranch) === branchIdFilter ||
+              relationId(b.returnBranch) === branchIdFilter,
+          )
+        : result.docs
       const nameMap = await resolveCustomerDisplayNames(
         payload,
-        result.docs.map((b) => (typeof b.customer === 'string' ? b.customer : '')).filter(Boolean),
+        docs.map((b) => (typeof b.customer === 'string' ? b.customer : '')).filter(Boolean),
       )
       const verifiedPaidByBooking = new Map<string, number>()
       const securityHeldByBooking = new Map<string, number>()
@@ -287,7 +319,7 @@ export async function GET(request: Request) {
           'DoanhThuRongVND',
           'NgayTao',
         ],
-        result.docs.map((b) => {
+        docs.map((b) => {
           const paidRent = verifiedPaidByBooking.get(String(b.id)) ?? 0
           const secHeld = securityHeldByBooking.get(String(b.id)) ?? 0
           const refunded = refundedByBooking.get(String(b.id)) ?? 0
@@ -326,9 +358,12 @@ export async function GET(request: Request) {
         sort: '-createdAt',
         ...(createdAtFilter ? { where: createdAtFilter } : {}),
       })
+      const docs = branchIdFilter
+        ? result.docs.filter((p) => relationId(p.branch) === branchIdFilter)
+        : result.docs
       const nameMap = await resolveCustomerDisplayNames(
         payload,
-        result.docs.map((p) => (typeof p.customer === 'string' ? p.customer : '')).filter(Boolean),
+        docs.map((p) => (typeof p.customer === 'string' ? p.customer : '')).filter(Boolean),
       )
       csv = buildCsv(
         [
@@ -350,7 +385,7 @@ export async function GET(request: Request) {
           'GhiChu',
           'NgayTao',
         ],
-        result.docs.map((p) => [
+        docs.map((p) => [
           p.reference ?? p.id,
           typeof p.booking === 'object' && p.booking
             ? (p.booking.bookingKey ?? p.booking.id)
@@ -375,6 +410,153 @@ export async function GET(request: Request) {
         ]),
       )
       filename = 'nori-payments.csv'
+    } else if (exportType === 'branch-reports') {
+      const [branchesRes, vehiclesRes, bookingsRes, paymentsRes, transfersRes] = await Promise.all([
+        payload.find({
+          collection: 'branches',
+          user,
+          overrideAccess: false,
+          depth: 0,
+          limit: 200,
+          sort: 'name',
+        }),
+        payload.find({
+          collection: 'vehicles',
+          user,
+          overrideAccess: false,
+          depth: 0,
+          limit: 1000,
+        }),
+        payload.find({
+          collection: 'bookings',
+          user,
+          overrideAccess: false,
+          depth: 0,
+          limit: 1000,
+          ...(createdAtFilter ? { where: createdAtFilter } : {}),
+        }),
+        payload.find({
+          collection: 'payments',
+          user,
+          overrideAccess: false,
+          depth: 0,
+          limit: 1000,
+          ...(createdAtFilter ? { where: createdAtFilter } : {}),
+        }),
+        payload.find({
+          collection: 'vehicle-transfers',
+          user,
+          overrideAccess: false,
+          depth: 0,
+          limit: 500,
+          ...(createdAtFilter ? { where: createdAtFilter } : {}),
+        }),
+      ])
+      const visibleBranches = branchesRes.docs.filter(
+        (b) => !branchIdFilter || String(b.id) === branchIdFilter,
+      )
+      const invVehicles = vehiclesRes.docs.map((v) => ({
+        id: String(v.id),
+        managingBranchId: relationId(v.managingBranch) ?? null,
+        currentBranchId: relationId(v.currentBranch) ?? null,
+        currentWarehouseId: relationId(v.currentWarehouse) ?? null,
+        operationStatus: String(v.operationStatus ?? 'READY'),
+        status: String(v.status ?? 'ACTIVE'),
+      }))
+      const paidByBooking = new Map<string, number>()
+      const secByBooking = new Map<string, number>()
+      for (const p of paymentsRes.docs) {
+        const bId = relationId(p.booking)
+        if (!bId) continue
+        if (['CONFIRMED', 'PARTIALLY_REFUNDED', 'REFUNDED'].includes(String(p.status))) {
+          const amt = roundVndInteger(
+            p.receivedAmount != null && Number(p.receivedAmount) > 0 ? p.receivedAmount : p.amount,
+          )
+          if (p.paymentType === 'SECURITY_DEPOSIT') {
+            secByBooking.set(bId, (secByBooking.get(bId) ?? 0) + amt)
+          } else if (p.paymentType !== 'REFUND') {
+            paidByBooking.set(bId, (paidByBooking.get(bId) ?? 0) + amt)
+          }
+        }
+      }
+      const agg = aggregateMultiBranchRevenue({
+        branchIds: visibleBranches.map((b) => String(b.id)),
+        bookings: bookingsRes.docs.map((b) => ({
+          id: String(b.id),
+          status: String(b.status ?? 'PENDING'),
+          pickupBranchId: relationId(b.pickupBranch) ?? null,
+          returnBranchId: relationId(b.returnBranch) ?? null,
+          revenueAttributionBranchId: relationId(b.revenueAttributionBranch) ?? null,
+          revenueSplitPickupPercent: b.revenueSplitPickupPercent ?? 100,
+          isOneWay: Boolean(b.isOneWay),
+          deliveryRequested: Boolean(b.deliveryRequested),
+          pickupMethod: b.pickupMethod ?? null,
+          returnMethod: b.returnMethod ?? null,
+          totalPrice: Number(b.totalPrice ?? 0),
+          deliveryFeeSnapshot: Number(b.deliveryFeeSnapshot ?? 0),
+          pickupFeeSnapshot: Number(b.pickupFeeSnapshot ?? 0),
+          locationSurchargeSnapshot: Number(b.locationSurchargeSnapshot ?? 0),
+          oneWayFeeSnapshot: Number(b.oneWayFeeSnapshot ?? 0),
+          afterHoursFeeSnapshot: Number(b.afterHoursFeeSnapshot ?? 0),
+          extraFee: Number(b.extraFee ?? 0),
+          verifiedRentalCollected: paidByBooking.get(String(b.id)) ?? 0,
+          securityDepositHeld: secByBooking.get(String(b.id)) ?? 0,
+        })),
+        transfers: transfersRes.docs.map((t) => ({
+          fromBranchId: relationId(t.fromBranch) ?? '',
+          toBranchId: relationId(t.toBranch) ?? '',
+          status: String(t.status ?? 'DRAFT'),
+          transferCost: Number(t.transferCost ?? 0),
+        })),
+      })
+      csv = buildCsv(
+        [
+          'MaChiNhanh',
+          'TenChiNhanh',
+          'TrangThai',
+          'XeQuanLy',
+          'XeHienDienTaiKho',
+          'XeSanSang',
+          'XeDangChoThue',
+          'XeDangDieuChuyen',
+          'TongDonThue',
+          'DonMotChieuDi',
+          'DonMotChieuDen',
+          'DonGiaoTanNoi',
+          'DoanhThuThueXeVND',
+          'DoanhThuGiaoNhanVND',
+          'PhuPhiDiaDiemMotChieuVND',
+          'ChiPhiDieuChuyenNoiBoVND',
+          'CocBaoDamTaiSanVND',
+          'DoanhThuRongVND',
+        ],
+        visibleBranches.map((b) => {
+          const bId = String(b.id)
+          const fl = computeBranchFleetStats(invVehicles, bId)
+          const m = agg.byBranch[bId]
+          return [
+            b.code,
+            b.name,
+            b.status,
+            fl.managedTotal,
+            fl.physicallyPresentAtBranch,
+            fl.readyForRent,
+            fl.rented,
+            fl.inTransit,
+            m.totalBookings,
+            m.oneWayOutboundCount,
+            m.oneWayInboundCount,
+            m.homeDeliveryCount,
+            m.rentalRevenue,
+            m.deliveryRevenue,
+            m.locationSurchargeRevenue,
+            m.transferCost,
+            m.securityDepositHeld,
+            m.netRevenue,
+          ]
+        }),
+      )
+      filename = 'nori-branch-reports.csv'
     } else {
       return fail('Loại dữ liệu xuất không hợp lệ.', 400, 'VALIDATION_ERROR')
     }

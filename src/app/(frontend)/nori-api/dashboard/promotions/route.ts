@@ -14,14 +14,23 @@ export async function GET(request: Request) {
     const { payload, user } = auth
 
     const q = (new URL(request.url).searchParams.get('q') || '').trim().toLowerCase()
-    const res = await payload.find({
-      collection: 'promotions',
-      user,
-      overrideAccess: false,
-      depth: 0,
-      limit: 200,
-      sort: '-createdAt',
-    })
+    const [res, branchesRes] = await Promise.all([
+      payload.find({
+        collection: 'promotions',
+        user,
+        overrideAccess: false,
+        depth: 0,
+        limit: 200,
+        sort: '-createdAt',
+      }),
+      payload.find({
+        collection: 'branches',
+        overrideAccess: true,
+        depth: 0,
+        limit: 200,
+        sort: 'name',
+      }),
+    ])
     const today = businessToday()
     const items = res.docs
       .filter((p) => !q || `${p.code} ${p.name}`.toLowerCase().includes(q))
@@ -46,6 +55,10 @@ export async function GET(request: Request) {
           maxDiscount: p.maxDiscount ?? null,
           minDays: p.minDays ?? 1,
           appliesTo: p.appliesTo ?? 'RENT',
+          branchScope: p.branchScope ?? 'ALL_BRANCHES',
+          applicableBranchIds: Array.isArray(p.applicableBranchIds)
+            ? (p.applicableBranchIds as string[])
+            : [],
           validFrom: p.validFrom ?? '',
           validTo: p.validTo ?? '',
           usageLimit: p.usageLimit ?? null,
@@ -57,7 +70,10 @@ export async function GET(request: Request) {
           runtimeStatusTone: runtime.tone,
         }
       })
-    return json({ items })
+    return json({
+      items,
+      branches: branchesRes.docs.map((b) => ({ id: String(b.id), code: b.code, name: b.name })),
+    })
   } catch (error) {
     return apiError(error)
   }
@@ -79,6 +95,8 @@ export async function POST(request: Request) {
       'maxDiscount',
       'minDays',
       'appliesTo',
+      'branchScope',
+      'applicableBranchIds',
       'validFrom',
       'validTo',
       'usageLimit',
@@ -124,6 +142,12 @@ export async function POST(request: Request) {
         maxDiscount: n.maxDiscount ?? undefined,
         minDays: n.minDays,
         appliesTo: n.appliesTo,
+        branchScope:
+          data.branchScope === 'SPECIFIC_BRANCHES' ? 'SPECIFIC_BRANCHES' : 'ALL_BRANCHES',
+        applicableBranchIds:
+          data.branchScope === 'SPECIFIC_BRANCHES' && Array.isArray(data.applicableBranchIds)
+            ? data.applicableBranchIds.map((x) => text(x, 100)).filter(Boolean)
+            : [],
         validFrom: n.validFrom ?? undefined,
         validTo: n.validTo ?? undefined,
         usageLimit: n.usageLimit ?? undefined,
@@ -152,6 +176,8 @@ export async function PATCH(request: Request) {
       'maxDiscount',
       'minDays',
       'appliesTo',
+      'branchScope',
+      'applicableBranchIds',
       'validFrom',
       'validTo',
       'usageLimit',
@@ -212,6 +238,19 @@ export async function PATCH(request: Request) {
         maxDiscount: n.maxDiscount,
         minDays: n.minDays,
         appliesTo: n.appliesTo,
+        ...(data.branchScope !== undefined
+          ? {
+              branchScope:
+                data.branchScope === 'SPECIFIC_BRANCHES' ? 'SPECIFIC_BRANCHES' : 'ALL_BRANCHES',
+            }
+          : {}),
+        ...(data.applicableBranchIds !== undefined
+          ? {
+              applicableBranchIds: Array.isArray(data.applicableBranchIds)
+                ? data.applicableBranchIds.map((x) => text(x, 100)).filter(Boolean)
+                : [],
+            }
+          : {}),
         validFrom: n.validFrom,
         validTo: n.validTo,
         usageLimit: n.usageLimit,

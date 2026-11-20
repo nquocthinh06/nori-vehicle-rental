@@ -1,4 +1,4 @@
-import { requireAdmin, resolveCustomerDisplayNames } from '@/lib/admin-api'
+import { assertBranchScopeOrFail, requireAdmin, resolveCustomerDisplayNames } from '@/lib/admin-api'
 import { apiError, assertOrigin, body, fail, json, text } from '@/lib/api-utils'
 import { getSitePaymentConfig, sweepExpiredPayments } from '@/lib/payment-service'
 import { withBookingWriteLock } from '@/lib/promo-service'
@@ -34,7 +34,12 @@ export async function GET(request: Request) {
     const anomalyFilter = (sp.get('anomaly') || '').trim().toUpperCase()
     const fromDate = (sp.get('from') || '').trim()
     const toDate = (sp.get('to') || '').trim()
+    const branchIdFilter = (sp.get('branchId') || '').trim()
     const q = (sp.get('q') || '').trim().toLowerCase()
+    if (branchIdFilter) {
+      const deny = assertBranchScopeOrFail(auth.admin, branchIdFilter)
+      if (deny) return deny
+    }
 
     const [paymentsRes, bookingsRes, refundsRes, eventsRes, siteConfig] = await Promise.all([
       payload.find({
@@ -196,6 +201,7 @@ export async function GET(request: Request) {
       return {
         id: p.id,
         reference: p.reference ?? p.id,
+        branchId: relationId(p.branch) ?? null,
         bookingId: bId,
         bookingKey: bKey,
         customerId: relationId(p.customer) ?? null,
@@ -235,6 +241,7 @@ export async function GET(request: Request) {
     })
 
     const filteredItems = mappedItems.filter((item) => {
+      if (branchIdFilter && item.branchId !== branchIdFilter) return false
       if (method && item.method !== method) return false
       if (paymentType && item.paymentType !== paymentType) return false
       if (provider && item.provider !== provider) return false
@@ -397,6 +404,7 @@ export async function POST(request: Request) {
     }
     const bookingId = text(data.bookingId, 100) || undefined
     let customerId: string | undefined
+    let branchId: string | undefined
     const paymentType = (
       PAYMENT_TYPES.includes(String(data.paymentType) as PaymentType) ? data.paymentType : 'DEPOSIT'
     ) as PaymentType
@@ -439,6 +447,7 @@ export async function POST(request: Request) {
         }
         customerId =
           typeof b.customer === 'object' && b.customer ? b.customer.id : (b.customer ?? undefined)
+        branchId = relationId(b.revenueAttributionBranch) ?? relationId(b.pickupBranch) ?? undefined
 
         const recentDuplicates = await payload.find({
           collection: 'payments',
@@ -481,6 +490,7 @@ export async function POST(request: Request) {
         data: {
           booking: bookingId,
           customer: customerId,
+          ...(branchId ? { branch: branchId } : {}),
           paymentType,
           method,
           provider,

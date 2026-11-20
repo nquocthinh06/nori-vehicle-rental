@@ -1,4 +1,4 @@
-import { requireAdmin, resolveCustomerDisplayNames } from '@/lib/admin-api'
+import { assertBranchScopeOrFail, requireAdmin, resolveCustomerDisplayNames } from '@/lib/admin-api'
 import { apiError, assertOrigin, body, fail, json, text } from '@/lib/api-utils'
 import {
   buildSitePaymentConfigFromDoc,
@@ -46,7 +46,19 @@ export async function GET(request: Request) {
     const page = Math.max(1, Number(sp.get('page') || '1') || 1)
     const status = sp.get('status') || ''
     const consultFilter = sp.get('consultFilter') || ''
+    const branchIdFilter = sp.get('branchId')?.trim() || ''
+    const pickupBranchIdFilter = sp.get('pickupBranchId')?.trim() || ''
+    const returnBranchIdFilter = sp.get('returnBranchId')?.trim() || ''
+    const oneWayOnly = sp.get('oneWayOnly') === '1' || sp.get('oneWayOnly') === 'true'
+    const deliveryOnly = sp.get('deliveryOnly') === '1' || sp.get('deliveryOnly') === 'true'
     const q = (sp.get('q') || '').trim().toLowerCase()
+
+    for (const bFilter of [branchIdFilter, pickupBranchIdFilter, returnBranchIdFilter]) {
+      if (bFilter) {
+        const deny = assertBranchScopeOrFail(auth.admin, bFilter)
+        if (deny) return deny
+      }
+    }
 
     if (
       status &&
@@ -62,7 +74,7 @@ export async function GET(request: Request) {
     }
 
     await sweepExpiredPayments(payload)
-    const [res, consultRes, site] = await Promise.all([
+    const [res, consultRes, site, branchesRes, warehousesRes] = await Promise.all([
       payload.find({
         collection: 'bookings',
         user,
@@ -86,7 +98,22 @@ export async function GET(request: Request) {
         draft: false,
         depth: 0,
       }),
+      payload.find({
+        collection: 'branches',
+        overrideAccess: true,
+        depth: 0,
+        limit: 200,
+        sort: 'name',
+      }),
+      payload.find({
+        collection: 'warehouses',
+        overrideAccess: true,
+        depth: 0,
+        limit: 500,
+        sort: 'name',
+      }),
     ])
+    const branchNameMap = new Map(branchesRes.docs.map((br) => [String(br.id), br.name]))
 
     const siteRec = site as unknown as Record<string, unknown>
     const siteConfig = buildSitePaymentConfigFromDoc(siteRec)
@@ -242,6 +269,31 @@ export async function GET(request: Request) {
         returnTime: b.returnTime ?? '20:00',
         pickupLocation: b.pickupLocation ?? null,
         returnLocation: b.returnLocation ?? b.pickupLocation ?? null,
+        pickupBranchId: relationId(b.pickupBranch) ?? null,
+        pickupBranchName: relationId(b.pickupBranch)
+          ? (branchNameMap.get(relationId(b.pickupBranch)!) ?? null)
+          : null,
+        returnBranchId: relationId(b.returnBranch) ?? null,
+        returnBranchName: relationId(b.returnBranch)
+          ? (branchNameMap.get(relationId(b.returnBranch)!) ?? null)
+          : null,
+        actualReturnBranchId: relationId(b.actualReturnBranch) ?? null,
+        actualReturnBranchName: relationId(b.actualReturnBranch)
+          ? (branchNameMap.get(relationId(b.actualReturnBranch)!) ?? null)
+          : null,
+        actualReturnWarehouseId: relationId(b.actualReturnWarehouse) ?? null,
+        isOneWay: Boolean(b.isOneWay),
+        pickupMethod: b.pickupMethod ?? (b.deliveryRequested ? 'HOME_DELIVERY' : 'BRANCH_PICKUP'),
+        returnMethod: b.returnMethod ?? 'BRANCH_RETURN',
+        deliveryAddress: b.deliveryAddress ?? null,
+        pickupAddress: b.pickupAddress ?? null,
+        locationSurchargeSnapshot: b.locationSurchargeSnapshot ?? 0,
+        oneWayFeeSnapshot: b.oneWayFeeSnapshot ?? 0,
+        pickupFeeSnapshot: b.pickupFeeSnapshot ?? 0,
+        afterHoursFeeSnapshot: b.afterHoursFeeSnapshot ?? 0,
+        returnFuelOrBattery: b.returnFuelOrBattery ?? null,
+        returnInspectionStatus: b.returnInspectionStatus ?? null,
+        scheduleConflictAlert: b.scheduleConflictAlert ?? null,
         deliveryRequested: Boolean(b.deliveryRequested),
         addonServices: b.addonServices ?? null,
         customerPhone:
@@ -384,6 +436,25 @@ export async function GET(request: Request) {
     })
 
     const filtered = mapped.filter((b) => {
+      if (
+        branchIdFilter &&
+        b.pickupBranchId !== branchIdFilter &&
+        b.returnBranchId !== branchIdFilter &&
+        b.actualReturnBranchId !== branchIdFilter
+      ) {
+        return false
+      }
+      if (pickupBranchIdFilter && b.pickupBranchId !== pickupBranchIdFilter) return false
+      if (returnBranchIdFilter && b.returnBranchId !== returnBranchIdFilter) return false
+      if (oneWayOnly && !b.isOneWay) return false
+      if (
+        deliveryOnly &&
+        !b.deliveryRequested &&
+        b.pickupMethod !== 'HOME_DELIVERY' &&
+        b.returnMethod !== 'HOME_PICKUP'
+      ) {
+        return false
+      }
       if (q) {
         const hay =
           `${b.bookingKey} ${b.reference} ${b.modelName} ${b.customerName} ${b.customerEmail ?? ''} ${b.customerPhone ?? ''}`.toLowerCase()
@@ -422,6 +493,13 @@ export async function GET(request: Request) {
       totalDocs: filtered.length,
       page: safePage,
       totalPages,
+      branches: branchesRes.docs.map((br) => ({ id: String(br.id), code: br.code, name: br.name })),
+      warehouses: warehousesRes.docs.map((wh) => ({
+        id: String(wh.id),
+        code: wh.code,
+        name: wh.name,
+        branchId: relationId(wh.branch) ?? '',
+      })),
     })
   } catch (error) {
     return apiError(error)
@@ -445,6 +523,10 @@ export async function PATCH(request: Request) {
       'contractNumber',
       'returnOdometer',
       'returnCondition',
+      'actualReturnBranchId',
+      'actualReturnWarehouseId',
+      'returnFuelOrBattery',
+      'returnInspectionStatus',
       'enforceFinancialClearance',
       'approveFinancialException',
     ])
@@ -492,6 +574,18 @@ export async function PATCH(request: Request) {
       return fail('ODO lúc nhận lại xe phải là số nguyên không âm.')
     }
 
+    const actualReturnBranchId = text(data.actualReturnBranchId, 100)
+    const actualReturnWarehouseId = text(data.actualReturnWarehouseId, 100)
+    const returnFuelOrBattery = text(data.returnFuelOrBattery, 80)
+    const rawInspection = text(data.returnInspectionStatus, 30)
+    const returnInspectionStatus = (
+      ['NOT_APPLICABLE', 'PENDING_INSPECTION', 'PASSED', 'DAMAGED_NEEDS_REPAIR'].includes(
+        rawInspection,
+      )
+        ? rawInspection
+        : undefined
+    ) as 'NOT_APPLICABLE' | 'PENDING_INSPECTION' | 'PASSED' | 'DAMAGED_NEEDS_REPAIR' | undefined
+
     return await withBookingWriteLock(async () => {
       const updated = await payload.update({
         collection: 'bookings',
@@ -511,9 +605,17 @@ export async function PATCH(request: Request) {
           ...(contractNumber ? { contractNumber } : {}),
           ...(returnOdometer !== undefined ? { returnOdometer } : {}),
           ...(returnCondition ? { returnCondition } : {}),
+          ...(actualReturnBranchId ? { actualReturnBranch: actualReturnBranchId } : {}),
+          ...(actualReturnWarehouseId ? { actualReturnWarehouse: actualReturnWarehouseId } : {}),
+          ...(returnFuelOrBattery ? { returnFuelOrBattery } : {}),
+          ...(returnInspectionStatus ? { returnInspectionStatus } : {}),
         },
       })
-      return json({ id: updated.id, status: updated.status })
+      return json({
+        id: updated.id,
+        status: updated.status,
+        scheduleConflictAlert: updated.scheduleConflictAlert ?? null,
+      })
     })
   } catch (error) {
     return apiError(error)

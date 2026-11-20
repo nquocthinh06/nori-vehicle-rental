@@ -20,6 +20,9 @@ function publicAdmin(admin: {
   email: string
   fullName?: string
   adminRole?: 'SUPER_ADMIN' | 'OPERATOR'
+  staffTitle?: string
+  branchScopeMode?: 'ALL' | 'ASSIGNED'
+  assignedBranchIds?: string[]
   permissions?: Record<string, string[]>
 }) {
   return {
@@ -29,6 +32,10 @@ function publicAdmin(admin: {
     phone: null,
     role: 'ADMIN' as const,
     adminRole: admin.adminRole ?? 'OPERATOR',
+    staffTitle:
+      admin.staffTitle ?? (admin.adminRole === 'SUPER_ADMIN' ? 'SUPER_ADMIN' : 'OPERATOR'),
+    branchScopeMode: admin.branchScopeMode ?? 'ALL',
+    assignedBranchIds: admin.assignedBranchIds ?? [],
     permissions: admin.permissions ?? {},
     isAdmin: true,
   }

@@ -141,6 +141,8 @@ export const operationStatusLabels: Record<string, string> = {
   RENTED: 'Đang cho thuê',
   RESERVED: 'Đang giữ chỗ',
   MAINTENANCE: 'Đang bảo dưỡng',
+  IN_TRANSIT: 'Đang điều chuyển',
+  PENDING_INSPECTION: 'Chờ kiểm tra sau trả',
   SOLD: 'Đã bán',
   INACTIVE: 'Tạm ngừng cung cấp',
 }

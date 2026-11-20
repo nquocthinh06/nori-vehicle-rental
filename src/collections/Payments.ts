@@ -1,5 +1,10 @@
 import { APIError, type CollectionConfig } from 'payload'
-import { adminHasAnyPermission, adminPermission } from '@/access/nori'
+import {
+  adminBranchPermission,
+  adminHasAnyPermission,
+  adminPermission,
+  branchScopedWhere,
+} from '@/access/nori'
 import { auditCollection } from '@/hooks/audit-nori'
 import { paymentStatusLabels, relationId } from '@/lib/rental-rules'
 
@@ -46,14 +51,14 @@ export const Payments: CollectionConfig = {
           ['bookings', 'read'],
         ])
       ) {
-        return true
+        return branchScopedWhere(req.user, ['branch'])
       }
       if (req.user?.collection === 'users' && req.user.status === 'ACTIVE') {
         return { customer: { equals: req.user.id } }
       }
       return false
     },
-    update: adminPermission('payments', 'update'),
+    update: adminBranchPermission('payments', 'update', ['branch']),
     delete: () => false,
   },
   hooks: {
@@ -125,6 +130,13 @@ export const Payments: CollectionConfig = {
       relationTo: 'sales-inquiries',
     },
     { name: 'customer', label: 'Khách hàng', type: 'relationship', relationTo: 'users' },
+    {
+      name: 'branch',
+      label: 'Chi nhánh hạch toán',
+      type: 'relationship',
+      relationTo: 'branches',
+      index: true,
+    },
     {
       name: 'paymentType',
       label: 'Loại giao dịch',

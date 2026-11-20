@@ -2,7 +2,12 @@
 
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
-import { DEFAULT_OPERATOR_PERMISSIONS, type AdminModule } from '@/access/nori'
+import {
+  DEFAULT_OPERATOR_PERMISSIONS,
+  STAFF_TITLE_LABELS,
+  type AdminModule,
+  type StaffTitle,
+} from '@/access/nori'
 import { useAuth } from '@/components/auth-provider'
 import { api } from '@/lib/client-api'
 import {
@@ -33,6 +38,67 @@ const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
   {
     title: 'Điều hành',
     items: [{ href: '/dashboard', label: 'Tổng quan', icon: 'grid', group: 'Điều hành' }],
+  },
+  {
+    title: 'Chi nhánh & Địa điểm',
+    items: [
+      {
+        href: '/dashboard/branches',
+        label: 'Chi nhánh',
+        icon: 'home',
+        group: 'Chi nhánh & Địa điểm',
+        module: 'branches',
+      },
+      {
+        href: '/dashboard/warehouses',
+        label: 'Kho xe & Tồn kho',
+        icon: 'grid',
+        group: 'Chi nhánh & Địa điểm',
+        module: 'warehouses',
+      },
+      {
+        href: '/dashboard/locations',
+        label: 'Điểm nhận trả xe',
+        icon: 'pin',
+        group: 'Chi nhánh & Địa điểm',
+        module: 'locations',
+      },
+      {
+        href: '/dashboard/staff',
+        label: 'Nhân viên & Phân quyền CN',
+        icon: 'user',
+        group: 'Chi nhánh & Địa điểm',
+        module: 'staff',
+      },
+      {
+        href: '/dashboard/transfers',
+        label: 'Điều chuyển xe',
+        icon: 'road',
+        group: 'Chi nhánh & Địa điểm',
+        module: 'transfers',
+      },
+      {
+        href: '/dashboard/deliveries',
+        label: 'Giao nhận tận nơi',
+        icon: 'car',
+        group: 'Chi nhánh & Địa điểm',
+        module: 'deliveries',
+      },
+      {
+        href: '/dashboard/location-pricing',
+        label: 'Giá & Tuyến một chiều',
+        icon: 'wallet',
+        group: 'Chi nhánh & Địa điểm',
+        module: 'pricing',
+      },
+      {
+        href: '/dashboard/branch-reports',
+        label: 'Báo cáo chi nhánh',
+        icon: 'bar-chart',
+        group: 'Chi nhánh & Địa điểm',
+        module: 'reports',
+      },
+    ],
   },
   {
     title: 'Phương tiện',
@@ -640,11 +706,20 @@ export function AdminShell({ children }: { children: ReactNode }) {
                     <div className="border-b border-line pb-3">
                       <Text className="text-small font-semibold">{user.fullName}</Text>
                       <Text className="break-all text-caption text-muted">{user.email}</Text>
-                      <Badge tone="brand" className="mt-1.5">
-                        {user.adminRole === 'SUPER_ADMIN'
-                          ? 'Quản trị viên cấp cao'
-                          : 'Nhân viên vận hành'}
-                      </Badge>
+                      <div className="mt-1.5 flex flex-wrap gap-1.5">
+                        <Badge tone="brand">
+                          {user.staffTitle && user.staffTitle in STAFF_TITLE_LABELS
+                            ? STAFF_TITLE_LABELS[user.staffTitle as StaffTitle]
+                            : user.adminRole === 'SUPER_ADMIN'
+                              ? 'Quản trị viên cấp cao'
+                              : 'Nhân viên vận hành'}
+                        </Badge>
+                        <Badge tone={user.branchScopeMode === 'ASSIGNED' ? 'warning' : 'muted'}>
+                          {user.branchScopeMode === 'ASSIGNED'
+                            ? `${user.assignedBranchIds?.length ?? 0} chi nhánh`
+                            : 'Toàn hệ thống'}
+                        </Badge>
+                      </div>
                     </div>
                     <div className="mt-2 space-y-1 text-small">
                       <button

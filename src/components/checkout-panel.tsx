@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import type { BookingView, FleetView, Quote } from '@/lib/domain-types'
+import type { BookingView, FleetView, PublicLocationsPayload, Quote } from '@/lib/domain-types'
 import { api, RequestError } from '@/lib/client-api'
 import {
   PROMO_REMOVED_MESSAGE,
@@ -48,6 +48,8 @@ export function CheckoutPanel({ address }: { address: string | null }) {
   const initialPickupTime = params.get('pickupTime') ?? '08:00'
   const initialReturnTime = params.get('returnTime') ?? '20:00'
   const initialDelivery = ['1', 'true'].includes(params.get('delivery') ?? '')
+  const initialPickupBranchId = params.get('pickupBranchId') ?? ''
+  const initialReturnBranchId = params.get('returnBranchId') ?? ''
   const initialAddons = parseAddonKeys(params.get('addons'))
 
   const router = useRouter()
@@ -73,6 +75,18 @@ export function CheckoutPanel({ address }: { address: string | null }) {
   )
   const [pickupLocation, setPickupLocation] = useState('')
   const [deliveryRequested, setDeliveryRequested] = useState(initialDelivery)
+  const [publicLocs, setPublicLocs] = useState<PublicLocationsPayload | null>(null)
+  const [pickupBranchId, setPickupBranchId] = useState(initialPickupBranchId)
+  const [differentReturn, setDifferentReturn] = useState(
+    Boolean(initialReturnBranchId && initialReturnBranchId !== initialPickupBranchId),
+  )
+  const [returnBranchId, setReturnBranchId] = useState(initialReturnBranchId)
+  const [pickupServiceLocationId, setPickupServiceLocationId] = useState('')
+  const [returnServiceLocationId, setReturnServiceLocationId] = useState('')
+  const [returnMethod, setReturnMethod] = useState<'BRANCH_RETURN' | 'HOME_PICKUP'>('BRANCH_RETURN')
+  const [deliveryZoneId, setDeliveryZoneId] = useState('')
+  const [deliveryAddress, setDeliveryAddress] = useState('')
+  const [deliveryDirections, setDeliveryDirections] = useState('')
   const [addonKeys, setAddonKeys] = useState<AddonDefinition['id'][]>(initialAddons)
   const [customerPhone, setCustomerPhone] = useState('')
   const [driverLicenseNumber, setDriverLicenseNumber] = useState('')
@@ -87,6 +101,7 @@ export function CheckoutPanel({ address }: { address: string | null }) {
   const quoteSeqRef = useRef(0)
   const quoteAbortRef = useRef<AbortController | null>(null)
   const submittingRef = useRef(false)
+  const idempotencyKeyRef = useRef<string>('')
   const hydratedDraftKeyRef = useRef('')
   const hadCustomerSessionRef = useRef(false)
 
@@ -102,10 +117,44 @@ export function CheckoutPanel({ address }: { address: string | null }) {
       ? anonDraftKey
       : ''
 
+  const effectiveReturnBranchId =
+    differentReturn && returnBranchId ? returnBranchId : pickupBranchId
   const addonKeyString = [...addonKeys].sort().join(',')
   const activeQuoteTargetKey = id
-    ? `${id}|${startDate}|${endDate}|${deliveryRequested ? '1' : '0'}|${addonKeyString}|${confirmedPromoCode}`
+    ? `${id}|${startDate}|${endDate}|${pickupTime}|${returnTime}|${pickupBranchId}|${effectiveReturnBranchId}|${pickupServiceLocationId}|${returnServiceLocationId}|${deliveryRequested ? '1' : '0'}|${returnMethod}|${deliveryZoneId}|${addonKeyString}|${confirmedPromoCode}`
     : ''
+
+  // Reset idempotency key only when core booking parameters change (keeps double-submit idempotent!)
+  useEffect(() => {
+    idempotencyKeyRef.current =
+      typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+        ? `bk-${crypto.randomUUID()}`
+        : `bk-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+  }, [
+    id,
+    startDate,
+    endDate,
+    pickupBranchId,
+    effectiveReturnBranchId,
+    deliveryRequested,
+    returnMethod,
+    deliveryZoneId,
+    addonKeyString,
+    confirmedPromoCode,
+  ])
+
+  // Load active public branches / service locations / delivery zones
+  useEffect(() => {
+    let active = true
+    api<PublicLocationsPayload>('/locations')
+      .then((res) => {
+        if (active) setPublicLocs(res)
+      })
+      .catch(() => {})
+    return () => {
+      active = false
+    }
+  }, [])
 
   // Always verify live backend session when entering Checkout
   useEffect(() => {
@@ -244,6 +293,9 @@ export function CheckoutPanel({ address }: { address: string | null }) {
         if (!active) return
         if (!fleet[0]) throw new Error('Xe không còn được công bố.')
         setVehicle(fleet[0])
+        setPickupBranchId(
+          (prev) => prev || fleet[0].currentBranchId || fleet[0].managingBranchId || '',
+        )
         setPickupLocation(
           (prev) => prev || fleet[0].pickupLocation || fleet[0].location || address || '',
         )
@@ -284,7 +336,17 @@ export function CheckoutPanel({ address }: { address: string | null }) {
           vehicle: id,
           startDate,
           endDate,
-          ...(deliveryRequested ? { delivery: '1' } : {}),
+          pickupTime,
+          returnTime,
+          ...(pickupBranchId ? { pickupBranchId } : {}),
+          ...(effectiveReturnBranchId ? { returnBranchId: effectiveReturnBranchId } : {}),
+          ...(pickupServiceLocationId ? { pickupServiceLocationId } : {}),
+          ...(returnServiceLocationId ? { returnServiceLocationId } : {}),
+          ...(deliveryRequested
+            ? { delivery: '1', pickupMethod: 'HOME_DELIVERY' }
+            : { pickupMethod: 'BRANCH_PICKUP' }),
+          ...(returnMethod === 'HOME_PICKUP' ? { returnMethod: 'HOME_PICKUP' } : {}),
+          ...(deliveryZoneId ? { deliveryZoneId } : {}),
           ...(addonKeys.length ? { addons: addonKeys.join(',') } : {}),
           ...(normalizedCandidate ? { promoCode: normalizedCandidate } : {}),
         })
@@ -295,11 +357,15 @@ export function CheckoutPanel({ address }: { address: string | null }) {
 
         setQuote(result)
         if (!result.available) {
-          setError('Xe đã có lịch trong khoảng ngày này. Vui lòng chọn ngày hoặc xe khác.')
+          setError(
+            result.reason ||
+              'Xe đã có lịch trong khoảng ngày này. Vui lòng chọn ngày hoặc xe khác.',
+          )
         } else if (!options?.preserveSubmitError) {
           setError('')
         }
 
+        const baseKey = `${id}|${startDate}|${endDate}|${pickupTime}|${returnTime}|${pickupBranchId}|${effectiveReturnBranchId}|${pickupServiceLocationId}|${returnServiceLocationId}|${deliveryRequested ? '1' : '0'}|${returnMethod}|${deliveryZoneId}|${[...addonKeys].sort().join(',')}`
         if (normalizedCandidate) {
           if (result.promoCode && !result.promoError) {
             const validCode = result.promoCode.trim().toUpperCase()
@@ -308,9 +374,7 @@ export function CheckoutPanel({ address }: { address: string | null }) {
               tone: 'success',
               message: result.promoMessage || 'Mã đã được áp dụng thành công.',
             })
-            setLoadedQuoteKey(
-              `${id}|${startDate}|${endDate}|${deliveryRequested ? '1' : '0'}|${[...addonKeys].sort().join(',')}|${validCode}`,
-            )
+            setLoadedQuoteKey(`${baseKey}|${validCode}`)
           } else {
             // Promo rejected by Backend: result is already calculated without promo discount
             setConfirmedPromoCode('')
@@ -318,15 +382,11 @@ export function CheckoutPanel({ address }: { address: string | null }) {
               tone: 'error',
               message: result.promoError || 'Mã khuyến mãi không đủ điều kiện áp dụng.',
             })
-            setLoadedQuoteKey(
-              `${id}|${startDate}|${endDate}|${deliveryRequested ? '1' : '0'}|${[...addonKeys].sort().join(',')}|`,
-            )
+            setLoadedQuoteKey(`${baseKey}|`)
           }
         } else {
           setConfirmedPromoCode('')
-          setLoadedQuoteKey(
-            `${id}|${startDate}|${endDate}|${deliveryRequested ? '1' : '0'}|${[...addonKeys].sort().join(',')}|`,
-          )
+          setLoadedQuoteKey(`${baseKey}|`)
         }
       } catch (e) {
         if (
@@ -345,10 +405,25 @@ export function CheckoutPanel({ address }: { address: string | null }) {
         }
       }
     },
-    [id, vehicle, startDate, endDate, deliveryRequested, addonKeys],
+    [
+      id,
+      vehicle,
+      startDate,
+      endDate,
+      pickupTime,
+      returnTime,
+      pickupBranchId,
+      effectiveReturnBranchId,
+      pickupServiceLocationId,
+      returnServiceLocationId,
+      deliveryRequested,
+      returnMethod,
+      deliveryZoneId,
+      addonKeys,
+    ],
   )
 
-  // Recalculate quote automatically whenever vehicle, dates, delivery, addons, draft restore, or retry change
+  // Recalculate quote automatically whenever vehicle, dates, location, delivery, addons, draft restore, or retry change
   useEffect(() => {
     if (!id || !vehicle || authLoading) return
     void requestQuote(confirmedPromoCode)
@@ -361,7 +436,15 @@ export function CheckoutPanel({ address }: { address: string | null }) {
     vehicle,
     startDate,
     endDate,
+    pickupTime,
+    returnTime,
+    pickupBranchId,
+    effectiveReturnBranchId,
+    pickupServiceLocationId,
+    returnServiceLocationId,
     deliveryRequested,
+    returnMethod,
+    deliveryZoneId,
     addonKeyString,
     retry,
     authLoading,
@@ -504,6 +587,21 @@ export function CheckoutPanel({ address }: { address: string | null }) {
           pickupTime,
           returnTime,
           pickupLocation: pickupLocation.trim() || undefined,
+          pickupBranch: pickupBranchId || undefined,
+          returnBranch: effectiveReturnBranchId || undefined,
+          pickupServiceLocation: pickupServiceLocationId || undefined,
+          returnServiceLocation: returnServiceLocationId || undefined,
+          pickupMethod: deliveryRequested ? 'HOME_DELIVERY' : 'BRANCH_PICKUP',
+          returnMethod,
+          deliveryZone: deliveryZoneId || undefined,
+          deliveryAddress: deliveryRequested
+            ? deliveryAddress.trim() || pickupLocation.trim() || undefined
+            : undefined,
+          pickupAddress:
+            returnMethod === 'HOME_PICKUP'
+              ? deliveryAddress.trim() || pickupLocation.trim() || undefined
+              : undefined,
+          deliveryDirections: deliveryDirections.trim() || undefined,
           deliveryRequested,
           addonServices: addonKeys,
           customerPhone: cleanPhone,
@@ -511,6 +609,7 @@ export function CheckoutPanel({ address }: { address: string | null }) {
           note: note.trim() || undefined,
           promoCode: promoToSubmit,
           expectedTotalPrice: quote.estimatedTotal,
+          idempotencyKey: idempotencyKeyRef.current || undefined,
         }),
       })
       setCreated(booking)
@@ -702,6 +801,171 @@ export function CheckoutPanel({ address }: { address: string | null }) {
               ))}
             </Select>
           </div>
+
+          {(publicLocs?.branches.length ?? 0) > 0 && (
+            <div className="mt-4 space-y-3 rounded-control border border-line bg-subtle/50 p-4">
+              <Text className="text-small font-semibold">
+                Chi nhánh &amp; Phương thức giao nhận
+              </Text>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Select
+                  id="checkout-pickup-branch"
+                  label="Chi nhánh nhận xe"
+                  value={pickupBranchId}
+                  onChange={(e) => {
+                    setPickupBranchId(e.target.value)
+                    setPickupServiceLocationId('')
+                    setDeliveryZoneId('')
+                  }}
+                >
+                  <option value="">Theo chi nhánh hiện tại của xe</option>
+                  {(publicLocs?.branches ?? []).map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.name} ({b.province})
+                    </option>
+                  ))}
+                </Select>
+                {(() => {
+                  const pickupLocs = (publicLocs?.locations ?? []).filter(
+                    (l) => l.branchId === pickupBranchId && l.supportsPickup,
+                  )
+                  if (!pickupLocs.length) return null
+                  return (
+                    <Select
+                      id="checkout-pickup-service-loc"
+                      label="Điểm nhận xe cụ thể (tùy chọn)"
+                      value={pickupServiceLocationId}
+                      onChange={(e) => setPickupServiceLocationId(e.target.value)}
+                    >
+                      <option value="">Tại quầy chi nhánh chính</option>
+                      {pickupLocs.map((l) => (
+                        <option key={l.id} value={l.id}>
+                          {l.name}
+                          {(l.surchargeFee ?? 0) > 0 ? ` (+${formatMoney(l.surchargeFee)})` : ''}
+                        </option>
+                      ))}
+                    </Select>
+                  )
+                })()}
+              </div>
+
+              <Checkbox
+                id="checkout-one-way"
+                checked={differentReturn}
+                onChange={(e) => {
+                  setDifferentReturn(e.target.checked)
+                  if (!e.target.checked) {
+                    setReturnBranchId('')
+                    setReturnServiceLocationId('')
+                  }
+                }}
+                label="Trả xe tại chi nhánh khác (thuê một chiều)"
+              />
+
+              {differentReturn && (
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <Select
+                    id="checkout-return-branch"
+                    label="Chi nhánh trả xe"
+                    value={returnBranchId}
+                    onChange={(e) => {
+                      setReturnBranchId(e.target.value)
+                      setReturnServiceLocationId('')
+                    }}
+                  >
+                    <option value="">Chọn chi nhánh trả xe</option>
+                    {(publicLocs?.branches ?? []).map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {b.name} ({b.province})
+                      </option>
+                    ))}
+                  </Select>
+                  {(() => {
+                    const retLocs = (publicLocs?.locations ?? []).filter(
+                      (l) => l.branchId === returnBranchId && l.supportsReturn,
+                    )
+                    if (!retLocs.length) return null
+                    return (
+                      <Select
+                        id="checkout-return-service-loc"
+                        label="Điểm trả xe cụ thể"
+                        value={returnServiceLocationId}
+                        onChange={(e) => setReturnServiceLocationId(e.target.value)}
+                      >
+                        <option value="">Tại quầy chi nhánh trả</option>
+                        {retLocs.map((l) => (
+                          <option key={l.id} value={l.id}>
+                            {l.name}
+                            {(l.surchargeFee ?? 0) > 0 ? ` (+${formatMoney(l.surchargeFee)})` : ''}
+                          </option>
+                        ))}
+                      </Select>
+                    )
+                  })()}
+                </div>
+              )}
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Checkbox
+                  id="checkout-home-delivery-branch"
+                  checked={deliveryRequested}
+                  onChange={(e) => setDeliveryRequested(e.target.checked)}
+                  label="Giao xe tận nơi"
+                />
+                <Checkbox
+                  id="checkout-home-pickup-branch"
+                  checked={returnMethod === 'HOME_PICKUP'}
+                  onChange={(e) =>
+                    setReturnMethod(e.target.checked ? 'HOME_PICKUP' : 'BRANCH_RETURN')
+                  }
+                  label="Thu hồi xe tận nơi khi trả"
+                />
+              </div>
+
+              {(deliveryRequested || returnMethod === 'HOME_PICKUP') && (
+                <div className="space-y-3 border-t border-line pt-3">
+                  {(() => {
+                    const zones = (publicLocs?.deliveryZones ?? []).filter(
+                      (z) => !pickupBranchId || z.branchId === pickupBranchId,
+                    )
+                    if (!zones.length) return null
+                    return (
+                      <Select
+                        id="checkout-delivery-zone"
+                        label="Khu vực giao nhận tận nơi"
+                        value={deliveryZoneId}
+                        onChange={(e) => setDeliveryZoneId(e.target.value)}
+                      >
+                        <option value="">Chọn khu vực phục vụ</option>
+                        {zones.map((z) => (
+                          <option key={z.id} value={z.id}>
+                            {z.name} (Giao: {formatMoney(z.deliveryFee)} · Thu hồi:{' '}
+                            {formatMoney(z.pickupFee)})
+                          </option>
+                        ))}
+                      </Select>
+                    )
+                  })()}
+                  <Input
+                    id="checkout-delivery-address"
+                    label="Địa chỉ giao / thu hồi xe chi tiết"
+                    value={deliveryAddress}
+                    onChange={(e) => setDeliveryAddress(e.target.value)}
+                    maxLength={250}
+                    placeholder="Số nhà, tòa nhà, tên đường, phường/xã..."
+                  />
+                  <Input
+                    id="checkout-delivery-directions"
+                    label="Ghi chú hướng dẫn tìm địa điểm (tùy chọn)"
+                    value={deliveryDirections}
+                    onChange={(e) => setDeliveryDirections(e.target.value)}
+                    maxLength={300}
+                    placeholder="Cổng bảo vệ, bãi đỗ sảnh A..."
+                  />
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="mt-4">
             <Input
@@ -918,8 +1182,32 @@ export function CheckoutPanel({ address }: { address: string | null }) {
           )}
           {quote.deliveryFee > 0 && (
             <div className="flex justify-between gap-3">
-              <Text className="text-muted">Phí giao nhận tận nơi</Text>
+              <Text className="text-muted">Phí giao xe tận nơi</Text>
               <Text>+{formatVnd(quote.deliveryFee)}</Text>
+            </div>
+          )}
+          {(quote.pickupFee ?? 0) > 0 && (
+            <div className="flex justify-between gap-3">
+              <Text className="text-muted">Phí thu hồi xe tận nơi</Text>
+              <Text>+{formatVnd(quote.pickupFee ?? 0)}</Text>
+            </div>
+          )}
+          {(quote.locationSurcharge ?? 0) > 0 && (
+            <div className="flex justify-between gap-3">
+              <Text className="text-muted">Phụ phí địa điểm</Text>
+              <Text>+{formatVnd(quote.locationSurcharge ?? 0)}</Text>
+            </div>
+          )}
+          {(quote.oneWayFee ?? 0) > 0 && (
+            <div className="flex justify-between gap-3">
+              <Text className="text-muted">Phí trả xe khác chi nhánh</Text>
+              <Text>+{formatVnd(quote.oneWayFee ?? 0)}</Text>
+            </div>
+          )}
+          {(quote.afterHoursFee ?? 0) > 0 && (
+            <div className="flex justify-between gap-3">
+              <Text className="text-muted">Phí giao nhận ngoài giờ</Text>
+              <Text>+{formatVnd(quote.afterHoursFee ?? 0)}</Text>
             </div>
           )}
           {quote.addonFee > 0 && (

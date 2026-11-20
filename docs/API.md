@@ -91,3 +91,40 @@ Tất cả API quản trị yêu cầu cookie `payload-token` hợp lệ thuộc
 | `SLOT_UNAVAILABLE`      | 409         | Xe đã có người đặt hoặc đang trong lịch bảo trì (Race Condition)  |
 | `DUPLICATE_PAYMENT`     | 409         | Yêu cầu thanh toán trùng lặp được gửi trong khoảng thời gian 30s  |
 | `INTERNAL_SERVER_ERROR` | 500         | Lỗi máy chủ ngoài dự kiến                                         |
+
+---
+
+## 4. API Đa Chi Nhánh & Đa Địa Điểm (Module 3.7 — `v2.7.0`)
+
+### 4.1. Public & Customer Multi-Branch APIs
+
+- `GET /nori-api/locations`: Trả về danh sách chi nhánh đang hoạt động (`ACTIVE`), điểm nhận/trả xe đã xác minh (`service-locations`), khu vực giao nhận tận nơi (`delivery-zones`) và các tuyến thuê một chiều hợp lệ (`one-way-rental-rules`).
+- `GET /nori-api/availability?mode=catalogue&pickupBranchId=...&returnBranchId=...&startDate=...&endDate=...`: Lọc danh mục dòng xe khả dụng theo thời gian thực dựa trên vị trí vật lý hiện tại, lịch thuê, lịch điều chuyển và bảo dưỡng (`evaluateVehicleLocationTimeline`).
+- `GET /nori-api/availability?vehicle=<id>&startDate=...&endDate=...&pickupBranchId=...&returnBranchId=...&pickupServiceLocationId=...&pickupMethod=...&deliveryZoneId=...&promoCode=...`: Trả về khả dụng theo tuyến + báo giá chi tiết 5 tầng giá (`dailyPrice`, `locationSurcharge`, `oneWayFee`, `deliveryFee`, `pickupFee`, `afterHoursFee`, `promoDiscountAmount`, `estimatedTotal`).
+- `POST /nori-api/bookings`: Hỗ trợ đầy đủ `pickupBranch`, `returnBranch`, `pickupServiceLocation`, `returnServiceLocation`, `pickupMethod`, `returnMethod`, `deliveryZone`, `deliveryAddress`, `pickupAddress`, `deliveryDirections`, `idempotencyKey` (chống double-submit) và khóa ngày nguyên tử `rental_days` chống race condition (`409`).
+
+### 4.2. Admin Multi-Branch APIs (`/nori-api/dashboard/*`)
+
+Tất cả endpoint dưới đây áp dụng đồng thời `assertOrigin(request)` (trên mutation), RBAC theo phân hệ `[module, action]` và kiểm soát phạm vi chi nhánh `assertBranchScopeOrFail` (trả `403` cho mọi nỗ lực IDOR ngoài chi nhánh):
+
+- `GET / POST / PATCH / DELETE /nori-api/dashboard/branches`: Quản lý chi nhánh, kiểm tra đơn tương lai trước khi tạm ngừng, chặn xóa cứng nếu có xe/nhân viên/đơn/điều chuyển (`409`).
+- `GET / POST / PATCH / DELETE /nori-api/dashboard/warehouses`: Quản lý kho xe, sức chứa thực tế và phân bổ hàng loạt xe chưa gắn chi nhánh (`action: "bulk_allocate"`).
+- `GET / POST / PATCH / DELETE /nori-api/dashboard/locations`: Quản lý điểm nhận/trả xe đã xác minh, loại phương tiện hỗ trợ và phụ phí điểm.
+- `GET / POST / PATCH / DELETE /nori-api/dashboard/staff`: Tạo tài khoản nhân viên theo chức danh (`STAFF_TITLES`), gán 1..N chi nhánh, thu hồi quyền tức thì (`accountStatus: "REVOKED"`), chặn leo thang quyền (`403 PRIVILEGE_ESCALATION_BLOCKED`).
+- `GET / POST / PATCH /nori-api/dashboard/transfers`: Điều chuyển xe liên chi nhánh nguyên tử 9 trạng thái (`DRAFT → PENDING_APPROVAL → APPROVED → IN_TRANSIT → ARRIVED → COMPLETED` + `EXCEPTION`), hỗ trợ Optimistic Locking (`expectedRevision`), chặn hủy sau khi xuất kho (`409`) và chặn xác nhận hoàn tất trùng (`409`).
+- `GET / POST / PATCH / DELETE /nori-api/dashboard/deliveries`: Quản lý khu vực giao nhận (`entity: "zone"`) và nhiệm vụ giao/thu hồi xe (`entity: "job"`), kiểm tra xung đột khung giờ nhân viên (`409 DELIVERY_STAFF_TIME_CONFLICT`) và xử lý giao thất bại không đẩy sai trạng thái đơn thuê.
+- `GET / POST / PATCH / DELETE /nori-api/dashboard/location-pricing`: Quản lý bảng giá 5 tầng (`entity: "pricing"`) và quy tắc tuyến thuê một chiều + tỷ lệ chia doanh thu (`entity: "one-way"`).
+- `GET /nori-api/dashboard/branch-reports`: Báo cáo hiệu quả kinh doanh và tồn kho từng chi nhánh không cộng trùng doanh thu (`sum(branch) + unassigned === systemTotal`).
+- `GET /nori-api/dashboard/export?type=branch-reports[&branchId=...]`: Xuất CSV báo cáo chi nhánh UTF-8 BOM, lọc nghiêm ngặt theo phạm vi chi nhánh được phân công.
+
+### 4.3. Bảng Mã Lỗi Bổ sung (`v2.7.0`)
+
+| Mã lỗi (Code)                  | HTTP Status | Mô tả nghiệp vụ                                                              |
+| :----------------------------- | :---------- | :--------------------------------------------------------------------------- |
+| `BRANCH_SCOPE_FORBIDDEN`       | 403         | Truy cập/thao tác/xuất dữ liệu chi nhánh ngoài phạm vi được phân công (IDOR) |
+| `PRIVILEGE_ESCALATION_BLOCKED` | 403         | Chặn tự nâng quyền hoặc tạo/sửa `SUPER_ADMIN` / `ALL` scope trái phép        |
+| `ACCOUNT_REVOKED`              | 403         | Tài khoản nhân viên đã bị thu hồi quyền hoặc tạm khóa                        |
+| `ONE_WAY_NOT_ALLOWED`          | 409         | Tuyến trả xe khác chi nhánh chưa được cấu hình cho phép                      |
+| `VEHICLE_BRANCH_MISMATCH`      | 409         | Xe không có mặt tại chi nhánh nhận xe vào thời điểm yêu cầu                  |
+| `TRANSFER_CONFLICT`            | 409         | Trùng lịch đơn thuê / bảo dưỡng / điều chuyển hoặc sai chuyển trạng thái     |
+| `DELIVERY_STAFF_TIME_CONFLICT` | 409         | Nhân viên giao nhận đã có nhiệm vụ trùng khung giờ trong ngày                |

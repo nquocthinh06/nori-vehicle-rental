@@ -1,6 +1,7 @@
 import { adminHasPermission, type AdminAction, type AdminModule } from '@/access/nori'
-import { requireAdmin } from '@/lib/admin-api'
+import { assertBranchScopeOrFail, requireAdmin } from '@/lib/admin-api'
 import { apiError, assertOrigin, body, fail, json, text } from '@/lib/api-utils'
+import { relationId } from '@/lib/rental-rules'
 
 async function resolveTargetModuleFromBody(request: Request): Promise<AdminModule> {
   try {
@@ -22,7 +23,16 @@ function fleetAuth(module: AdminModule, action: AdminAction) {
 import { photo } from '@/lib/catalogue'
 import { subCategoriesByCategory } from '@/lib/rental-rules'
 
-const VALID_OP = ['READY', 'RENTED', 'RESERVED', 'MAINTENANCE', 'SOLD', 'INACTIVE'] as const
+const VALID_OP = [
+  'READY',
+  'RENTED',
+  'RESERVED',
+  'MAINTENANCE',
+  'IN_TRANSIT',
+  'PENDING_INSPECTION',
+  'SOLD',
+  'INACTIVE',
+] as const
 const VALID_BIZ = ['ACTIVE', 'INACTIVE'] as const
 const VALID_INTENT = ['RENT', 'SALE', 'BOTH'] as const
 const VALID_CAT = ['CAR', 'MOTORBIKE', 'PICKUP'] as const
@@ -269,7 +279,15 @@ export async function GET(request: Request) {
     const intent = sp.get('intent') || ''
     const category = sp.get('category') || ''
     const modelId = sp.get('modelId') || ''
+    const branchId = sp.get('branchId')?.trim() || ''
+    const warehouseId = sp.get('warehouseId')?.trim() || ''
+    const allocationStatus = sp.get('allocationStatus')?.trim() || ''
     const sort = sp.get('sort') || 'reference'
+
+    if (branchId) {
+      const deny = assertBranchScopeOrFail(auth.admin, branchId)
+      if (deny) return deny
+    }
 
     if (view === 'models') {
       const modelsRes = await payload.find({
@@ -451,7 +469,7 @@ export async function GET(request: Request) {
       })
     }
 
-    const [vehiclesRes, modelsRes, bookingsRes] = await Promise.all([
+    const [vehiclesRes, modelsRes, bookingsRes, branchesRes, warehousesRes] = await Promise.all([
       payload.find({
         collection: 'vehicles',
         user,
@@ -484,7 +502,24 @@ export async function GET(request: Request) {
             },
           })
         : Promise.resolve({ docs: [] }),
+      payload.find({
+        collection: 'branches',
+        overrideAccess: true,
+        depth: 0,
+        limit: 200,
+        sort: 'name',
+      }),
+      payload.find({
+        collection: 'warehouses',
+        overrideAccess: true,
+        depth: 0,
+        limit: 500,
+        sort: 'name',
+      }),
     ])
+
+    const branchMap = new Map(branchesRes.docs.map((b) => [String(b.id), b]))
+    const warehouseMap = new Map(warehousesRes.docs.map((w) => [String(w.id), w]))
 
     const bookingsByVehicle = new Map<
       string,
@@ -511,6 +546,13 @@ export async function GET(request: Request) {
         if (intent && v.intent !== intent) return false
         const mId = typeof v.model === 'object' && v.model ? v.model.id : v.model
         if (modelId && String(mId) !== modelId) return false
+        const mBranch = relationId(v.managingBranch)
+        const cBranch = relationId(v.currentBranch)
+        const cWh = relationId(v.currentWarehouse)
+        if (branchId && mBranch !== branchId && cBranch !== branchId) return false
+        if (warehouseId && cWh !== warehouseId) return false
+        if (allocationStatus && (v.allocationStatus ?? 'UNALLOCATED') !== allocationStatus)
+          return false
         if (search) {
           const mName = typeof v.model === 'object' && v.model ? v.model.name : ''
           const hay =
@@ -519,66 +561,90 @@ export async function GET(request: Request) {
         }
         return true
       })
-      .map((v) => ({
-        id: v.id,
-        reference: v.reference,
-        licensePlate: v.licensePlate ?? null,
-        modelId: typeof v.model === 'object' && v.model ? v.model.id : String(v.model),
-        modelName: typeof v.model === 'object' && v.model ? v.model.name : 'Chưa cập nhật',
-        modelSlug: typeof v.model === 'object' && v.model ? v.model.slug : '',
-        category: typeof v.model === 'object' && v.model ? v.model.category : 'CAR',
-        fuelType: typeof v.model === 'object' && v.model ? (v.model.fuelType ?? null) : null,
-        intent: v.intent ?? 'BOTH',
-        isDemo: Boolean(v.isDemo),
-        vehicleConditionType: v.vehicleConditionType ?? 'USED',
-        manufactureYear: v.manufactureYear ?? null,
-        pricePerDay: v.pricePerDay ?? null,
-        pricePerHour: v.pricePerHour ?? null,
-        pricePerWeek: v.pricePerWeek ?? null,
-        pricePerMonth: v.pricePerMonth ?? null,
-        weekendSurcharge: v.weekendSurcharge ?? null,
-        holidaySurcharge: v.holidaySurcharge ?? null,
-        depositAmount: v.depositAmount ?? null,
-        deliveryFee: v.deliveryFee ?? null,
-        kmLimitPerDay: v.kmLimitPerDay ?? null,
-        overKmFee: v.overKmFee ?? null,
-        lateReturnFeePerHour: v.lateReturnFeePerHour ?? null,
-        salePrice: v.salePrice ?? null,
-        listedPrice: v.listedPrice ?? null,
-        estimatedRollingPrice: v.estimatedRollingPrice ?? null,
-        odometer: v.odometer ?? null,
-        version: v.version ?? null,
-        color: v.color ?? null,
-        location: v.location ?? null,
-        pickupLocation: v.pickupLocation ?? null,
-        condition: v.condition ?? null,
-        exteriorCondition: v.exteriorCondition ?? null,
-        interiorCondition: v.interiorCondition ?? null,
-        engineCondition: v.engineCondition ?? null,
-        maintenanceHistory: v.maintenanceHistory ?? null,
-        inspectedAt: v.inspectedAt ?? null,
-        operationStatus: v.operationStatus ?? 'READY',
-        status: v.status ?? 'ACTIVE',
-        photos: (v.photos ?? [])
-          .map((p, idx) => {
-            const img = photo(p.image)
-            const imgId = typeof p.image === 'object' && p.image ? p.image.id : p.image
-            if (!img || !imgId) return null
-            return {
-              image: img,
-              imageId: String(imgId),
-              caption: p.caption ?? '',
-              kind: p.kind ?? 'ACTUAL',
-              photoType: p.photoType ?? 'ACTUAL',
-              isPrimary: Boolean(p.isPrimary),
-              sortOrder: typeof p.sortOrder === 'number' ? p.sortOrder : idx,
-              altText: p.altText ?? '',
-            }
-          })
-          .filter((x): x is NonNullable<typeof x> => x !== null)
-          .sort((a, b) => a.sortOrder - b.sortOrder),
-        bookings: bookingsByVehicle.get(String(v.id)) ?? [],
-      }))
+      .map((v) => {
+        const managingBranchId = relationId(v.managingBranch) ?? null
+        const currentBranchId = relationId(v.currentBranch) ?? null
+        const currentWarehouseId = relationId(v.currentWarehouse) ?? null
+        const nextExpectedBranchId = relationId(v.nextExpectedBranch) ?? null
+        return {
+          id: v.id,
+          reference: v.reference,
+          licensePlate: v.licensePlate ?? null,
+          modelId: typeof v.model === 'object' && v.model ? v.model.id : String(v.model),
+          modelName: typeof v.model === 'object' && v.model ? v.model.name : 'Chưa cập nhật',
+          modelSlug: typeof v.model === 'object' && v.model ? v.model.slug : '',
+          category: typeof v.model === 'object' && v.model ? v.model.category : 'CAR',
+          fuelType: typeof v.model === 'object' && v.model ? (v.model.fuelType ?? null) : null,
+          intent: v.intent ?? 'BOTH',
+          isDemo: Boolean(v.isDemo),
+          vehicleConditionType: v.vehicleConditionType ?? 'USED',
+          manufactureYear: v.manufactureYear ?? null,
+          pricePerDay: v.pricePerDay ?? null,
+          pricePerHour: v.pricePerHour ?? null,
+          pricePerWeek: v.pricePerWeek ?? null,
+          pricePerMonth: v.pricePerMonth ?? null,
+          weekendSurcharge: v.weekendSurcharge ?? null,
+          holidaySurcharge: v.holidaySurcharge ?? null,
+          depositAmount: v.depositAmount ?? null,
+          deliveryFee: v.deliveryFee ?? null,
+          kmLimitPerDay: v.kmLimitPerDay ?? null,
+          overKmFee: v.overKmFee ?? null,
+          lateReturnFeePerHour: v.lateReturnFeePerHour ?? null,
+          salePrice: v.salePrice ?? null,
+          listedPrice: v.listedPrice ?? null,
+          estimatedRollingPrice: v.estimatedRollingPrice ?? null,
+          odometer: v.odometer ?? null,
+          version: v.version ?? null,
+          color: v.color ?? null,
+          location: v.location ?? null,
+          pickupLocation: v.pickupLocation ?? null,
+          managingBranchId,
+          managingBranchName: managingBranchId
+            ? (branchMap.get(managingBranchId)?.name ?? null)
+            : null,
+          currentBranchId,
+          currentBranchName: currentBranchId
+            ? (branchMap.get(currentBranchId)?.name ?? null)
+            : null,
+          currentWarehouseId,
+          currentWarehouseName: currentWarehouseId
+            ? (warehouseMap.get(currentWarehouseId)?.name ?? null)
+            : null,
+          nextExpectedBranchId,
+          nextExpectedBranchName: nextExpectedBranchId
+            ? (branchMap.get(nextExpectedBranchId)?.name ?? null)
+            : null,
+          nextExpectedLocationNote: v.nextExpectedLocationNote ?? null,
+          allocationStatus: v.allocationStatus ?? (managingBranchId ? 'ALLOCATED' : 'UNALLOCATED'),
+          condition: v.condition ?? null,
+          exteriorCondition: v.exteriorCondition ?? null,
+          interiorCondition: v.interiorCondition ?? null,
+          engineCondition: v.engineCondition ?? null,
+          maintenanceHistory: v.maintenanceHistory ?? null,
+          inspectedAt: v.inspectedAt ?? null,
+          operationStatus: v.operationStatus ?? 'READY',
+          status: v.status ?? 'ACTIVE',
+          photos: (v.photos ?? [])
+            .map((p, idx) => {
+              const img = photo(p.image)
+              const imgId = typeof p.image === 'object' && p.image ? p.image.id : p.image
+              if (!img || !imgId) return null
+              return {
+                image: img,
+                imageId: String(imgId),
+                caption: p.caption ?? '',
+                kind: p.kind ?? 'ACTUAL',
+                photoType: p.photoType ?? 'ACTUAL',
+                isPrimary: Boolean(p.isPrimary),
+                sortOrder: typeof p.sortOrder === 'number' ? p.sortOrder : idx,
+                altText: p.altText ?? '',
+              }
+            })
+            .filter((x): x is NonNullable<typeof x> => x !== null)
+            .sort((a, b) => a.sortOrder - b.sortOrder),
+          bookings: bookingsByVehicle.get(String(v.id)) ?? [],
+        }
+      })
 
     const pageSize = 15
     const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize))
@@ -595,6 +661,19 @@ export async function GET(request: Request) {
         brand: m.brand,
         category: m.category,
         fuelType: m.fuelType ?? null,
+      })),
+      branches: branchesRes.docs.map((b) => ({
+        id: String(b.id),
+        code: b.code,
+        name: b.name,
+        status: b.status,
+      })),
+      warehouses: warehousesRes.docs.map((w) => ({
+        id: String(w.id),
+        code: w.code,
+        name: w.name,
+        branchId: relationId(w.branch) ?? '',
+        status: w.status,
       })),
     })
   } catch (error) {
@@ -630,6 +709,9 @@ const MODEL_AND_VEHICLE_ALLOWLIST = [
   'color',
   'location',
   'pickupLocation',
+  'managingBranchId',
+  'currentBranchId',
+  'currentWarehouseId',
   'condition',
   'exteriorCondition',
   'interiorCondition',
@@ -816,6 +898,11 @@ export async function POST(request: Request) {
         color: text(data.color, 60) || undefined,
         location: text(data.location, 100) || undefined,
         pickupLocation: text(data.pickupLocation, 160) || undefined,
+        managingBranch: text(data.managingBranchId, 100) || undefined,
+        currentBranch:
+          text(data.currentBranchId, 100) || text(data.managingBranchId, 100) || undefined,
+        currentWarehouse: text(data.currentWarehouseId, 100) || undefined,
+        allocationStatus: text(data.managingBranchId, 100) ? 'ALLOCATED' : 'UNALLOCATED',
         condition: text(data.condition, 500) || undefined,
         exteriorCondition: text(data.exteriorCondition, 200) || undefined,
         interiorCondition: text(data.interiorCondition, 200) || undefined,
@@ -1031,6 +1118,26 @@ export async function PATCH(request: Request) {
     if (data.location !== undefined) patch.location = text(data.location, 100) || null
     if (data.pickupLocation !== undefined)
       patch.pickupLocation = text(data.pickupLocation, 160) || null
+    if (data.managingBranchId !== undefined) {
+      const mB = text(data.managingBranchId, 100) || null
+      if (mB) {
+        const deny = assertBranchScopeOrFail(auth.admin, mB)
+        if (deny) return deny
+      }
+      patch.managingBranch = mB
+      patch.allocationStatus = mB ? 'ALLOCATED' : 'UNALLOCATED'
+    }
+    if (data.currentBranchId !== undefined) {
+      const cB = text(data.currentBranchId, 100) || null
+      if (cB) {
+        const deny = assertBranchScopeOrFail(auth.admin, cB)
+        if (deny) return deny
+      }
+      patch.currentBranch = cB
+    }
+    if (data.currentWarehouseId !== undefined) {
+      patch.currentWarehouse = text(data.currentWarehouseId, 100) || null
+    }
     if (data.condition !== undefined) patch.condition = text(data.condition, 500) || null
     if (data.exteriorCondition !== undefined)
       patch.exteriorCondition = text(data.exteriorCondition, 200) || null

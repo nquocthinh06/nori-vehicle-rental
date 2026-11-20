@@ -9,9 +9,10 @@ async function queryFleetData(params: {
   id: string | null
   model: string | null
   modelSlug: string | null
+  branchId: string | null
 }): Promise<FleetView[]> {
   const payload = await getPayloadClient()
-  const { id, model, modelSlug } = params
+  const { id, model, modelSlug, branchId } = params
   let resolvedModelId = model
   const modelMetaMap = new Map<string, { id: string; name: string; slug: string }>()
 
@@ -35,7 +36,16 @@ async function queryFleetData(params: {
     }
   }
 
-  const where: Where = id ? { id: { equals: id } } : { model: { equals: resolvedModelId } }
+  const where: Where = id
+    ? { id: { equals: id } }
+    : branchId
+      ? {
+          and: [
+            ...(resolvedModelId ? [{ model: { equals: resolvedModelId } }] : []),
+            { currentBranch: { equals: branchId } },
+          ],
+        }
+      : { model: { equals: resolvedModelId } }
   const result = await payload.find({
     collection: 'vehicles',
     overrideAccess: false,
@@ -66,7 +76,17 @@ async function queryFleetData(params: {
     ),
   ]
 
-  const [missingModelsRes, mediaRes] = await Promise.all([
+  const branchIds = [
+    ...new Set(
+      result.docs.flatMap((v) =>
+        [v.managingBranch, v.currentBranch]
+          .map((b) => (typeof b === 'object' && b ? b.id : b))
+          .filter((bId): bId is string => typeof bId === 'string' && bId.length > 0),
+      ),
+    ),
+  ]
+
+  const [missingModelsRes, mediaRes, branchesRes] = await Promise.all([
     missingModelIds.length
       ? payload.find({
           collection: 'vehicle-models',
@@ -105,12 +125,23 @@ async function queryFleetData(params: {
           },
         })
       : Promise.resolve({ docs: [] }),
+    branchIds.length
+      ? payload.find({
+          collection: 'branches',
+          overrideAccess: true,
+          depth: 0,
+          limit: branchIds.length,
+          where: { id: { in: branchIds } },
+          select: { name: true },
+        })
+      : Promise.resolve({ docs: [] }),
   ])
 
   for (const m of missingModelsRes.docs) {
     modelMetaMap.set(String(m.id), { id: String(m.id), name: m.name, slug: m.slug })
   }
   const mediaMap = new Map(mediaRes.docs.map((m) => [String(m.id), m]))
+  const branchNameMap = new Map(branchesRes.docs.map((b) => [String(b.id), b.name]))
 
   return result.docs.map((vehicle) => {
     const rawModelId =
@@ -187,6 +218,33 @@ async function queryFleetData(params: {
       version: vehicle.version ?? null,
       location: vehicle.location ?? null,
       pickupLocation: vehicle.pickupLocation ?? null,
+      managingBranchId:
+        typeof vehicle.managingBranch === 'object' && vehicle.managingBranch
+          ? vehicle.managingBranch.id
+          : (vehicle.managingBranch ?? null),
+      managingBranchName: (() => {
+        const bId =
+          typeof vehicle.managingBranch === 'object' && vehicle.managingBranch
+            ? vehicle.managingBranch.id
+            : vehicle.managingBranch
+        return bId ? (branchNameMap.get(String(bId)) ?? null) : null
+      })(),
+      currentBranchId:
+        typeof vehicle.currentBranch === 'object' && vehicle.currentBranch
+          ? vehicle.currentBranch.id
+          : (vehicle.currentBranch ?? null),
+      currentBranchName: (() => {
+        const bId =
+          typeof vehicle.currentBranch === 'object' && vehicle.currentBranch
+            ? vehicle.currentBranch.id
+            : vehicle.currentBranch
+        return bId ? (branchNameMap.get(String(bId)) ?? null) : null
+      })(),
+      currentWarehouseId:
+        typeof vehicle.currentWarehouse === 'object' && vehicle.currentWarehouse
+          ? vehicle.currentWarehouse.id
+          : (vehicle.currentWarehouse ?? null),
+      allocationStatus: vehicle.allocationStatus ?? 'UNALLOCATED',
       operationStatus: vehicle.operationStatus ?? 'READY',
       photos: mappedPhotos,
     }
@@ -197,14 +255,16 @@ function getCachedFleetData(params: {
   id: string | null
   model: string | null
   modelSlug: string | null
+  branchId: string | null
 }) {
   const key = JSON.stringify({
     id: params.id ?? '',
     model: params.model ?? '',
     modelSlug: params.modelSlug ?? '',
+    branchId: params.branchId ?? '',
   })
-  return unstable_cache(() => queryFleetData(params), ['nori-fleet-v1', key], {
-    tags: ['nori-catalogue'],
+  return unstable_cache(() => queryFleetData(params), ['nori-fleet-v2', key], {
+    tags: ['nori-catalogue', 'nori-branches'],
   })()
 }
 
@@ -214,8 +274,9 @@ export async function GET(request: Request) {
     const model = query.get('model')
     const id = query.get('id')
     const modelSlug = query.get('modelSlug')
-    if (!model && !id && !modelSlug) return fail('Vui lòng chọn dòng xe.')
-    const data = await getCachedFleetData({ id, model, modelSlug })
+    const branchId = query.get('branchId')
+    if (!model && !id && !modelSlug && !branchId) return fail('Vui lòng chọn dòng xe.')
+    const data = await getCachedFleetData({ id, model, modelSlug, branchId })
     return json(data)
   } catch (error) {
     return apiError(error)

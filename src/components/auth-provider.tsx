@@ -18,6 +18,9 @@ export type AppUser = {
   phone?: string | null
   role?: 'CUSTOMER' | 'ADMIN'
   adminRole?: 'SUPER_ADMIN' | 'OPERATOR'
+  staffTitle?: string
+  branchScopeMode?: 'ALL' | 'ASSIGNED'
+  assignedBranchIds?: string[]
   permissions?: Record<string, string[]>
   isAdmin?: boolean
 }

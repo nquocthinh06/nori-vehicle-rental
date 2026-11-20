@@ -23,6 +23,8 @@ export function VehicleCard({
   layout = 'grid',
   startDate,
   endDate,
+  pickupBranchId,
+  returnBranchId,
 }: {
   model: ModelView
   intent?: 'rent' | 'buy'
@@ -30,6 +32,8 @@ export function VehicleCard({
   layout?: 'grid' | 'list'
   startDate?: string | null
   endDate?: string | null
+  pickupBranchId?: string | null
+  returnBranchId?: string | null
 }) {
   const price = intent === 'rent' ? model.pricePerDay : model.salePrice
   const availableCount = intent === 'rent' ? model.availableRentCount : model.availableSaleCount
@@ -40,9 +44,15 @@ export function VehicleCard({
 
   const query = new URLSearchParams()
   if (intent === 'buy') query.set('intent', 'buy')
-  else if (startDate && endDate) {
-    query.set('startDate', startDate)
-    query.set('endDate', endDate)
+  else {
+    if (startDate && endDate) {
+      query.set('startDate', startDate)
+      query.set('endDate', endDate)
+    }
+    if (pickupBranchId) query.set('pickupBranchId', pickupBranchId)
+    if (returnBranchId && returnBranchId !== pickupBranchId) {
+      query.set('returnBranchId', returnBranchId)
+    }
   }
   const href = `/vehicles/${model.slug}${query.size ? `?${query}` : ''}`
 

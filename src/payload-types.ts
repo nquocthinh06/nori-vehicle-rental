@@ -163,8 +163,18 @@ export interface Config {
     folders: Folder;
     tags: Tag;
     users: User;
+    branches: Branch;
+    warehouses: Warehouse;
+    'service-locations': ServiceLocation;
+    'branch-staff': BranchStaff;
     'vehicle-models': VehicleModel;
     vehicles: Vehicle;
+    'vehicle-transfers': VehicleTransfer;
+    'vehicle-location-history': VehicleLocationHistory;
+    'delivery-zones': DeliveryZone;
+    'delivery-jobs': DeliveryJob;
+    'location-pricing-rules': LocationPricingRule;
+    'one-way-rental-rules': OneWayRentalRule;
     'maintenance-schedules': MaintenanceSchedule;
     'rental-days': RentalDay;
     bookings: Booking;
@@ -191,8 +201,18 @@ export interface Config {
     folders: FoldersSelect<false> | FoldersSelect<true>;
     tags: TagsSelect<false> | TagsSelect<true>;
     users: UsersSelect<false> | UsersSelect<true>;
+    branches: BranchesSelect<false> | BranchesSelect<true>;
+    warehouses: WarehousesSelect<false> | WarehousesSelect<true>;
+    'service-locations': ServiceLocationsSelect<false> | ServiceLocationsSelect<true>;
+    'branch-staff': BranchStaffSelect<false> | BranchStaffSelect<true>;
     'vehicle-models': VehicleModelsSelect<false> | VehicleModelsSelect<true>;
     vehicles: VehiclesSelect<false> | VehiclesSelect<true>;
+    'vehicle-transfers': VehicleTransfersSelect<false> | VehicleTransfersSelect<true>;
+    'vehicle-location-history': VehicleLocationHistorySelect<false> | VehicleLocationHistorySelect<true>;
+    'delivery-zones': DeliveryZonesSelect<false> | DeliveryZonesSelect<true>;
+    'delivery-jobs': DeliveryJobsSelect<false> | DeliveryJobsSelect<true>;
+    'location-pricing-rules': LocationPricingRulesSelect<false> | LocationPricingRulesSelect<true>;
+    'one-way-rental-rules': OneWayRentalRulesSelect<false> | OneWayRentalRulesSelect<true>;
     'maintenance-schedules': MaintenanceSchedulesSelect<false> | MaintenanceSchedulesSelect<true>;
     'rental-days': RentalDaysSelect<false> | RentalDaysSelect<true>;
     bookings: BookingsSelect<false> | BookingsSelect<true>;
@@ -288,6 +308,30 @@ export interface Admin {
     | number
     | boolean
     | null;
+  staffTitle?:
+    | (
+        | 'SUPER_ADMIN'
+        | 'SYSTEM_ADMIN'
+        | 'BRANCH_MANAGER'
+        | 'RENTAL_STAFF'
+        | 'WAREHOUSE_STAFF'
+        | 'DELIVERY_STAFF'
+        | 'ACCOUNTANT'
+        | 'OPERATOR'
+      )
+    | null;
+  branchScopeMode?: ('ALL' | 'ASSIGNED') | null;
+  assignedBranchIds?:
+    | {
+        [k: string]: unknown;
+      }
+    | unknown[]
+    | string
+    | number
+    | boolean
+    | null;
+  accountStatus?: ('ACTIVE' | 'REVOKED' | 'SUSPENDED') | null;
+  phone?: string | null;
   createdBy?:
     | ({
         relationTo: 'admins';
@@ -398,6 +442,9 @@ export interface AuditLog {
   actorType?: ('ADMIN' | 'CUSTOMER' | 'SYSTEM') | null;
   actorId?: string | null;
   actorEmail?: string | null;
+  actorRole?: string | null;
+  branchId?: string | null;
+  outcome?: ('SUCCESS' | 'DENIED' | 'FAILED') | null;
   createdBy?:
     | ({
         relationTo: 'admins';
@@ -540,6 +587,219 @@ export interface Tag {
   createdAt: string;
   _h_slugPath?: string | null;
   _h_titlePath?: string | null;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "branches".
+ */
+export interface Branch {
+  id: string;
+  code: string;
+  name: string;
+  slug?: string | null;
+  address: string;
+  province: string;
+  ward?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  hotline?: string | null;
+  email?: string | null;
+  manager?: (string | null) | Admin;
+  managerNameSnapshot?: string | null;
+  timezone?: string | null;
+  workingDays?: string | null;
+  workStartTime?: string | null;
+  workEndTime?: string | null;
+  lunchBreakStart?: string | null;
+  lunchBreakEnd?: string | null;
+  operatingHoursLabel?: string | null;
+  holidays?:
+    | {
+        [k: string]: unknown;
+      }
+    | unknown[]
+    | string
+    | number
+    | boolean
+    | null;
+  coverImage?: (string | null) | Media;
+  gallery?:
+    | {
+        image: string | Media;
+        caption?: string | null;
+        id?: string | null;
+      }[]
+    | null;
+  description?: string | null;
+  supportsHomeDelivery?: boolean | null;
+  supportsHomePickup?: boolean | null;
+  deliveryStartTime?: string | null;
+  deliveryEndTime?: string | null;
+  defaultDeliveryFee?: number | null;
+  defaultPickupFee?: number | null;
+  afterHoursFee?: number | null;
+  freeDeliveryMinOrder?: number | null;
+  maxDeliveryDistanceKm?: number | null;
+  deliveryStaffCapacityPerSlot?: number | null;
+  defaultPreparationMinutes?: number | null;
+  status: 'ACTIVE' | 'INACTIVE' | 'TEMPORARILY_CLOSED' | 'ARCHIVED';
+  isDemo?: boolean | null;
+  createdBy?:
+    | ({
+        relationTo: 'admins';
+        value: string | Admin;
+      } | null)
+    | ({
+        relationTo: 'users';
+        value: string | User;
+      } | null);
+  updatedBy?:
+    | ({
+        relationTo: 'admins';
+        value: string | Admin;
+      } | null)
+    | ({
+        relationTo: 'users';
+        value: string | User;
+      } | null);
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "warehouses".
+ */
+export interface Warehouse {
+  id: string;
+  code: string;
+  name: string;
+  branch: string | Branch;
+  warehouseType: 'SHOWROOM' | 'PARKING_LOT' | 'STORAGE' | 'MAINTENANCE_CENTER' | 'STAGING_POINT';
+  address: string;
+  capacity: number;
+  allowOverCapacity?: boolean | null;
+  manager?: (string | null) | Admin;
+  managerNameSnapshot?: string | null;
+  operatingHours?: string | null;
+  isCustomerFacing?: boolean | null;
+  status: 'ACTIVE' | 'INACTIVE' | 'MAINTENANCE' | 'ARCHIVED';
+  notes?: string | null;
+  createdBy?:
+    | ({
+        relationTo: 'admins';
+        value: string | Admin;
+      } | null)
+    | ({
+        relationTo: 'users';
+        value: string | User;
+      } | null);
+  updatedBy?:
+    | ({
+        relationTo: 'admins';
+        value: string | Admin;
+      } | null)
+    | ({
+        relationTo: 'users';
+        value: string | User;
+      } | null);
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "service-locations".
+ */
+export interface ServiceLocation {
+  id: string;
+  code: string;
+  name: string;
+  branch: string | Branch;
+  warehouse?: (string | null) | Warehouse;
+  locationType: 'BRANCH' | 'SHOWROOM' | 'WAREHOUSE' | 'FIXED_POINT' | 'AIRPORT' | 'TRAIN_STATION' | 'PARTNER_HOTEL';
+  address: string;
+  province?: string | null;
+  ward?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  operatingHours?: string | null;
+  openTime?: string | null;
+  closeTime?: string | null;
+  pickupInstructions?: string | null;
+  returnInstructions?: string | null;
+  supportsPickup?: boolean | null;
+  supportsReturn?: boolean | null;
+  supportsHomeDelivery?: boolean | null;
+  supportsHomePickup?: boolean | null;
+  supportedCategories?: string | null;
+  surchargeFee?: number | null;
+  verified?: boolean | null;
+  status: 'ACTIVE' | 'INACTIVE' | 'TEMPORARILY_CLOSED';
+  createdBy?:
+    | ({
+        relationTo: 'admins';
+        value: string | Admin;
+      } | null)
+    | ({
+        relationTo: 'users';
+        value: string | User;
+      } | null);
+  updatedBy?:
+    | ({
+        relationTo: 'admins';
+        value: string | Admin;
+      } | null)
+    | ({
+        relationTo: 'users';
+        value: string | User;
+      } | null);
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "branch-staff".
+ */
+export interface BranchStaff {
+  id: string;
+  assignmentKey?: string | null;
+  admin: string | Admin;
+  branch: string | Branch;
+  warehouses?:
+    | {
+        [k: string]: unknown;
+      }
+    | unknown[]
+    | string
+    | number
+    | boolean
+    | null;
+  staffRole: 'BRANCH_MANAGER' | 'RENTAL_STAFF' | 'WAREHOUSE_STAFF' | 'DELIVERY_STAFF' | 'ACCOUNTANT';
+  isPrimary?: boolean | null;
+  status: 'ACTIVE' | 'REVOKED' | 'INACTIVE';
+  assignedBy?: string | null;
+  assignedAt?: string | null;
+  revokedAt?: string | null;
+  notes?: string | null;
+  createdBy?:
+    | ({
+        relationTo: 'admins';
+        value: string | Admin;
+      } | null)
+    | ({
+        relationTo: 'users';
+        value: string | User;
+      } | null);
+  updatedBy?:
+    | ({
+        relationTo: 'admins';
+        value: string | Admin;
+      } | null)
+    | ({
+        relationTo: 'users';
+        value: string | User;
+      } | null);
+  updatedAt: string;
+  createdAt: string;
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
@@ -730,7 +990,15 @@ export interface Vehicle {
   color?: string | null;
   location?: string | null;
   pickupLocation?: string | null;
-  operationStatus?: ('READY' | 'RENTED' | 'RESERVED' | 'MAINTENANCE' | 'SOLD' | 'INACTIVE') | null;
+  managingBranch?: (string | null) | Branch;
+  currentBranch?: (string | null) | Branch;
+  currentWarehouse?: (string | null) | Warehouse;
+  nextExpectedBranch?: (string | null) | Branch;
+  nextExpectedLocationNote?: string | null;
+  allocationStatus?: ('UNALLOCATED' | 'ALLOCATED') | null;
+  operationStatus?:
+    | ('READY' | 'RENTED' | 'RESERVED' | 'MAINTENANCE' | 'IN_TRANSIT' | 'PENDING_INSPECTION' | 'SOLD' | 'INACTIVE')
+    | null;
   photos?:
     | {
         image: string | Media;
@@ -768,28 +1036,77 @@ export interface Vehicle {
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
- * via the `definition` "maintenance-schedules".
+ * via the `definition` "vehicle-transfers".
  */
-export interface MaintenanceSchedule {
+export interface VehicleTransfer {
   id: string;
+  transferCode: string;
   vehicle: string | Vehicle;
-  title: string;
-  maintenanceType: 'ROUTINE' | 'REPAIR' | 'INSPECTION';
+  vehicleReferenceSnapshot?: string | null;
+  fromBranch: string | Branch;
+  fromWarehouse: string | Warehouse;
+  toBranch: string | Branch;
+  toWarehouse: string | Warehouse;
+  reason: string;
   startDate: string;
   endDate: string;
-  odometerAtService?: number | null;
-  cost?: number | null;
-  status: 'SCHEDULED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED';
-  notes?: string | null;
-  createdBy?:
-    | ({
-        relationTo: 'admins';
-        value: string | Admin;
-      } | null)
-    | ({
-        relationTo: 'users';
-        value: string | User;
-      } | null);
+  scheduledDepartureAt: string;
+  scheduledArrivalAt: string;
+  actualDepartureAt?: string | null;
+  actualArrivalAt?: string | null;
+  completedAt?: string | null;
+  assignedStaff?: (string | null) | Admin;
+  assignedStaffName?: string | null;
+  transferCost?: number | null;
+  status:
+    | 'DRAFT'
+    | 'PENDING_APPROVAL'
+    | 'APPROVED'
+    | 'IN_TRANSIT'
+    | 'ARRIVED'
+    | 'COMPLETED'
+    | 'REJECTED'
+    | 'CANCELLED'
+    | 'EXCEPTION';
+  conditionBefore?: string | null;
+  conditionAfter?: string | null;
+  odometerBefore?: number | null;
+  odometerAfter?: number | null;
+  handoverPhotos?:
+    | {
+        [k: string]: unknown;
+      }
+    | unknown[]
+    | string
+    | number
+    | boolean
+    | null;
+  handoverReportNote?: string | null;
+  createdBy?: string | null;
+  approvedBy?: string | null;
+  receivedBy?: string | null;
+  exceptionNote?: string | null;
+  delayedWarning?: boolean | null;
+  affectedBookingKeys?:
+    | {
+        [k: string]: unknown;
+      }
+    | unknown[]
+    | string
+    | number
+    | boolean
+    | null;
+  revision?: number | null;
+  idempotencyKey?: string | null;
+  statusHistory?:
+    | {
+        [k: string]: unknown;
+      }
+    | unknown[]
+    | string
+    | number
+    | boolean
+    | null;
   updatedBy?:
     | ({
         relationTo: 'admins';
@@ -804,14 +1121,38 @@ export interface MaintenanceSchedule {
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
- * via the `definition` "rental-days".
+ * via the `definition` "vehicle-location-history".
  */
-export interface RentalDay {
+export interface VehicleLocationHistory {
   id: string;
-  key: string;
   vehicle: string | Vehicle;
-  day: string;
-  bookingKey: string;
+  vehicleReferenceSnapshot?: string | null;
+  eventType:
+    | 'INITIAL_ALLOCATION'
+    | 'BOOKING_HANDOVER'
+    | 'BOOKING_RETURN'
+    | 'ONE_WAY_RETURN'
+    | 'TRANSFER_DEPARTURE'
+    | 'TRANSFER_ARRIVAL'
+    | 'TRANSFER_COMPLETED'
+    | 'DELIVERY_DISPATCH'
+    | 'PICKUP_RETURN'
+    | 'MANUAL_RELOCATION'
+    | 'INSPECTION_CLEARED'
+    | 'MAINTENANCE_MOVE';
+  fromBranch?: (string | null) | Branch;
+  fromWarehouse?: (string | null) | Warehouse;
+  toBranch?: (string | null) | Branch;
+  toWarehouse?: (string | null) | Warehouse;
+  relatedBooking?: (string | null) | Booking;
+  relatedTransfer?: (string | null) | VehicleTransfer;
+  relatedDeliveryJob?: (string | null) | DeliveryJob;
+  odometer?: number | null;
+  conditionNote?: string | null;
+  actorEmail?: string | null;
+  actorRole?: string | null;
+  occurredAt: string;
+  note?: string | null;
   createdBy?:
     | ({
         relationTo: 'admins';
@@ -849,6 +1190,19 @@ export interface Booking {
   returnTime?: string | null;
   pickupLocation?: string | null;
   returnLocation?: string | null;
+  pickupBranch?: (string | null) | Branch;
+  returnBranch?: (string | null) | Branch;
+  pickupServiceLocation?: (string | null) | ServiceLocation;
+  returnServiceLocation?: (string | null) | ServiceLocation;
+  isOneWay?: boolean | null;
+  pickupMethod?: ('BRANCH_PICKUP' | 'HOME_DELIVERY') | null;
+  returnMethod?: ('BRANCH_RETURN' | 'HOME_PICKUP') | null;
+  deliveryZone?: (string | null) | DeliveryZone;
+  deliveryAddress?: string | null;
+  pickupAddress?: string | null;
+  deliveryContactName?: string | null;
+  deliveryContactPhone?: string | null;
+  deliveryDirections?: string | null;
   deliveryRequested?: boolean | null;
   addonServices?: string | null;
   customerPhone?: string | null;
@@ -862,6 +1216,28 @@ export interface Booking {
   baseRentPrice?: number | null;
   weekendSurchargeTotal?: number | null;
   deliveryFeeSnapshot?: number | null;
+  locationSurchargeSnapshot?: number | null;
+  oneWayFeeSnapshot?: number | null;
+  pickupFeeSnapshot?: number | null;
+  afterHoursFeeSnapshot?: number | null;
+  pricingRuleSnapshot?:
+    | {
+        [k: string]: unknown;
+      }
+    | unknown[]
+    | string
+    | number
+    | boolean
+    | null;
+  revenueAttributionBranch?: (string | null) | Branch;
+  revenueSplitPickupPercent?: number | null;
+  actualReturnBranch?: (string | null) | Branch;
+  actualReturnWarehouse?: (string | null) | Warehouse;
+  actualReturnAt?: string | null;
+  returnFuelOrBattery?: string | null;
+  returnInspectionStatus?: ('NOT_APPLICABLE' | 'PENDING_INSPECTION' | 'PASSED' | 'DAMAGED_NEEDS_REPAIR') | null;
+  scheduleConflictAlert?: string | null;
+  idempotencyKey?: string | null;
   addonFeeTotal?: number | null;
   discountAmount?: number | null;
   promoCode?: string | null;
@@ -947,6 +1323,280 @@ export interface Booking {
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "delivery-zones".
+ */
+export interface DeliveryZone {
+  id: string;
+  code: string;
+  name: string;
+  branch: string | Branch;
+  province: string;
+  wards?: string | null;
+  deliveryFee: number;
+  pickupFee: number;
+  afterHoursFee?: number | null;
+  freeOverOrderAmount?: number | null;
+  estimatedTravelMinutes?: number | null;
+  serviceStartTime?: string | null;
+  serviceEndTime?: string | null;
+  active?: boolean | null;
+  notes?: string | null;
+  createdBy?:
+    | ({
+        relationTo: 'admins';
+        value: string | Admin;
+      } | null)
+    | ({
+        relationTo: 'users';
+        value: string | User;
+      } | null);
+  updatedBy?:
+    | ({
+        relationTo: 'admins';
+        value: string | Admin;
+      } | null)
+    | ({
+        relationTo: 'users';
+        value: string | User;
+      } | null);
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "delivery-jobs".
+ */
+export interface DeliveryJob {
+  id: string;
+  jobCode: string;
+  booking: string | Booking;
+  bookingKeySnapshot?: string | null;
+  vehicle: string | Vehicle;
+  vehicleReferenceSnapshot?: string | null;
+  branch: string | Branch;
+  deliveryZone?: (string | null) | DeliveryZone;
+  jobType: 'DELIVERY' | 'PICKUP';
+  scheduledDate: string;
+  scheduledTime: string;
+  estimatedDurationMinutes?: number | null;
+  address: string;
+  contactName: string;
+  contactPhone: string;
+  directionsNote?: string | null;
+  assignedStaff?: (string | null) | Admin;
+  assignedStaffName?: string | null;
+  status: 'PENDING' | 'ASSIGNED' | 'EN_ROUTE' | 'ARRIVED' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
+  deliveryFeeSnapshot?: number | null;
+  extraCost?: number | null;
+  extraCostNote?: string | null;
+  odometerAtHandover?: number | null;
+  fuelOrBatteryLevel?: string | null;
+  conditionReport?: string | null;
+  handoverPhotos?:
+    | {
+        [k: string]: unknown;
+      }
+    | unknown[]
+    | string
+    | number
+    | boolean
+    | null;
+  failureReason?: string | null;
+  completedAt?: string | null;
+  revision?: number | null;
+  statusHistory?:
+    | {
+        [k: string]: unknown;
+      }
+    | unknown[]
+    | string
+    | number
+    | boolean
+    | null;
+  createdBy?:
+    | ({
+        relationTo: 'admins';
+        value: string | Admin;
+      } | null)
+    | ({
+        relationTo: 'users';
+        value: string | User;
+      } | null);
+  updatedBy?:
+    | ({
+        relationTo: 'admins';
+        value: string | Admin;
+      } | null)
+    | ({
+        relationTo: 'users';
+        value: string | User;
+      } | null);
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "location-pricing-rules".
+ */
+export interface LocationPricingRule {
+  id: string;
+  code: string;
+  name: string;
+  scopeType: 'VEHICLE_BRANCH' | 'MODEL_BRANCH' | 'BRANCH_DEFAULT' | 'GLOBAL_DEFAULT';
+  branch?: (string | null) | Branch;
+  vehicleModel?: (string | null) | VehicleModel;
+  vehicle?: (string | null) | Vehicle;
+  dailyPrice?: number | null;
+  weeklyPrice?: number | null;
+  monthlyPrice?: number | null;
+  weekendSurcharge?: number | null;
+  holidaySurcharge?: number | null;
+  depositAmount?: number | null;
+  locationSurcharge?: number | null;
+  afterHoursFee?: number | null;
+  weeklyDiscountPercent?: number | null;
+  monthlyDiscountPercent?: number | null;
+  validFrom?: string | null;
+  validTo?: string | null;
+  priority?: number | null;
+  active?: boolean | null;
+  notes?: string | null;
+  createdBy?:
+    | ({
+        relationTo: 'admins';
+        value: string | Admin;
+      } | null)
+    | ({
+        relationTo: 'users';
+        value: string | User;
+      } | null);
+  updatedBy?:
+    | ({
+        relationTo: 'admins';
+        value: string | Admin;
+      } | null)
+    | ({
+        relationTo: 'users';
+        value: string | User;
+      } | null);
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "one-way-rental-rules".
+ */
+export interface OneWayRentalRule {
+  id: string;
+  routeKey: string;
+  name: string;
+  fromBranch: string | Branch;
+  toBranch: string | Branch;
+  vehicleCategory: 'ALL' | 'CAR' | 'MOTORBIKE' | 'PICKUP';
+  allowed?: boolean | null;
+  fee: number;
+  minRentalDays?: number | null;
+  estimatedTransitHours?: number | null;
+  preparationBufferHours?: number | null;
+  revenueSplitMode: 'PICKUP_BRANCH' | 'RETURN_BRANCH' | 'SPLIT_50_50' | 'CUSTOM_PERCENT';
+  pickupBranchSharePercent?: number | null;
+  active?: boolean | null;
+  notes?: string | null;
+  createdBy?:
+    | ({
+        relationTo: 'admins';
+        value: string | Admin;
+      } | null)
+    | ({
+        relationTo: 'users';
+        value: string | User;
+      } | null);
+  updatedBy?:
+    | ({
+        relationTo: 'admins';
+        value: string | Admin;
+      } | null)
+    | ({
+        relationTo: 'users';
+        value: string | User;
+      } | null);
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "maintenance-schedules".
+ */
+export interface MaintenanceSchedule {
+  id: string;
+  vehicle: string | Vehicle;
+  branch?: (string | null) | Branch;
+  warehouse?: (string | null) | Warehouse;
+  title: string;
+  maintenanceType: 'ROUTINE' | 'REPAIR' | 'INSPECTION';
+  startDate: string;
+  endDate: string;
+  odometerAtService?: number | null;
+  cost?: number | null;
+  status: 'SCHEDULED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED';
+  notes?: string | null;
+  createdBy?:
+    | ({
+        relationTo: 'admins';
+        value: string | Admin;
+      } | null)
+    | ({
+        relationTo: 'users';
+        value: string | User;
+      } | null);
+  updatedBy?:
+    | ({
+        relationTo: 'admins';
+        value: string | Admin;
+      } | null)
+    | ({
+        relationTo: 'users';
+        value: string | User;
+      } | null);
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "rental-days".
+ */
+export interface RentalDay {
+  id: string;
+  key: string;
+  vehicle: string | Vehicle;
+  day: string;
+  bookingKey: string;
+  lockType?: ('BOOKING' | 'TRANSFER' | 'MAINTENANCE' | 'PREPARATION') | null;
+  referenceId?: string | null;
+  branchId?: string | null;
+  createdBy?:
+    | ({
+        relationTo: 'admins';
+        value: string | Admin;
+      } | null)
+    | ({
+        relationTo: 'users';
+        value: string | User;
+      } | null);
+  updatedBy?:
+    | ({
+        relationTo: 'admins';
+        value: string | Admin;
+      } | null)
+    | ({
+        relationTo: 'users';
+        value: string | User;
+      } | null);
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "consultations".
  */
 export interface Consultation {
@@ -954,6 +1604,7 @@ export interface Consultation {
   consultationKey?: string | null;
   booking: string | Booking;
   customer?: (string | null) | User;
+  branch?: (string | null) | Branch;
   bookingKeySnapshot?: string | null;
   customerNameSnapshot?: string | null;
   customerPhoneSnapshot?: string | null;
@@ -1148,6 +1799,16 @@ export interface Promotion {
   validTo?: string | null;
   usageLimit?: number | null;
   usedCount?: number | null;
+  branchScope?: ('ALL_BRANCHES' | 'SPECIFIC_BRANCHES') | null;
+  applicableBranchIds?:
+    | {
+        [k: string]: unknown;
+      }
+    | unknown[]
+    | string
+    | number
+    | boolean
+    | null;
   active?: boolean | null;
   createdBy?:
     | ({
@@ -1180,6 +1841,7 @@ export interface Payment {
   booking?: (string | null) | Booking;
   inquiry?: (string | null) | SalesInquiry;
   customer?: (string | null) | User;
+  branch?: (string | null) | Branch;
   paymentType:
     'DEPOSIT' | 'RENTAL_FEE' | 'FULL_PAYMENT' | 'SECURITY_DEPOSIT' | 'EXTRA_FEE' | 'PURCHASE_DEPOSIT' | 'REFUND';
   method: 'VIETQR_SEPAY' | 'ONLINE_MOCK' | 'BANK_TRANSFER' | 'CASH' | 'CARD_POS';
@@ -1577,6 +2239,11 @@ export interface AdminsSelect<T extends boolean = true> {
   fullName?: T;
   adminRole?: T;
   permissions?: T;
+  staffTitle?: T;
+  branchScopeMode?: T;
+  assignedBranchIds?: T;
+  accountStatus?: T;
+  phone?: T;
   createdBy?: T;
   updatedBy?: T;
   updatedAt?: T;
@@ -1614,6 +2281,9 @@ export interface AuditLogsSelect<T extends boolean = true> {
   actorType?: T;
   actorId?: T;
   actorEmail?: T;
+  actorRole?: T;
+  branchId?: T;
+  outcome?: T;
   createdBy?: T;
   updatedBy?: T;
   updatedAt?: T;
@@ -1726,6 +2396,135 @@ export interface UsersSelect<T extends boolean = true> {
         refreshCount?: T;
         refreshedAt?: T;
       };
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "branches_select".
+ */
+export interface BranchesSelect<T extends boolean = true> {
+  code?: T;
+  name?: T;
+  slug?: T;
+  address?: T;
+  province?: T;
+  ward?: T;
+  latitude?: T;
+  longitude?: T;
+  hotline?: T;
+  email?: T;
+  manager?: T;
+  managerNameSnapshot?: T;
+  timezone?: T;
+  workingDays?: T;
+  workStartTime?: T;
+  workEndTime?: T;
+  lunchBreakStart?: T;
+  lunchBreakEnd?: T;
+  operatingHoursLabel?: T;
+  holidays?: T;
+  coverImage?: T;
+  gallery?:
+    | T
+    | {
+        image?: T;
+        caption?: T;
+        id?: T;
+      };
+  description?: T;
+  supportsHomeDelivery?: T;
+  supportsHomePickup?: T;
+  deliveryStartTime?: T;
+  deliveryEndTime?: T;
+  defaultDeliveryFee?: T;
+  defaultPickupFee?: T;
+  afterHoursFee?: T;
+  freeDeliveryMinOrder?: T;
+  maxDeliveryDistanceKm?: T;
+  deliveryStaffCapacityPerSlot?: T;
+  defaultPreparationMinutes?: T;
+  status?: T;
+  isDemo?: T;
+  createdBy?: T;
+  updatedBy?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "warehouses_select".
+ */
+export interface WarehousesSelect<T extends boolean = true> {
+  code?: T;
+  name?: T;
+  branch?: T;
+  warehouseType?: T;
+  address?: T;
+  capacity?: T;
+  allowOverCapacity?: T;
+  manager?: T;
+  managerNameSnapshot?: T;
+  operatingHours?: T;
+  isCustomerFacing?: T;
+  status?: T;
+  notes?: T;
+  createdBy?: T;
+  updatedBy?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "service-locations_select".
+ */
+export interface ServiceLocationsSelect<T extends boolean = true> {
+  code?: T;
+  name?: T;
+  branch?: T;
+  warehouse?: T;
+  locationType?: T;
+  address?: T;
+  province?: T;
+  ward?: T;
+  latitude?: T;
+  longitude?: T;
+  operatingHours?: T;
+  openTime?: T;
+  closeTime?: T;
+  pickupInstructions?: T;
+  returnInstructions?: T;
+  supportsPickup?: T;
+  supportsReturn?: T;
+  supportsHomeDelivery?: T;
+  supportsHomePickup?: T;
+  supportedCategories?: T;
+  surchargeFee?: T;
+  verified?: T;
+  status?: T;
+  createdBy?: T;
+  updatedBy?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "branch-staff_select".
+ */
+export interface BranchStaffSelect<T extends boolean = true> {
+  assignmentKey?: T;
+  admin?: T;
+  branch?: T;
+  warehouses?: T;
+  staffRole?: T;
+  isPrimary?: T;
+  status?: T;
+  assignedBy?: T;
+  assignedAt?: T;
+  revokedAt?: T;
+  notes?: T;
+  createdBy?: T;
+  updatedBy?: T;
+  updatedAt?: T;
+  createdAt?: T;
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
@@ -1878,6 +2677,12 @@ export interface VehiclesSelect<T extends boolean = true> {
   color?: T;
   location?: T;
   pickupLocation?: T;
+  managingBranch?: T;
+  currentBranch?: T;
+  currentWarehouse?: T;
+  nextExpectedBranch?: T;
+  nextExpectedLocationNote?: T;
+  allocationStatus?: T;
   operationStatus?: T;
   photos?:
     | T
@@ -1900,10 +2705,199 @@ export interface VehiclesSelect<T extends boolean = true> {
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "vehicle-transfers_select".
+ */
+export interface VehicleTransfersSelect<T extends boolean = true> {
+  transferCode?: T;
+  vehicle?: T;
+  vehicleReferenceSnapshot?: T;
+  fromBranch?: T;
+  fromWarehouse?: T;
+  toBranch?: T;
+  toWarehouse?: T;
+  reason?: T;
+  startDate?: T;
+  endDate?: T;
+  scheduledDepartureAt?: T;
+  scheduledArrivalAt?: T;
+  actualDepartureAt?: T;
+  actualArrivalAt?: T;
+  completedAt?: T;
+  assignedStaff?: T;
+  assignedStaffName?: T;
+  transferCost?: T;
+  status?: T;
+  conditionBefore?: T;
+  conditionAfter?: T;
+  odometerBefore?: T;
+  odometerAfter?: T;
+  handoverPhotos?: T;
+  handoverReportNote?: T;
+  createdBy?: T;
+  approvedBy?: T;
+  receivedBy?: T;
+  exceptionNote?: T;
+  delayedWarning?: T;
+  affectedBookingKeys?: T;
+  revision?: T;
+  idempotencyKey?: T;
+  statusHistory?: T;
+  updatedBy?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "vehicle-location-history_select".
+ */
+export interface VehicleLocationHistorySelect<T extends boolean = true> {
+  vehicle?: T;
+  vehicleReferenceSnapshot?: T;
+  eventType?: T;
+  fromBranch?: T;
+  fromWarehouse?: T;
+  toBranch?: T;
+  toWarehouse?: T;
+  relatedBooking?: T;
+  relatedTransfer?: T;
+  relatedDeliveryJob?: T;
+  odometer?: T;
+  conditionNote?: T;
+  actorEmail?: T;
+  actorRole?: T;
+  occurredAt?: T;
+  note?: T;
+  createdBy?: T;
+  updatedBy?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "delivery-zones_select".
+ */
+export interface DeliveryZonesSelect<T extends boolean = true> {
+  code?: T;
+  name?: T;
+  branch?: T;
+  province?: T;
+  wards?: T;
+  deliveryFee?: T;
+  pickupFee?: T;
+  afterHoursFee?: T;
+  freeOverOrderAmount?: T;
+  estimatedTravelMinutes?: T;
+  serviceStartTime?: T;
+  serviceEndTime?: T;
+  active?: T;
+  notes?: T;
+  createdBy?: T;
+  updatedBy?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "delivery-jobs_select".
+ */
+export interface DeliveryJobsSelect<T extends boolean = true> {
+  jobCode?: T;
+  booking?: T;
+  bookingKeySnapshot?: T;
+  vehicle?: T;
+  vehicleReferenceSnapshot?: T;
+  branch?: T;
+  deliveryZone?: T;
+  jobType?: T;
+  scheduledDate?: T;
+  scheduledTime?: T;
+  estimatedDurationMinutes?: T;
+  address?: T;
+  contactName?: T;
+  contactPhone?: T;
+  directionsNote?: T;
+  assignedStaff?: T;
+  assignedStaffName?: T;
+  status?: T;
+  deliveryFeeSnapshot?: T;
+  extraCost?: T;
+  extraCostNote?: T;
+  odometerAtHandover?: T;
+  fuelOrBatteryLevel?: T;
+  conditionReport?: T;
+  handoverPhotos?: T;
+  failureReason?: T;
+  completedAt?: T;
+  revision?: T;
+  statusHistory?: T;
+  createdBy?: T;
+  updatedBy?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "location-pricing-rules_select".
+ */
+export interface LocationPricingRulesSelect<T extends boolean = true> {
+  code?: T;
+  name?: T;
+  scopeType?: T;
+  branch?: T;
+  vehicleModel?: T;
+  vehicle?: T;
+  dailyPrice?: T;
+  weeklyPrice?: T;
+  monthlyPrice?: T;
+  weekendSurcharge?: T;
+  holidaySurcharge?: T;
+  depositAmount?: T;
+  locationSurcharge?: T;
+  afterHoursFee?: T;
+  weeklyDiscountPercent?: T;
+  monthlyDiscountPercent?: T;
+  validFrom?: T;
+  validTo?: T;
+  priority?: T;
+  active?: T;
+  notes?: T;
+  createdBy?: T;
+  updatedBy?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "one-way-rental-rules_select".
+ */
+export interface OneWayRentalRulesSelect<T extends boolean = true> {
+  routeKey?: T;
+  name?: T;
+  fromBranch?: T;
+  toBranch?: T;
+  vehicleCategory?: T;
+  allowed?: T;
+  fee?: T;
+  minRentalDays?: T;
+  estimatedTransitHours?: T;
+  preparationBufferHours?: T;
+  revenueSplitMode?: T;
+  pickupBranchSharePercent?: T;
+  active?: T;
+  notes?: T;
+  createdBy?: T;
+  updatedBy?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "maintenance-schedules_select".
  */
 export interface MaintenanceSchedulesSelect<T extends boolean = true> {
   vehicle?: T;
+  branch?: T;
+  warehouse?: T;
   title?: T;
   maintenanceType?: T;
   startDate?: T;
@@ -1926,6 +2920,9 @@ export interface RentalDaysSelect<T extends boolean = true> {
   vehicle?: T;
   day?: T;
   bookingKey?: T;
+  lockType?: T;
+  referenceId?: T;
+  branchId?: T;
   createdBy?: T;
   updatedBy?: T;
   updatedAt?: T;
@@ -1946,6 +2943,19 @@ export interface BookingsSelect<T extends boolean = true> {
   returnTime?: T;
   pickupLocation?: T;
   returnLocation?: T;
+  pickupBranch?: T;
+  returnBranch?: T;
+  pickupServiceLocation?: T;
+  returnServiceLocation?: T;
+  isOneWay?: T;
+  pickupMethod?: T;
+  returnMethod?: T;
+  deliveryZone?: T;
+  deliveryAddress?: T;
+  pickupAddress?: T;
+  deliveryContactName?: T;
+  deliveryContactPhone?: T;
+  deliveryDirections?: T;
   deliveryRequested?: T;
   addonServices?: T;
   customerPhone?: T;
@@ -1959,6 +2969,20 @@ export interface BookingsSelect<T extends boolean = true> {
   baseRentPrice?: T;
   weekendSurchargeTotal?: T;
   deliveryFeeSnapshot?: T;
+  locationSurchargeSnapshot?: T;
+  oneWayFeeSnapshot?: T;
+  pickupFeeSnapshot?: T;
+  afterHoursFeeSnapshot?: T;
+  pricingRuleSnapshot?: T;
+  revenueAttributionBranch?: T;
+  revenueSplitPickupPercent?: T;
+  actualReturnBranch?: T;
+  actualReturnWarehouse?: T;
+  actualReturnAt?: T;
+  returnFuelOrBattery?: T;
+  returnInspectionStatus?: T;
+  scheduleConflictAlert?: T;
+  idempotencyKey?: T;
   addonFeeTotal?: T;
   discountAmount?: T;
   promoCode?: T;
@@ -2022,6 +3046,7 @@ export interface ConsultationsSelect<T extends boolean = true> {
   consultationKey?: T;
   booking?: T;
   customer?: T;
+  branch?: T;
   bookingKeySnapshot?: T;
   customerNameSnapshot?: T;
   customerPhoneSnapshot?: T;
@@ -2140,6 +3165,8 @@ export interface PromotionsSelect<T extends boolean = true> {
   validTo?: T;
   usageLimit?: T;
   usedCount?: T;
+  branchScope?: T;
+  applicableBranchIds?: T;
   active?: T;
   createdBy?: T;
   updatedBy?: T;
@@ -2155,6 +3182,7 @@ export interface PaymentsSelect<T extends boolean = true> {
   booking?: T;
   inquiry?: T;
   customer?: T;
+  branch?: T;
   paymentType?: T;
   method?: T;
   provider?: T;
@@ -2672,8 +3700,18 @@ export interface CollectionQueryWidget {
       | 'folders'
       | 'tags'
       | 'users'
+      | 'branches'
+      | 'warehouses'
+      | 'service-locations'
+      | 'branch-staff'
       | 'vehicle-models'
       | 'vehicles'
+      | 'vehicle-transfers'
+      | 'vehicle-location-history'
+      | 'delivery-zones'
+      | 'delivery-jobs'
+      | 'location-pricing-rules'
+      | 'one-way-rental-rules'
       | 'maintenance-schedules'
       | 'bookings'
       | 'consultations'
@@ -2714,8 +3752,18 @@ export interface ActivityWidget {
           | 'folders'
           | 'tags'
           | 'users'
+          | 'branches'
+          | 'warehouses'
+          | 'service-locations'
+          | 'branch-staff'
           | 'vehicle-models'
           | 'vehicles'
+          | 'vehicle-transfers'
+          | 'vehicle-location-history'
+          | 'delivery-zones'
+          | 'delivery-jobs'
+          | 'location-pricing-rules'
+          | 'one-way-rental-rules'
           | 'maintenance-schedules'
           | 'bookings'
           | 'consultations'

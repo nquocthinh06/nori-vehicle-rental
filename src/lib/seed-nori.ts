@@ -2,6 +2,7 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 import type { Payload } from 'payload'
 import { up as ensureOnlinePaymentMigration } from '../migrations/20261120_010000_online_payment_integration'
+import { up as ensureMultiBranchMigration } from '../migrations/20261120_020000_multi_branch_management'
 import manifest from './seed-media-manifest.json'
 import {
   SEED_DEMO_FLEET,
@@ -210,6 +211,11 @@ export async function seedNoriIfEmpty(payload: Payload): Promise<void> {
       const dbAdapter = payload.db as unknown as { drizzle?: unknown }
       if (dbAdapter?.drizzle) {
         await ensureOnlinePaymentMigration({
+          db: dbAdapter.drizzle as never,
+          payload,
+          req: undefined as never,
+        })
+        await ensureMultiBranchMigration({
           db: dbAdapter.drizzle as never,
           payload,
           req: undefined as never,

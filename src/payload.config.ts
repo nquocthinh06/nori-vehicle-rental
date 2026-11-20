@@ -8,11 +8,17 @@ import { fileURLToPath } from 'url'
 import { Admins } from './collections/Admins'
 import { AuditLogs } from './collections/AuditLogs'
 import { Bookings } from './collections/Bookings'
+import { Branches } from './collections/Branches'
+import { BranchStaff } from './collections/BranchStaff'
 import { Consultations } from './collections/Consultations'
+import { DeliveryJobs } from './collections/DeliveryJobs'
+import { DeliveryZones } from './collections/DeliveryZones'
 import { Folders } from './collections/Folders'
+import { LocationPricingRules } from './collections/LocationPricingRules'
 import { MaintenanceSchedules } from './collections/MaintenanceSchedules'
 import { Media } from './collections/Media'
 import { Notifications } from './collections/Notifications'
+import { OneWayRentalRules } from './collections/OneWayRentalRules'
 import { PaymentEvents } from './collections/PaymentEvents'
 import { Payments } from './collections/Payments'
 import { Posts } from './collections/Posts'
@@ -21,10 +27,14 @@ import { Refunds } from './collections/Refunds'
 import { RentalDays } from './collections/RentalDays'
 import { Reviews } from './collections/Reviews'
 import { SalesInquiries } from './collections/SalesInquiries'
+import { ServiceLocations } from './collections/ServiceLocations'
 import { Tags } from './collections/Tags'
 import { Users } from './collections/Users'
+import { VehicleLocationHistory } from './collections/VehicleLocationHistory'
 import { VehicleModels } from './collections/VehicleModels'
 import { Vehicles } from './collections/Vehicles'
+import { VehicleTransfers } from './collections/VehicleTransfers'
+import { Warehouses } from './collections/Warehouses'
 import { NoriSite } from './globals/NoriSite'
 import { seedNoriIfEmpty } from './lib/seed-nori'
 
@@ -79,8 +89,18 @@ export default buildConfig({
     Folders,
     Tags,
     Users,
+    Branches,
+    Warehouses,
+    ServiceLocations,
+    BranchStaff,
     VehicleModels,
     Vehicles,
+    VehicleTransfers,
+    VehicleLocationHistory,
+    DeliveryZones,
+    DeliveryJobs,
+    LocationPricingRules,
+    OneWayRentalRules,
     MaintenanceSchedules,
     RentalDays,
     Bookings,

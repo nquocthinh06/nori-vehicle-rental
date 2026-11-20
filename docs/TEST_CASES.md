@@ -359,3 +359,73 @@
 - **Mức độ ưu tiên**: `P0`
 - **Bằng chứng**: Performance Timeline Measurement script (CLS = `0.0038`, LCP = `516ms`, INP = `40ms`).
 - **Source code**: [src/components/vehicle-detail.tsx](file:///f:/1.%20University/2.%20Đồ%20án/3.%20Bài%20tập/nori-vehicle-rental/nori-vehicle-rental/nori-vehicle-rental/src/components/vehicle-detail.tsx), [src/app/(frontend)/vehicles/[slug]/page.tsx](<file:///f:/1.%20University/2.%20Đồ%20án/3.%20Bài%20tập/nori-vehicle-rental/nori-vehicle-rental/nori-vehicle-rental/src/app/(frontend)/vehicles/[slug]/page.tsx>)
+
+---
+
+## Module 3.7 — Multi-Branch & Multi-Location Management Test Matrix (`v2.7.0`)
+
+### `TC-MB-BR-WH-01` — Quản lý Chi nhánh, Kho xe, Định danh Duy nhất & Phân bổ Hàng loạt (`BR-01..BR-03`, `WH-01..WH-04`)
+
+- **Module**: Chi nhánh & Kho xe (`/dashboard/branches`, `/dashboard/warehouses`)
+- **Tên chức năng**: Tạo/cập nhật chi nhánh, chặn xóa cứng khi có dữ liệu phát sinh, phân biệt `managingBranch` vs `currentBranch`, sức chứa kho thực tế & phân bổ hàng loạt xe `UNALLOCATED`
+- **Mục tiêu kiểm thử**: Đảm bảo 1 xe vật lý chỉ có 1 bản ghi duy nhất, tồn kho tính từ trạng thái thực tế (loại trừ `IN_TRANSIT`/`RENTED`) và không bị xóa cứng chi nhánh đang sử dụng.
+- **Điều kiện trước khi kiểm thử**: Super Admin đăng nhập trên DB cô lập.
+- **Dữ liệu đầu vào**: Tạo Branch A/B, Warehouse A/B (`capacity: 10`), phân bổ 2 xe khả dụng bằng `bulk_allocate`.
+- **Các bước thực hiện**: Chạy `tests/multi-branch-rules.test.mjs` (`WH-01..WH-04`) và `tests/e2e/multi-branch-workflow.spec.ts` Scenario 1.
+- **Kết quả mong đợi**: Tạo chi nhánh/kho `201`, phân bổ `200`, chặn xóa cứng chi nhánh đang có xe/kho (`409`), tồn kho tính chính xác không trùng.
+- **Kết quả thực tế**: `PASS` (`100%` trên cả Unit + E2E 3x repeat).
+- **Trạng thái**: `PASS`
+- **Mức độ ưu tiên**: `P0`
+- **Bằng chứng**: `tests/multi-branch-rules.test.mjs`, `tests/e2e/multi-branch-workflow.spec.ts` (`3/3 PASS` × 3 lượt độc lập).
+- **Source code**: [src/lib/multi-branch-rules.ts](file:///f:/1.%20University/2.%20Đồ%20án/3.%20Bài%20tập/nori-vehicle-rental/nori-vehicle-rental/nori-vehicle-rental/src/lib/multi-branch-rules.ts), [branches/route.ts](<file:///f:/1.%20University/2.%20Đồ%20án/3.%20Bài%20tập/nori-vehicle-rental/nori-vehicle-rental/nori-vehicle-rental/src/app/(frontend)/nori-api/dashboard/branches/route.ts>), [warehouses/route.ts](<file:///f:/1.%20University/2.%20Đồ%20án/3.%20Bài%20tập/nori-vehicle-rental/nori-vehicle-rental/nori-vehicle-rental/src/app/(frontend)/nori-api/dashboard/warehouses/route.ts>)
+
+---
+
+### `TC-MB-BOOK-PRICE-01` — Thuê Một Chiều, Phân cấp Giá 5 Tầng, Khuyến mãi Chi nhánh, Bất biến Snapshot, Idempotency & Race Condition (`BK-01..BK-15`, `PR-01..PR-10`)
+
+- **Module**: Khả dụng Timeline P0, Báo giá Địa điểm & Đặt thuê (`/nori-api/availability`, `/nori-api/bookings`)
+- **Tên chức năng**: Lọc catalogue theo chi nhánh, báo giá 5 tầng (`MODEL_BRANCH` `1.2M/ngày` + `oneWayFee 500k` + `locationSurcharge 50k` + `deliveryFee 150k` - `promo 200k`), chống double-submit (`idempotencyKey`), chống race condition (`409`), bất biến `pricingRuleSnapshot`.
+- **Mục tiêu kiểm thử**: Đảm bảo báo giá Backend chính xác tuyệt đối, tuyến một chiều không được phép bị chặn, gửi trùng `idempotencyKey` trả lại đúng đơn cũ (`200`), 2 request song song trên cùng xe chỉ 1 thành công (`[201, 409]`), sửa giá sau khi đặt không đổi giá đơn cũ.
+- **Điều kiện trước khi kiểm thử**: Cấu hình Pricing Rule, One-Way Rule `A→B`, Service Location `50k`, Delivery Zone `150k`, Branch Promo `200k`.
+- **Dữ liệu đầu vào**: Quote `A→B`, đặt đơn có `idempotencyKey`, 2 request đặt song song `vehicle2Id`, đổi `dailyPrice` lên `2.5M`.
+- **Các bước thực hiện**: Chạy `tests/multi-branch-rules.test.mjs`, `tests/multi-branch-integration.test.mjs`, `tests/e2e/multi-branch-workflow.spec.ts` Scenario 1 & 2.
+- **Kết quả mong đợi**: Mọi trường phí khớp từng VNĐ; `bk1Repeat` trả `200` cùng ID; `[201, 409]` cho race condition; `totalPrice` đơn cũ giữ nguyên sau khi đổi quy tắc giá.
+- **Kết quả thực tế**: `PASS` 100%.
+- **Trạng thái**: `PASS`
+- **Mức độ ưu tiên**: `P0`
+- **Bằng chứng**: `pnpm test` (`305/305 PASS`) & `multi-branch-workflow.spec.ts` Scenario 1 & 2.
+- **Source code**: [src/lib/multi-branch-service.ts](file:///f:/1.%20University/2.%20Đồ%20án/3.%20Bài%20tập/nori-vehicle-rental/nori-vehicle-rental/nori-vehicle-rental/src/lib/multi-branch-service.ts), [availability/route.ts](<file:///f:/1.%20University/2.%20Đồ%20án/3.%20Bài%20tập/nori-vehicle-rental/nori-vehicle-rental/nori-vehicle-rental/src/app/(frontend)/nori-api/availability/route.ts>), [bookings/route.ts](<file:///f:/1.%20University/2.%20Đồ%20án/3.%20Bài%20tập/nori-vehicle-rental/nori-vehicle-rental/nori-vehicle-rental/src/app/(frontend)/nori-api/bookings/route.ts>)
+
+---
+
+### `TC-MB-TRANSFER-DLV-01` — Điều chuyển Xe Nguyên tử (`TR-01..TR-12`) & Giao Nhận Tận Nơi (`DL-05..DL-07`)
+
+- **Module**: Điều chuyển Phương tiện & Giao nhận Tận nơi (`/dashboard/transfers`, `/dashboard/deliveries`)
+- **Tên chức năng**: Luồng điều chuyển `PENDING_APPROVAL → APPROVED → IN_TRANSIT → ARRIVED → COMPLETED`, rollback khi lỗi giữa transaction (`TR-11`), chặn hủy sau xuất kho (`TR-10`), chặn hoàn tất 2 lần (`TR-08`), chặn trùng lịch nhân viên giao nhận (`DL-06`), giao thất bại giữ nguyên `CONFIRMED` (`DL-07`).
+- **Mục tiêu kiểm thử**: Đảm bảo tính nguyên tử ACID và nhất quán tuyệt đối giữa `vehicles`, `rental_days`, `vehicle_transfers`, `vehicle_location_history` và `delivery_jobs`.
+- **Điều kiện trước khi kiểm thử**: Xe phân bổ ở Kho A, đơn thuê một chiều đã `CONFIRMED`.
+- **Dữ liệu đầu vào**: Phiếu điều chuyển `A → B` với ODO `15000 → 15600`; 2 job giao nhận trùng nhân viên lúc `09:00` và `09:30`; đánh dấu `FAILED`.
+- **Các bước thực hiện**: Chạy `tests/multi-branch-integration.test.mjs` và `tests/e2e/multi-branch-workflow.spec.ts` Scenario 3 & 4.
+- **Kết quả mong đợi**: Cancel sau `IN_TRANSIT` trả `409`; double-complete trả `409`; rollback giữ nguyên DB khi lỗi; job trùng nhân viên trả `409`; job `FAILED` không đẩy sai trạng thái booking.
+- **Kết quả thực tế**: `PASS` 100%.
+- **Trạng thái**: `PASS`
+- **Mức độ ưu tiên**: `P0`
+- **Bằng chứng**: `tests/multi-branch-integration.test.mjs` & `multi-branch-workflow.spec.ts` Scenario 3 & 4.
+- **Source code**: [transfers/route.ts](<file:///f:/1.%20University/2.%20Đồ%20án/3.%20Bài%20tập/nori-vehicle-rental/nori-vehicle-rental/nori-vehicle-rental/src/app/(frontend)/nori-api/dashboard/transfers/route.ts>), [deliveries/route.ts](<file:///f:/1.%20University/2.%20Đồ%20án/3.%20Bài%20tập/nori-vehicle-rental/nori-vehicle-rental/nori-vehicle-rental/src/app/(frontend)/nori-api/dashboard/deliveries/route.ts>)
+
+---
+
+### `TC-MB-RBAC-REPORT-01` — Phân quyền Theo Chi nhánh, Chống IDOR/Leo thang, Thu hồi Quyền, Báo cáo Không Đếm Trùng & Responsive (`RB-01..RB-07`, `RP-01..RP-03`, `UI-02`)
+
+- **Module**: Nhân sự Chi nhánh, Báo cáo & UI Đa thiết bị (`/dashboard/staff`, `/dashboard/branch-reports`, `/nori-api/dashboard/export`)
+- **Tên chức năng**: Cô lập dữ liệu chi nhánh, chống leo thang `BRANCH_MANAGER → SUPER_ADMIN`, thu hồi quyền `REVOKED`, tổng hợp doanh thu chi nhánh không đếm trùng, xuất CSV theo phạm vi chi nhánh, kiểm tra tràn ngang `375px` & `768px`.
+- **Mục tiêu kiểm thử**: Đảm bảo nhân viên Chi nhánh A đọc được CN A (`200`), bị chặn đọc/xuất CSV CN B (`403`), Quản lý CN A bị chặn tạo `SUPER_ADMIN` (`403`), thu hồi quyền chặn ngay (`403`), `sum(branch.netRevenue) + unassigned === systemTotal.netRevenue`, overflow `<= 4px`.
+- **Điều kiện trước khi kiểm thử**: Tạo `RENTAL_STAFF` và `BRANCH_MANAGER` thuộc Chi nhánh A.
+- **Dữ liệu đầu vào**: Truy vấn `?branchId=branchBId`, export CSV `branchBId`, POST `staffTitle: SUPER_ADMIN`, PATCH `accountStatus: REVOKED`, viewport `375×812` & `768×1024`.
+- **Các bước thực hiện**: Chạy `tests/multi-branch-rules.test.mjs` và `tests/e2e/multi-branch-workflow.spec.ts` Scenario 5 & 6.
+- **Kết quả mong đợi**: Toàn bộ kiểm tra RBAC, báo cáo doanh thu, CSV UTF-8 BOM và responsive mobile/tablet đạt 100%.
+- **Kết quả thực tế**: `PASS` 100%.
+- **Trạng thái**: `PASS`
+- **Mức độ ưu tiên**: `P0`
+- **Bằng chứng**: `tests/multi-branch-rules.test.mjs`, `tests/e2e/multi-branch-workflow.spec.ts` Scenario 5 & 6.
+- **Source code**: [src/access/nori.ts](file:///f:/1.%20University/2.%20Đồ%20án/3.%20Bài%20tập/nori-vehicle-rental/nori-vehicle-rental/nori-vehicle-rental/src/access/nori.ts), [staff/route.ts](<file:///f:/1.%20University/2.%20Đồ%20án/3.%20Bài%20tập/nori-vehicle-rental/nori-vehicle-rental/nori-vehicle-rental/src/app/(frontend)/nori-api/dashboard/staff/route.ts>), [branch-reports/route.ts](<file:///f:/1.%20University/2.%20Đồ%20án/3.%20Bài%20tập/nori-vehicle-rental/nori-vehicle-rental/nori-vehicle-rental/src/app/(frontend)/nori-api/dashboard/branch-reports/route.ts>)

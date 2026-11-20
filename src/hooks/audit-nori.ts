@@ -6,7 +6,16 @@ import type {
   PayloadRequest,
 } from 'payload'
 
-type Actor = { collection?: string; id?: string | number; email?: string | null } | null | undefined
+type Actor =
+  | {
+      collection?: string
+      id?: string | number
+      email?: string | null
+      adminRole?: string | null
+      staffTitle?: string | null
+    }
+  | null
+  | undefined
 
 export type AuditEntry = {
   action: string
@@ -16,6 +25,8 @@ export type AuditEntry = {
   summary: string
   fromStatus?: string | null
   toStatus?: string | null
+  branchId?: string | null
+  outcome?: 'SUCCESS' | 'DENIED' | 'FAILED'
 }
 
 /**
@@ -31,6 +42,12 @@ export async function recordAudit(
   if (req?.context?.skipAudit) return
   const actorType =
     actor?.collection === 'admins' ? 'ADMIN' : actor?.collection === 'users' ? 'CUSTOMER' : 'SYSTEM'
+  const actorRole =
+    actor?.collection === 'admins'
+      ? String(actor.staffTitle || actor.adminRole || 'OPERATOR')
+      : actor?.collection === 'users'
+        ? 'CUSTOMER'
+        : 'SYSTEM'
   try {
     await payload.create({
       collection: 'audit-logs',
@@ -47,6 +64,9 @@ export async function recordAudit(
         actorType,
         actorId: actor?.id != null ? String(actor.id) : undefined,
         actorEmail: actor?.email ? String(actor.email) : undefined,
+        actorRole,
+        branchId: entry.branchId ? String(entry.branchId).slice(0, 60) : undefined,
+        outcome: entry.outcome ?? 'SUCCESS',
       },
     })
   } catch (error) {

@@ -15,6 +15,15 @@ export const RentalDays: CollectionConfig = {
       index: true,
       access: { read: () => false },
     },
+    {
+      name: 'lockType',
+      type: 'select',
+      options: ['BOOKING', 'TRANSFER', 'MAINTENANCE', 'PREPARATION'],
+      defaultValue: 'BOOKING',
+      index: true,
+    },
+    { name: 'referenceId', type: 'text', index: true, access: { read: () => false } },
+    { name: 'branchId', type: 'text', index: true },
   ],
   versions: false,
 }

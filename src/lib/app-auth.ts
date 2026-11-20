@@ -2,10 +2,15 @@ import 'server-only'
 import { cookies, headers } from 'next/headers'
 import { JWTAuthentication } from 'payload'
 import {
+  adminBranchScope,
   adminRoleOf,
+  isAdminAccountActive,
   resolveAdminPermissions,
+  staffTitleOf,
   type AdminPermissionMap,
   type AdminRole,
+  type BranchScopeMode,
+  type StaffTitle,
 } from '@/access/nori'
 import type { User } from '@/payload-types'
 import { fail } from './api-utils'
@@ -115,6 +120,9 @@ export function createAppAuth(appUserCollection: 'users') {
       email: string
       fullName: string
       adminRole: AdminRole
+      staffTitle: StaffTitle
+      branchScopeMode: BranchScopeMode
+      assignedBranchIds: string[]
       permissions: AdminPermissionMap
       collection: 'admins'
     } | null> {
@@ -132,9 +140,17 @@ export function createAppAuth(appUserCollection: 'users') {
           resolved.user?.collection === 'admins'
             ? resolved
             : await JWTAuthentication({ headers: authHeaders, payload })
-        if (!user || user.collection !== 'admins' || !user.email || !hasActiveSessionRecord(user)) {
+        if (
+          !user ||
+          user.collection !== 'admins' ||
+          !user.email ||
+          !hasActiveSessionRecord(user) ||
+          !isAdminAccountActive(user)
+        ) {
           return null
         }
+        const scope = adminBranchScope(user)
+        const role = adminRoleOf(user) ?? 'OPERATOR'
         return {
           id: String(user.id),
           email: String(user.email),
@@ -142,7 +158,10 @@ export function createAppAuth(appUserCollection: 'users') {
             typeof user.fullName === 'string' && user.fullName.trim()
               ? user.fullName.trim()
               : 'Quản trị viên NORI',
-          adminRole: adminRoleOf(user) ?? 'OPERATOR',
+          adminRole: role,
+          staffTitle: staffTitleOf(user) ?? (role === 'SUPER_ADMIN' ? 'SUPER_ADMIN' : 'OPERATOR'),
+          branchScopeMode: scope.isGlobal ? 'ALL' : 'ASSIGNED',
+          assignedBranchIds: scope.branchIds,
           permissions: resolveAdminPermissions(user),
           collection: 'admins',
         }
@@ -213,11 +232,20 @@ export function createAppAuth(appUserCollection: 'users') {
         collection: 'admins',
         data: { email, password },
       })
-      if (!result.token || !result.user?.email) throw new Error('UNAUTHORIZED')
+      if (
+        !result.token ||
+        !result.user?.email ||
+        !isAdminAccountActive({ ...result.user, collection: 'admins' })
+      ) {
+        throw new Error('UNAUTHORIZED')
+      }
       const opts = await buildCookieOptions(ADMIN_SESSION_MAX_AGE, request)
       const store = await cookies()
       store.set(ADMIN_COOKIE_NAME, result.token, opts)
       store.set(CUSTOMER_COOKIE_NAME, '', { ...opts, maxAge: 0, expires: new Date(0) })
+      const adminCarrier = { ...result.user, collection: 'admins' }
+      const scope = adminBranchScope(adminCarrier)
+      const role = adminRoleOf(adminCarrier) ?? 'OPERATOR'
       return {
         id: String(result.user.id),
         email: String(result.user.email),
@@ -225,7 +253,12 @@ export function createAppAuth(appUserCollection: 'users') {
           typeof result.user.fullName === 'string' && result.user.fullName.trim()
             ? result.user.fullName.trim()
             : 'Quản trị viên NORI',
-        adminRole: adminRoleOf({ ...result.user, collection: 'admins' }) ?? 'OPERATOR',
+        adminRole: role,
+        staffTitle:
+          staffTitleOf(adminCarrier) ?? (role === 'SUPER_ADMIN' ? 'SUPER_ADMIN' : 'OPERATOR'),
+        branchScopeMode: (scope.isGlobal ? 'ALL' : 'ASSIGNED') as BranchScopeMode,
+        assignedBranchIds: scope.branchIds,
+        permissions: resolveAdminPermissions(adminCarrier),
       }
     },
 

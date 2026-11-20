@@ -320,6 +320,8 @@ export async function GET(request: Request) {
       RENTED: 0,
       RESERVED: 0,
       MAINTENANCE: 0,
+      IN_TRANSIT: 0,
+      PENDING_INSPECTION: 0,
       SOLD: 0,
       INACTIVE: 0,
     }
@@ -408,6 +410,9 @@ export async function GET(request: Request) {
       adminEmail: admin.email,
       adminName: admin.fullName,
       adminRole: admin.adminRole,
+      staffTitle: admin.staffTitle,
+      branchScopeMode: admin.branchScopeMode,
+      assignedBranchIds: admin.assignedBranchIds,
       vehicles: vehicles.totalDocs,
       models: models.totalDocs,
       customers: customers.totalDocs,

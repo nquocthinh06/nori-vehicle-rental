@@ -45,6 +45,15 @@ export const AuditLogs: CollectionConfig = {
     },
     { name: 'actorId', label: 'Mã tác nhân', type: 'text' },
     { name: 'actorEmail', label: 'Email tác nhân', type: 'text' },
+    { name: 'actorRole', label: 'Vai trò tác nhân', type: 'text' },
+    { name: 'branchId', label: 'Chi nhánh liên quan', type: 'text', index: true },
+    {
+      name: 'outcome',
+      label: 'Kết quả thao tác',
+      type: 'select',
+      options: ['SUCCESS', 'DENIED', 'FAILED'],
+      defaultValue: 'SUCCESS',
+    },
   ],
   versions: false,
 }

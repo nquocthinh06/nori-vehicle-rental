@@ -8,6 +8,11 @@ import {
   PAYMENT_COLUMN_INDEXES_SQL,
   PAYMENT_TABLES_AND_INDEXES_SQL,
 } from '../migrations/20261120_010000_online_payment_integration.ts'
+import {
+  MULTI_BRANCH_COLUMN_ADDITIONS,
+  MULTI_BRANCH_COLUMN_INDEXES_SQL,
+  MULTI_BRANCH_TABLES_AND_INDEXES_SQL,
+} from '../migrations/20261120_020000_multi_branch_management.ts'
 
 export const CURRENT_SCHEMA_VERSION = 'nori-payload-sqlite-v2.5'
 export const SNAPSHOT_FORMAT_VERSION = '1.0.0'
@@ -39,6 +44,10 @@ export const EXCLUDED_SENSITIVE_COLLECTIONS = [
   'audit-logs',
   'admins-sessions',
   'users-sessions',
+  'branch-staff',
+  'vehicle-transfers',
+  'vehicle-location-history',
+  'delivery-jobs',
 ] as const
 
 const FORBIDDEN_FIELD_NAMES = new Set([
@@ -59,6 +68,12 @@ const FORBIDDEN_FIELD_NAMES = new Set([
   'id_card_number',
   'customerPhone',
   'customer_phone',
+  'deliveryAddress',
+  'delivery_address',
+  'pickupAddress',
+  'pickup_address',
+  'contactPhone',
+  'contact_phone',
   'apiKey',
   'api_key',
   'payloadSecret',
@@ -350,6 +365,28 @@ export function applyAdditivePaymentSchema(db: DatabaseSync): void {
   }
 }
 
+export function applyAdditiveMultiBranchSchema(db: DatabaseSync): void {
+  for (const stmt of MULTI_BRANCH_TABLES_AND_INDEXES_SQL) {
+    db.exec(stmt)
+  }
+  const colsCache = new Map<string, Set<string>>()
+  for (const [tableName, columnName, colDef] of MULTI_BRANCH_COLUMN_ADDITIONS) {
+    let colSet = colsCache.get(tableName)
+    if (!colSet) {
+      const rows = db.prepare(`PRAGMA table_info('${tableName}')`).all() as { name?: string }[]
+      colSet = new Set(rows.map((r) => String(r.name ?? '')))
+      colsCache.set(tableName, colSet)
+    }
+    if (!colSet.has(columnName)) {
+      db.exec(`ALTER TABLE \`${tableName}\` ADD COLUMN \`${columnName}\` ${colDef};`)
+      colSet.add(columnName)
+    }
+  }
+  for (const idxStmt of MULTI_BRANCH_COLUMN_INDEXES_SQL) {
+    db.exec(idxStmt)
+  }
+}
+
 export function runDatabaseMigration(options?: { rootDir?: string; dbPath?: string }) {
   const paths = resolvePaths(options)
   const schemaSqlPath = path.join(paths.seedDir, 'schema.sql')
@@ -366,6 +403,7 @@ export function runDatabaseMigration(options?: { rootDir?: string; dbPath?: stri
     try {
       db.exec(sqlContent)
       applyAdditivePaymentSchema(db)
+      applyAdditiveMultiBranchSchema(db)
       const now = new Date().toISOString()
       const existingDev = db
         .prepare("SELECT id FROM payload_migrations WHERE name = 'dev' LIMIT 1")
@@ -391,6 +429,15 @@ export function runDatabaseMigration(options?: { rootDir?: string; dbPath?: stri
         db.prepare(
           'INSERT INTO payload_migrations (id, name, batch, updated_at, created_at) VALUES (?, ?, ?, ?, ?)',
         ).run(crypto.randomUUID(), paymentMigName, 2, now, now)
+      }
+      const multiBranchMigName = '20261120_020000_multi_branch_management'
+      const existingMultiBranchMig = db
+        .prepare('SELECT id FROM payload_migrations WHERE name = ? LIMIT 1')
+        .get(multiBranchMigName) as { id?: string } | undefined
+      if (!existingMultiBranchMig) {
+        db.prepare(
+          'INSERT INTO payload_migrations (id, name, batch, updated_at, created_at) VALUES (?, ?, ?, ?, ?)',
+        ).run(crypto.randomUUID(), multiBranchMigName, 3, now, now)
       }
       db.exec('COMMIT')
     } catch (err) {

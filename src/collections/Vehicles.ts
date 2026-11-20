@@ -1,5 +1,10 @@
 import { APIError, type CollectionConfig, type Where } from 'payload'
-import { adminHasAnyPermission, adminPermission } from '@/access/nori'
+import {
+  adminBranchPermission,
+  adminHasAnyPermission,
+  adminPermission,
+  branchScopedWhere,
+} from '@/access/nori'
 import { auditCollection } from '@/hooks/audit-nori'
 import { revalidateCatalogue, revalidateDeletedCatalogue } from '@/hooks/revalidate-nori'
 import { HOLD_STATUSES, operationStatusLabels } from '@/lib/rental-rules'
@@ -12,6 +17,10 @@ const vehicleAudit = auditCollection({
   statusLabels: operationStatusLabels,
   fields: {
     status: 'Trạng thái kinh doanh',
+    managingBranch: 'Chi nhánh quản lý',
+    currentBranch: 'Chi nhánh hiện tại',
+    currentWarehouse: 'Kho hiện tại',
+    allocationStatus: 'Trạng thái phân bổ',
     pricePerDay: 'Giá thuê/ngày',
     salePrice: 'Giá bán',
     depositAmount: 'Tiền đặt cọc',
@@ -49,9 +58,11 @@ export const Vehicles: CollectionConfig = {
         ['bookings', 'read'],
         ['models', 'read'],
         ['maintenance', 'read'],
+        ['transfers', 'read'],
+        ['warehouses', 'read'],
         ['reports', 'read'],
       ])
-        ? true
+        ? branchScopedWhere(req.user, ['managingBranch', 'currentBranch'])
         : {
             and: [
               { status: { equals: 'ACTIVE' } },
@@ -59,8 +70,8 @@ export const Vehicles: CollectionConfig = {
               { 'model.visible': { equals: true } },
             ],
           },
-    update: adminPermission('vehicles', 'update'),
-    delete: adminPermission('vehicles', 'delete'),
+    update: adminBranchPermission('vehicles', 'update', ['managingBranch', 'currentBranch']),
+    delete: adminBranchPermission('vehicles', 'delete', ['managingBranch']),
   },
   hooks: {
     beforeDelete: [
@@ -331,10 +342,63 @@ export const Vehicles: CollectionConfig = {
     { name: 'location', label: 'Khu vực', type: 'text' },
     { name: 'pickupLocation', label: 'Địa điểm nhận & trả xe', type: 'text' },
     {
+      name: 'managingBranch',
+      label: 'Chi nhánh quản lý phương tiện',
+      type: 'relationship',
+      relationTo: 'branches',
+      index: true,
+    },
+    {
+      name: 'currentBranch',
+      label: 'Chi nhánh vật lý hiện tại',
+      type: 'relationship',
+      relationTo: 'branches',
+      index: true,
+    },
+    {
+      name: 'currentWarehouse',
+      label: 'Kho xe vật lý hiện tại',
+      type: 'relationship',
+      relationTo: 'warehouses',
+      index: true,
+    },
+    {
+      name: 'nextExpectedBranch',
+      label: 'Chi nhánh dự kiến tiếp theo',
+      type: 'relationship',
+      relationTo: 'branches',
+    },
+    {
+      name: 'nextExpectedLocationNote',
+      label: 'Ghi chú vị trí dự kiến tiếp theo',
+      type: 'text',
+      maxLength: 240,
+    },
+    {
+      name: 'allocationStatus',
+      label: 'Trạng thái phân bổ chi nhánh',
+      type: 'select',
+      options: [
+        { label: 'Chưa phân bổ chi nhánh', value: 'UNALLOCATED' },
+        { label: 'Đã phân bổ chi nhánh', value: 'ALLOCATED' },
+      ],
+      defaultValue: 'UNALLOCATED',
+      index: true,
+    },
+    {
       name: 'operationStatus',
       label: 'Trạng thái vận hành thực tế',
       type: 'select',
-      options: ['READY', 'RENTED', 'RESERVED', 'MAINTENANCE', 'SOLD', 'INACTIVE'],
+      options: [
+        'READY',
+        'RENTED',
+        'RESERVED',
+        'MAINTENANCE',
+        'IN_TRANSIT',
+        'PENDING_INSPECTION',
+        'SOLD',
+        'INACTIVE',
+      ],
       defaultValue: 'READY',
     },
     {

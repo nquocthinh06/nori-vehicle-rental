@@ -1190,8 +1190,27 @@ function BookingsPanelInner() {
                     </Heading>
                     <Text className="mt-1 text-caption text-muted">
                       Xe {booking.reference}
-                      {booking.pickupLocation ? ` · ${booking.pickupLocation}` : ''}
+                      {booking.pickupBranchName
+                        ? booking.isOneWay && booking.returnBranchName
+                          ? ` · ${booking.pickupBranchName} → ${booking.returnBranchName}`
+                          : ` · ${booking.pickupBranchName}`
+                        : booking.pickupLocation
+                          ? ` · ${booking.pickupLocation}`
+                          : ''}
                     </Text>
+                    {(booking.isOneWay ||
+                      booking.pickupMethod === 'HOME_DELIVERY' ||
+                      booking.returnMethod === 'HOME_PICKUP') && (
+                      <div className="mt-1.5 flex flex-wrap gap-1.5">
+                        {booking.isOneWay && <Badge tone="brand">Thuê một chiều</Badge>}
+                        {booking.pickupMethod === 'HOME_DELIVERY' && (
+                          <Badge tone="muted">Giao xe tận nơi</Badge>
+                        )}
+                        {booking.returnMethod === 'HOME_PICKUP' && (
+                          <Badge tone="muted">Thu hồi xe tận nơi</Badge>
+                        )}
+                      </div>
+                    )}
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
                     <Badge tone={paymentSummaryTone(paySummary)}>

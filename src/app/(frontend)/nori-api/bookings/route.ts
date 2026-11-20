@@ -129,6 +129,27 @@ function bookingView(
     returnTime: booking.returnTime ?? '20:00',
     pickupLocation: booking.pickupLocation ?? null,
     returnLocation: booking.returnLocation ?? booking.pickupLocation ?? null,
+    pickupBranchId: relationId(booking.pickupBranch) ?? null,
+    pickupBranchName:
+      typeof booking.pickupBranch === 'object' && booking.pickupBranch
+        ? booking.pickupBranch.name
+        : null,
+    returnBranchId: relationId(booking.returnBranch) ?? null,
+    returnBranchName:
+      typeof booking.returnBranch === 'object' && booking.returnBranch
+        ? booking.returnBranch.name
+        : null,
+    pickupServiceLocationId: relationId(booking.pickupServiceLocation) ?? null,
+    returnServiceLocationId: relationId(booking.returnServiceLocation) ?? null,
+    isOneWay: Boolean(booking.isOneWay),
+    pickupMethod: booking.pickupMethod ?? 'BRANCH_PICKUP',
+    returnMethod: booking.returnMethod ?? 'BRANCH_RETURN',
+    deliveryZoneId: relationId(booking.deliveryZone) ?? null,
+    deliveryAddress: booking.deliveryAddress ?? null,
+    pickupAddress: booking.pickupAddress ?? null,
+    deliveryContactName: booking.deliveryContactName ?? null,
+    deliveryContactPhone: booking.deliveryContactPhone ?? null,
+    deliveryDirections: booking.deliveryDirections ?? null,
     deliveryRequested: Boolean(booking.deliveryRequested),
     addonServices: booking.addonServices ?? null,
     customerPhone: booking.customerPhone ?? null,
@@ -141,7 +162,11 @@ function bookingView(
     dailyPriceSnapshot,
     baseRentPrice: booking.baseRentPrice ?? dailyPriceSnapshot * totalDays,
     weekendSurchargeTotal: booking.weekendSurchargeTotal ?? 0,
+    locationSurchargeSnapshot: booking.locationSurchargeSnapshot ?? 0,
+    oneWayFeeSnapshot: booking.oneWayFeeSnapshot ?? 0,
     deliveryFeeSnapshot: booking.deliveryFeeSnapshot ?? 0,
+    pickupFeeSnapshot: booking.pickupFeeSnapshot ?? 0,
+    afterHoursFeeSnapshot: booking.afterHoursFeeSnapshot ?? 0,
     addonFeeTotal: booking.addonFeeTotal ?? 0,
     discountAmount: booking.discountAmount ?? 0,
     extraFee: booking.extraFee ?? 0,
@@ -381,6 +406,18 @@ export async function POST(request: Request) {
       'returnTime',
       'pickupLocation',
       'returnLocation',
+      'pickupBranch',
+      'returnBranch',
+      'pickupServiceLocation',
+      'returnServiceLocation',
+      'pickupMethod',
+      'returnMethod',
+      'deliveryZone',
+      'deliveryAddress',
+      'pickupAddress',
+      'deliveryContactName',
+      'deliveryContactPhone',
+      'deliveryDirections',
       'deliveryRequested',
       'addonServices',
       'customerPhone',
@@ -389,6 +426,7 @@ export async function POST(request: Request) {
       'note',
       'promoCode',
       'expectedTotalPrice',
+      'idempotencyKey',
     ])
     const expectedTotalPrice =
       data.expectedTotalPrice !== undefined && data.expectedTotalPrice !== null
@@ -400,9 +438,30 @@ export async function POST(request: Request) {
     ) {
       return fail('Báo giá đối chiếu không hợp lệ.')
     }
+    const idempotencyKey = text(data.idempotencyKey, 120) || undefined
 
     const payload = await getPayloadClient()
     return await withBookingWriteLock(async () => {
+      // Idempotency guard against Double Submit (BK-15)
+      if (idempotencyKey) {
+        const existing = await payload.find({
+          collection: 'bookings',
+          user,
+          overrideAccess: false,
+          depth: 2,
+          limit: 1,
+          where: {
+            and: [
+              { customer: { equals: user.id } },
+              { idempotencyKey: { equals: idempotencyKey } },
+            ],
+          },
+        })
+        if (existing.docs[0]) {
+          return json(bookingView(existing.docs[0]), 200)
+        }
+      }
+
       const booking = await payload.create({
         collection: 'bookings',
         user,
@@ -419,7 +478,23 @@ export async function POST(request: Request) {
           returnTime: text(data.returnTime, 5) || undefined,
           pickupLocation: text(data.pickupLocation, 200) || undefined,
           returnLocation: text(data.returnLocation, 200) || undefined,
-          deliveryRequested: Boolean(data.deliveryRequested),
+          pickupBranch: text(data.pickupBranch, 100) || undefined,
+          returnBranch: text(data.returnBranch, 100) || undefined,
+          pickupServiceLocation: text(data.pickupServiceLocation, 100) || undefined,
+          returnServiceLocation: text(data.returnServiceLocation, 100) || undefined,
+          pickupMethod:
+            data.pickupMethod === 'HOME_DELIVERY' || Boolean(data.deliveryRequested)
+              ? 'HOME_DELIVERY'
+              : 'BRANCH_PICKUP',
+          returnMethod: data.returnMethod === 'HOME_PICKUP' ? 'HOME_PICKUP' : 'BRANCH_RETURN',
+          deliveryZone: text(data.deliveryZone, 100) || undefined,
+          deliveryAddress: text(data.deliveryAddress, 300) || undefined,
+          pickupAddress: text(data.pickupAddress, 300) || undefined,
+          deliveryContactName: text(data.deliveryContactName, 120) || undefined,
+          deliveryContactPhone: text(data.deliveryContactPhone, 20) || undefined,
+          deliveryDirections: text(data.deliveryDirections, 500) || undefined,
+          deliveryRequested:
+            Boolean(data.deliveryRequested) || data.pickupMethod === 'HOME_DELIVERY',
           addonServices: Array.isArray(data.addonServices)
             ? data.addonServices.map((s) => text(s, 40)).join(',')
             : text(data.addonServices, 200) || undefined,
@@ -430,6 +505,7 @@ export async function POST(request: Request) {
           driverLicenseNumber: text(data.driverLicenseNumber, 40) || undefined,
           note: text(data.note, 500) || undefined,
           promoCode: text(data.promoCode, 40) || undefined,
+          idempotencyKey,
         },
       })
       return json(bookingView(booking), 201)
@@ -462,6 +538,15 @@ export async function PUT(request: Request) {
       'returnTime',
       'pickupLocation',
       'returnLocation',
+      'pickupBranch',
+      'returnBranch',
+      'pickupServiceLocation',
+      'returnServiceLocation',
+      'pickupMethod',
+      'returnMethod',
+      'deliveryZone',
+      'deliveryAddress',
+      'pickupAddress',
       'deliveryRequested',
       'addonServices',
       'customerPhone',
@@ -506,6 +591,19 @@ export async function PUT(request: Request) {
       modifyPayload.pickupLocation = text(data.pickupLocation, 200)
     if (data.returnLocation !== undefined)
       modifyPayload.returnLocation = text(data.returnLocation, 200)
+    if (data.pickupBranch !== undefined) modifyPayload.pickupBranch = text(data.pickupBranch, 100)
+    if (data.returnBranch !== undefined) modifyPayload.returnBranch = text(data.returnBranch, 100)
+    if (data.pickupServiceLocation !== undefined)
+      modifyPayload.pickupServiceLocation = text(data.pickupServiceLocation, 100)
+    if (data.returnServiceLocation !== undefined)
+      modifyPayload.returnServiceLocation = text(data.returnServiceLocation, 100)
+    if (data.pickupMethod !== undefined) modifyPayload.pickupMethod = text(data.pickupMethod, 20)
+    if (data.returnMethod !== undefined) modifyPayload.returnMethod = text(data.returnMethod, 20)
+    if (data.deliveryZone !== undefined) modifyPayload.deliveryZone = text(data.deliveryZone, 100)
+    if (data.deliveryAddress !== undefined)
+      modifyPayload.deliveryAddress = text(data.deliveryAddress, 300)
+    if (data.pickupAddress !== undefined)
+      modifyPayload.pickupAddress = text(data.pickupAddress, 300)
     if (data.deliveryRequested !== undefined)
       modifyPayload.deliveryRequested = Boolean(data.deliveryRequested)
     if (data.addonServices !== undefined) {

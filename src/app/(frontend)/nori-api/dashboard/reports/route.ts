@@ -1,18 +1,23 @@
-import { requireAdmin } from '@/lib/admin-api'
+import { assertBranchScopeOrFail, requireAdmin } from '@/lib/admin-api'
 import { apiError, json } from '@/lib/api-utils'
 import { getSitePaymentConfig, sweepExpiredPayments } from '@/lib/payment-service'
-import { HOLD_STATUSES, roundVndInteger } from '@/lib/rental-rules'
+import { HOLD_STATUSES, relationId, roundVndInteger } from '@/lib/rental-rules'
 import type { Refund } from '@/payload-types'
 
 export async function GET(request: Request) {
   try {
     const auth = await requireAdmin({ permission: ['reports', 'read'] })
     if (!auth.ok) return auth.response
-    const { payload, user } = auth
+    const { payload, user, admin } = auth
 
     const sp = new URL(request.url).searchParams
     const from = sp.get('from') || ''
     const to = sp.get('to') || ''
+    const branchIdFilter = sp.get('branchId')?.trim() || ''
+    if (branchIdFilter) {
+      const deny = assertBranchScopeOrFail(admin, branchIdFilter)
+      if (deny) return deny
+    }
     const createdAtFilter =
       from || to
         ? {
@@ -40,7 +45,13 @@ export async function GET(request: Request) {
         overrideAccess: false,
         depth: 0,
         limit: 500,
-        select: { status: true, operationStatus: true, isDemo: true },
+        select: {
+          status: true,
+          operationStatus: true,
+          isDemo: true,
+          managingBranch: true,
+          currentBranch: true,
+        },
       }),
       payload.find({
         collection: 'bookings',
@@ -48,7 +59,14 @@ export async function GET(request: Request) {
         overrideAccess: false,
         depth: 0,
         limit: 500,
-        select: { status: true, totalPrice: true, extraFee: true, depositSnapshot: true },
+        select: {
+          status: true,
+          totalPrice: true,
+          extraFee: true,
+          depositSnapshot: true,
+          pickupBranch: true,
+          returnBranch: true,
+        },
         ...(createdAtFilter ? { where: createdAtFilter } : {}),
       }),
       payload.find({
@@ -76,7 +94,8 @@ export async function GET(request: Request) {
       }),
       payload.find({
         collection: 'payments',
-        overrideAccess: true,
+        user,
+        overrideAccess: false,
         depth: 0,
         limit: 1000,
         select: {
@@ -87,6 +106,8 @@ export async function GET(request: Request) {
           reconciliationStatus: true,
           amount: true,
           receivedAmount: true,
+          branch: true,
+          booking: true,
         },
         ...(createdAtFilter ? { where: createdAtFilter } : {}),
       }),
@@ -96,23 +117,52 @@ export async function GET(request: Request) {
           overrideAccess: true,
           depth: 0,
           limit: 1000,
-          select: { amount: true, status: true, refundType: true },
+          select: { amount: true, status: true, refundType: true, booking: true },
           ...(createdAtFilter ? { where: createdAtFilter } : {}),
         })
         .catch(() => ({ docs: [] as Refund[] })),
       getSitePaymentConfig(payload),
     ])
 
+    const scopedVehicles = branchIdFilter
+      ? vehiclesRes.docs.filter(
+          (v) =>
+            relationId(v.managingBranch) === branchIdFilter ||
+            relationId(v.currentBranch) === branchIdFilter,
+        )
+      : vehiclesRes.docs
+    const scopedBookings = branchIdFilter
+      ? bookingsRes.docs.filter(
+          (b) =>
+            relationId(b.pickupBranch) === branchIdFilter ||
+            relationId(b.returnBranch) === branchIdFilter,
+        )
+      : bookingsRes.docs
+    const scopedBookingIds = new Set(scopedBookings.map((b) => String(b.id)))
+    const scopedPayments = branchIdFilter
+      ? paymentsRes.docs.filter(
+          (p) =>
+            relationId(p.branch) === branchIdFilter ||
+            (relationId(p.booking) && scopedBookingIds.has(relationId(p.booking)!)),
+        )
+      : paymentsRes.docs
+    const scopedRefunds =
+      admin.isGlobalScope && !branchIdFilter
+        ? refundsRes.docs
+        : refundsRes.docs.filter(
+            (r) => relationId(r.booking) && scopedBookingIds.has(relationId(r.booking)!),
+          )
+
     const fleetByOp: Record<string, number> = {}
     let demoVehicles = 0
     let realVehicles = 0
-    for (const v of vehiclesRes.docs) {
+    for (const v of scopedVehicles) {
       const op = v.operationStatus ?? 'READY'
       fleetByOp[op] = (fleetByOp[op] ?? 0) + 1
       if (v.isDemo) demoVehicles += 1
       else realVehicles += 1
     }
-    const activeFleet = vehiclesRes.docs.filter((v) => v.status === 'ACTIVE').length
+    const activeFleet = scopedVehicles.filter((v) => v.status === 'ACTIVE').length
     const deployedFleet = (fleetByOp.RENTED ?? 0) + (fleetByOp.RESERVED ?? 0)
     const utilizationRate = activeFleet > 0 ? Math.round((deployedFleet / activeFleet) * 100) : 0
 
@@ -121,7 +171,7 @@ export async function GET(request: Request) {
     let activeHoldValue = 0
     let extraFeeTotal = 0
     let depositTotal = 0
-    for (const b of bookingsRes.docs) {
+    for (const b of scopedBookings) {
       const st = b.status ?? 'PENDING'
       bookingsByStatus[st] = (bookingsByStatus[st] ?? 0) + 1
       const total = Number(b.totalPrice ?? 0)
@@ -145,7 +195,7 @@ export async function GET(request: Request) {
     const paymentsByMethod: Record<string, number> = {}
     const paymentsByProvider: Record<string, number> = {}
 
-    for (const p of paymentsRes.docs) {
+    for (const p of scopedPayments) {
       const st = p.status ?? 'PENDING'
       const method = p.method ?? 'BANK_TRANSFER'
       const provider = p.provider ?? 'MANUAL'
@@ -181,7 +231,7 @@ export async function GET(request: Request) {
     let totalRefunded = 0
     let securityDepositRefunded = 0
     let pendingRefundTotal = 0
-    for (const r of refundsRes.docs) {
+    for (const r of scopedRefunds) {
       const amt = roundVndInteger(r.amount)
       if (r.status === 'REFUNDED') {
         totalRefunded += amt
@@ -211,9 +261,9 @@ export async function GET(request: Request) {
     const disabledCustomers = disabledUsersCount.totalDocs
 
     return json({
-      range: { from: from || null, to: to || null },
+      range: { from: from || null, to: to || null, branchId: branchIdFilter || null },
       fleet: {
-        total: vehiclesRes.totalDocs,
+        total: scopedVehicles.length,
         active: activeFleet,
         utilizationRate,
         demoVehicles,
@@ -221,7 +271,7 @@ export async function GET(request: Request) {
         byOperationStatus: fleetByOp,
       },
       bookings: {
-        total: bookingsRes.totalDocs,
+        total: scopedBookings.length,
         byStatus: bookingsByStatus,
       },
       inquiries: {

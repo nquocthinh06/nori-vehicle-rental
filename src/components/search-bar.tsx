@@ -2,8 +2,10 @@
 
 import { useEffect, useState, type FormEvent } from 'react'
 import { useRouter } from 'next/navigation'
+import { api } from '@/lib/client-api'
+import type { PublicLocationsPayload } from '@/lib/domain-types'
 import { addDays, businessToday, validateRentalDates } from '@/lib/rental-rules'
-import { Button, Notice, Select, Input, Text, TabButton } from './ui'
+import { Button, Checkbox, Notice, Select, Input, Text, TabButton } from './ui'
 import { Icon } from './ui/icon'
 
 export function SearchBar({ locations = [] }: { locations?: string[] }) {
@@ -13,9 +15,26 @@ export function SearchBar({ locations = [] }: { locations?: string[] }) {
   const [location, setLocation] = useState('')
   const [start, setStart] = useState('')
   const [end, setEnd] = useState('')
+  const [pickupBranchId, setPickupBranchId] = useState('')
+  const [differentReturn, setDifferentReturn] = useState(false)
+  const [returnBranchId, setReturnBranchId] = useState('')
+  const [publicLocs, setPublicLocs] = useState<PublicLocationsPayload | null>(null)
   const [error, setError] = useState('')
   const [today, setToday] = useState('')
-  useEffect(() => setToday(businessToday()), [])
+
+  useEffect(() => {
+    setToday(businessToday())
+    let active = true
+    api<PublicLocationsPayload>('/locations')
+      .then((res) => {
+        if (active) setPublicLocs(res)
+      })
+      .catch(() => {})
+    return () => {
+      active = false
+    }
+  }, [])
+
   function submit(e: FormEvent) {
     e.preventDefault()
     if (intent === 'rent' && (start || end)) {
@@ -29,12 +48,23 @@ export function SearchBar({ locations = [] }: { locations?: string[] }) {
     const params = new URLSearchParams({ intent })
     if (type) params.set('type', type)
     if (location) params.set('location', location)
-    if (intent === 'rent' && start && end) {
-      params.set('startDate', start)
-      params.set('endDate', end)
+    if (intent === 'rent') {
+      if (start && end) {
+        params.set('startDate', start)
+        params.set('endDate', end)
+      }
+      if (pickupBranchId) {
+        params.set('pickupBranchId', pickupBranchId)
+        if (differentReturn && returnBranchId && returnBranchId !== pickupBranchId) {
+          params.set('returnBranchId', returnBranchId)
+        }
+      }
     }
     router.push(`/vehicles?${params}`)
   }
+
+  const branches = publicLocs?.branches ?? []
+
   return (
     <div
       role="search"
@@ -81,76 +111,124 @@ export function SearchBar({ locations = [] }: { locations?: string[] }) {
         id="search-service-panel"
         role="tabpanel"
         aria-labelledby={`search-tab-${intent}`}
-        className={
-          intent === 'rent'
-            ? 'grid items-end gap-3.5 md:grid-cols-2 lg:grid-cols-5'
-            : 'grid items-end gap-3.5 md:grid-cols-4'
-        }
+        className="space-y-3.5"
       >
-        <Select
-          id="hero-type"
-          label="Loại phương tiện"
-          value={type}
-          onChange={(e) => setType(e.target.value)}
+        <div
+          className={
+            intent === 'rent'
+              ? 'grid items-end gap-3.5 md:grid-cols-2 lg:grid-cols-5'
+              : 'grid items-end gap-3.5 md:grid-cols-4'
+          }
         >
-          <option value="">Tất cả phương tiện</option>
-          <option value="CAR">Ô tô</option>
-          <option value="MOTORBIKE">Xe máy</option>
-          <option value="PICKUP">Bán tải</option>
-        </Select>
-        <Select
-          id="hero-location"
-          label="Khu vực"
-          value={location}
-          onChange={(e) => setLocation(e.target.value)}
-        >
-          <option value="">Tất cả khu vực</option>
-          {locations.map((loc) => (
-            <option key={loc} value={loc}>
-              {loc}
-            </option>
-          ))}
-        </Select>
-        {intent === 'rent' ? (
-          <>
-            <Input
-              id="hero-start"
-              label="Ngày nhận xe"
-              type="date"
-              value={start}
-              min={today || undefined}
-              max={today ? addDays(today, 90) : undefined}
-              onFocus={() => setToday(businessToday())}
-              onChange={(e) => {
-                setStart(e.target.value)
-                setError('')
-              }}
-            />
-            <Input
-              id="hero-end"
-              label="Ngày trả xe"
-              type="date"
-              value={end}
-              min={start ? addDays(start, 1) : today || undefined}
-              onFocus={() => setToday(businessToday())}
-              max={start ? addDays(start, 30) : undefined}
-              onChange={(e) => {
-                setEnd(e.target.value)
-                setError('')
-              }}
-            />
-          </>
-        ) : (
-          <div className="flex h-control items-center gap-2 rounded-control bg-subtle px-4 text-caption text-muted">
-            <Icon name="shield" className="size-4 text-brand" />
-            Thông tin xe minh bạch
+          <Select
+            id="hero-type"
+            label="Loại phương tiện"
+            value={type}
+            onChange={(e) => setType(e.target.value)}
+          >
+            <option value="">Tất cả phương tiện</option>
+            <option value="CAR">Ô tô</option>
+            <option value="MOTORBIKE">Xe máy</option>
+            <option value="PICKUP">Bán tải</option>
+          </Select>
+          <Select
+            id="hero-location"
+            label="Khu vực"
+            value={location}
+            onChange={(e) => setLocation(e.target.value)}
+          >
+            <option value="">Tất cả khu vực</option>
+            {locations.map((loc) => (
+              <option key={loc} value={loc}>
+                {loc}
+              </option>
+            ))}
+          </Select>
+          {intent === 'rent' ? (
+            <>
+              <Input
+                id="hero-start"
+                label="Ngày nhận xe"
+                type="date"
+                value={start}
+                min={today || undefined}
+                max={today ? addDays(today, 90) : undefined}
+                onFocus={() => setToday(businessToday())}
+                onChange={(e) => {
+                  setStart(e.target.value)
+                  setError('')
+                }}
+              />
+              <Input
+                id="hero-end"
+                label="Ngày trả xe"
+                type="date"
+                value={end}
+                min={start ? addDays(start, 1) : today || undefined}
+                onFocus={() => setToday(businessToday())}
+                max={start ? addDays(start, 30) : undefined}
+                onChange={(e) => {
+                  setEnd(e.target.value)
+                  setError('')
+                }}
+              />
+            </>
+          ) : (
+            <div className="flex h-control items-center gap-2 rounded-control bg-subtle px-4 text-caption text-muted">
+              <Icon name="shield" className="size-4 text-brand" />
+              Thông tin xe minh bạch
+            </div>
+          )}
+          <Button type="submit" className="h-control gap-3">
+            <Icon name="search" className="size-4" />
+            {intent === 'rent' ? 'Tìm xe phù hợp' : 'Khám phá xe bán'}
+            <Icon name="arrow-right" className="ml-auto size-4" />
+          </Button>
+        </div>
+
+        {intent === 'rent' && branches.length > 0 && (
+          <div className="grid items-end gap-3 border-t border-line pt-3.5 md:grid-cols-3">
+            <Select
+              id="hero-pickup-branch"
+              label="Chi nhánh nhận xe"
+              value={pickupBranchId}
+              onChange={(e) => setPickupBranchId(e.target.value)}
+            >
+              <option value="">Tất cả chi nhánh NORI</option>
+              {branches.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.name} ({b.province})
+                </option>
+              ))}
+            </Select>
+            <div className="flex min-h-control items-center">
+              <Checkbox
+                id="hero-one-way"
+                checked={differentReturn}
+                onChange={(e) => {
+                  setDifferentReturn(e.target.checked)
+                  if (!e.target.checked) setReturnBranchId('')
+                }}
+                label="Trả xe tại địa điểm khác"
+              />
+            </div>
+            {differentReturn && (
+              <Select
+                id="hero-return-branch"
+                label="Chi nhánh trả xe"
+                value={returnBranchId}
+                onChange={(e) => setReturnBranchId(e.target.value)}
+              >
+                <option value="">Chọn chi nhánh trả xe</option>
+                {branches.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.name} ({b.province})
+                  </option>
+                ))}
+              </Select>
+            )}
           </div>
         )}
-        <Button type="submit" className="h-control gap-3">
-          <Icon name="search" className="size-4" />
-          {intent === 'rent' ? 'Tìm xe phù hợp' : 'Khám phá xe bán'}
-          <Icon name="arrow-right" className="ml-auto size-4" />
-        </Button>
       </form>
       {error && (
         <Notice tone="error" className="mt-4">

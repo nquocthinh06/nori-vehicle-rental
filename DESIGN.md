@@ -109,22 +109,28 @@ Breakpoints: mobile <768px, tablet 768–1023px, desktop ≥1024px; xl ≥1280px
 
 ## 4. Component inventory
 
-| Family        | Source                                  | Anatomy / variants                                                                    |
-| ------------- | --------------------------------------- | ------------------------------------------------------------------------------------- |
-| Typography    | `components/ui/index.tsx`               | Heading, Text, Eyebrow                                                                |
-| Action        | cùng file                               | Button primary/dark/secondary/ghost/inverse/danger; ButtonLink; IconButton            |
-| Navigation    | cùng file                               | NoriLink, ExternalLink, Container, TabButton có trạng thái ARIA và focus              |
-| Form          | cùng file                               | Input, Select, Textarea, Checkbox, hint/error                                         |
-| Feedback      | cùng file                               | Notice info/error/success, Badge, StatusBadge                                         |
-| Loading/empty | cùng file                               | Skeleton, CardSkeleton, EmptyState                                                    |
-| Modal         | `components/ui/dialog.tsx`              | native dialog, backdrop, close, focus containment                                     |
-| Icons         | `components/ui/icon.tsx`                | cùng viewBox 24, stroke 1.6, decorative aria-hidden                                   |
-| Site shell    | header/footer/brand/bottom-nav          | desktop mega menu, mobile navigation, mobile bottom nav (5 mục), semantic footer      |
-| PWA           | `pwa-manager.tsx`, `public/sw.js`       | Web App Manifest, Service Worker an toàn, offline fallback `/offline`, install prompt |
-| Vehicles      | vehicle-card/catalogue/vehicle-detail   | catalogue, filters, gallery, variants, actual inventory                               |
-| Operations    | availability-calendar/checkout/bookings | live availability, review, confirmation, cancellation                                 |
-| Accounts      | auth-form/account-panel                 | native Payload app auth, profile, sales requests                                      |
-| Admin         | dashboard-panel                         | real counts, legal workflow transitions, canonical CMS links                          |
+| Family        | Source                                     | Anatomy / variants                                                                                                                      |
+| ------------- | ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------- |
+| Typography    | `components/ui/index.tsx`                  | Heading, Text, Eyebrow                                                                                                                  |
+| Action        | cùng file                                  | Button primary/dark/secondary/ghost/inverse/danger; ButtonLink; IconButton                                                              |
+| Navigation    | cùng file                                  | NoriLink, ExternalLink, Container, TabButton có trạng thái ARIA và focus                                                                |
+| Form          | cùng file                                  | Input, Select, Textarea, Checkbox, hint/error                                                                                           |
+| Feedback      | cùng file                                  | Notice info/error/success, Badge, StatusBadge                                                                                           |
+| Loading/empty | cùng file                                  | Skeleton, CardSkeleton, EmptyState                                                                                                      |
+| Modal         | `components/ui/dialog.tsx`                 | native dialog, backdrop, close, focus containment                                                                                       |
+| Icons         | `components/ui/icon.tsx`                   | cùng viewBox 24, stroke 1.6, decorative aria-hidden                                                                                     |
+| Site shell    | header/footer/brand/bottom-nav             | desktop mega menu, mobile navigation, mobile bottom nav (5 mục), semantic footer                                                        |
+| PWA           | `pwa-manager.tsx`, `public/sw.js`          | Web App Manifest, Service Worker an toàn, offline fallback `/offline`, install prompt                                                   |
+| Vehicles      | vehicle-card/catalogue/vehicle-detail      | catalogue, filters, gallery, variants, actual inventory                                                                                 |
+| Operations    | availability-calendar/checkout/bookings    | live availability, review, confirmation, cancellation                                                                                   |
+| Accounts      | auth-form/account-panel                    | native Payload app auth, profile, sales requests                                                                                        |
+| Admin         | `components/admin/*-panel.tsx` (21 routes) | real counts, legal workflow transitions, multi-branch/warehouse/transfer/delivery/staff/pricing/reports workspaces, canonical CMS links |
+
+### 4.1 Multi-Branch & Multi-Location UI Patterns (`v2.7.0`)
+
+- **Search & Catalogue Multi-Branch Selector**: `SearchBar` và `Catalogue` bổ sung chọn Chi nhánh nhận xe và tùy chọn "Trả xe tại địa điểm khác" (thuê một chiều), lọc danh mục trực tiếp qua `GET /nori-api/availability?mode=catalogue` và hiển thị rõ ràng lý do khi tuyến đường chưa mở hoặc xe nằm ở chi nhánh khác.
+- **Detail & Checkout Multi-Branch Pricing**: `VehicleDetail` và `CheckoutPanel` hiển thị rõ chi nhánh quản lý vs vị trí hiện tại của xe, chọn điểm giao nhận đã xác minh, phương thức giao/thu hồi tận nơi theo vùng (`DeliveryZones`), bảng bóc tách phụ phí minh bạch (Giá thuê cơ bản, Cuối tuần, Phụ phí địa điểm, Phí một chiều, Phí giao/thu hồi tận nơi, Phí ngoài giờ, Mã ưu đãi theo chi nhánh) tách biệt hoàn toàn với Tiền cọc đảm bảo.
+- **Admin Multi-Branch Center (`/dashboard/{branches,warehouses,locations,staff,transfers,deliveries,location-pricing,branch-reports}`)**: Nhóm menu "Chi nhánh & Địa điểm" trên `AdminShell` tuân thủ semantic tokens NORI, tự động ẩn mục ngoài phạm vi RBAC chi nhánh, không tràn ngang ở 375px / 768px / 1440px.
 
 `/design-system` là trang kiểm thử component trực tiếp. Đây không phải nguồn mock cho các trang nghiệp vụ.
 

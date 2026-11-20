@@ -38,6 +38,8 @@ type PromoRow = {
   maxDiscount: number | null
   minDays: number
   appliesTo: 'ALL' | 'RENT' | 'SALE'
+  branchScope?: 'ALL_BRANCHES' | 'SPECIFIC_BRANCHES'
+  applicableBranchIds?: string[]
   validFrom: string
   validTo: string
   usageLimit: number | null
@@ -58,6 +60,7 @@ const scopeLabels: Record<'ALL' | 'RENT' | 'SALE', string> = {
 export function PromotionsPanel() {
   const { toast } = useToast()
   const [items, setItems] = useState<PromoRow[]>([])
+  const [branches, setBranches] = useState<{ id: string; code: string; name: string }[]>([])
   const [q, setQ] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>('')
   const [loading, setLoading] = useState(true)
@@ -75,6 +78,10 @@ export function PromotionsPanel() {
   const [maxDiscount, setMaxDiscount] = useState('')
   const [minDays, setMinDays] = useState('1')
   const [appliesTo, setAppliesTo] = useState<'ALL' | 'RENT' | 'SALE'>('RENT')
+  const [branchScope, setBranchScope] = useState<'ALL_BRANCHES' | 'SPECIFIC_BRANCHES'>(
+    'ALL_BRANCHES',
+  )
+  const [applicableBranchIds, setApplicableBranchIds] = useState<string[]>([])
   const [validFrom, setValidFrom] = useState('')
   const [validTo, setValidTo] = useState('')
   const [usageLimit, setUsageLimit] = useState('')
@@ -96,10 +103,13 @@ export function PromotionsPanel() {
     let mounted = true
     setLoading(true)
     setError('')
-    api<{ items: PromoRow[] }>(`/dashboard/promotions?q=${encodeURIComponent(q.trim())}`)
+    api<{ items: PromoRow[]; branches?: { id: string; code: string; name: string }[] }>(
+      `/dashboard/promotions?q=${encodeURIComponent(q.trim())}`,
+    )
       .then((res) => {
         if (!mounted) return
         setItems(res.items)
+        setBranches(res.branches ?? [])
         setSimPromoId((prev) => {
           if (prev && res.items.some((x) => x.id === prev)) return prev
           return res.items[0]?.id ?? ''
@@ -189,6 +199,8 @@ export function PromotionsPanel() {
     setMaxDiscount('')
     setMinDays('1')
     setAppliesTo('RENT')
+    setBranchScope('ALL_BRANCHES')
+    setApplicableBranchIds([])
     setValidFrom('')
     setValidTo('')
     setUsageLimit('')
@@ -207,6 +219,8 @@ export function PromotionsPanel() {
     setMaxDiscount(p.maxDiscount != null ? String(p.maxDiscount) : '')
     setMinDays(String(p.minDays))
     setAppliesTo(p.appliesTo)
+    setBranchScope(p.branchScope === 'SPECIFIC_BRANCHES' ? 'SPECIFIC_BRANCHES' : 'ALL_BRANCHES')
+    setApplicableBranchIds(Array.isArray(p.applicableBranchIds) ? p.applicableBranchIds : [])
     setValidFrom(p.validFrom)
     setValidTo(p.validTo)
     setUsageLimit(p.usageLimit != null ? String(p.usageLimit) : '')
@@ -255,6 +269,8 @@ export function PromotionsPanel() {
           maxDiscount: n.maxDiscount,
           minDays: n.minDays,
           appliesTo: n.appliesTo,
+          branchScope,
+          applicableBranchIds: branchScope === 'SPECIFIC_BRANCHES' ? applicableBranchIds : [],
           validFrom: n.validFrom ?? '',
           validTo: n.validTo ?? '',
           usageLimit: n.usageLimit,
@@ -697,6 +713,43 @@ export function PromotionsPanel() {
             value={description}
             onChange={(e) => setDescription(e.target.value)}
           />
+
+          {branches.length > 0 && (
+            <div className="space-y-2 rounded-control border border-line p-3">
+              <Select
+                id="promo-branch-scope"
+                label="Phạm vi chi nhánh áp dụng"
+                value={branchScope}
+                onChange={(e) =>
+                  setBranchScope(e.target.value as 'ALL_BRANCHES' | 'SPECIFIC_BRANCHES')
+                }
+              >
+                <option value="ALL_BRANCHES">Áp dụng toàn hệ thống (mọi chi nhánh)</option>
+                <option value="SPECIFIC_BRANCHES">Chỉ áp dụng cho chi nhánh được chọn</option>
+              </Select>
+              {branchScope === 'SPECIFIC_BRANCHES' && (
+                <div className="grid gap-1.5 sm:grid-cols-2">
+                  {branches.map((b) => (
+                    <label key={b.id} className="flex items-center gap-2 text-small">
+                      <input
+                        type="checkbox"
+                        checked={applicableBranchIds.includes(b.id)}
+                        onChange={(e) =>
+                          setApplicableBranchIds((prev) =>
+                            e.target.checked ? [...prev, b.id] : prev.filter((id) => id !== b.id),
+                          )
+                        }
+                        className="size-4"
+                      />
+                      <span>
+                        <strong>{b.code}</strong> — {b.name}
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
           <label className="flex items-center gap-2 text-small">
             <input

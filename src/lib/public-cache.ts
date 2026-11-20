@@ -14,6 +14,7 @@ export function invalidateNoriCaches({
   allPosts = false,
 }: NoriInvalidation) {
   revalidateTag('nori-catalogue', { expire: 0 })
+  revalidateTag('nori-branches', { expire: 0 })
   revalidateTag('nori-site', { expire: 0 })
   revalidateTag('nori-posts', { expire: 0 })
   revalidatePath('/')

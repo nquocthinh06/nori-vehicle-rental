@@ -124,6 +124,18 @@ export const Promotions: CollectionConfig = {
     { name: 'validTo', label: 'Đến ngày (YYYY-MM-DD)', type: 'text' },
     { name: 'usageLimit', label: 'Giới hạn lượt dùng', type: 'number', min: 1 },
     { name: 'usedCount', label: 'Đã sử dụng', type: 'number', min: 0, defaultValue: 0 },
+    {
+      name: 'branchScope',
+      label: 'Phạm vi chi nhánh áp dụng',
+      type: 'select',
+      options: [
+        { label: 'Toàn hệ thống (tất cả chi nhánh)', value: 'ALL_BRANCHES' },
+        { label: 'Chỉ các chi nhánh được chọn', value: 'SPECIFIC_BRANCHES' },
+      ],
+      defaultValue: 'ALL_BRANCHES',
+      index: true,
+    },
+    { name: 'applicableBranchIds', label: 'Danh sách ID chi nhánh áp dụng (JSON)', type: 'json' },
     { name: 'active', label: 'Đang kích hoạt', type: 'checkbox', defaultValue: true, index: true },
   ],
   versions: false,

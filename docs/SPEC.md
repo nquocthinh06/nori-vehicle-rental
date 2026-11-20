@@ -1,9 +1,9 @@
 # ĐẶC TẢ YÊU CẦU HỆ THỐNG NORI (SYSTEM SPECIFICATION)
 
 - **Tên dự án**: NORI — Dịch vụ Cho thuê xe Linh hoạt & Tìm mua xe Tự tin
-- **Phiên bản tài liệu**: 2.3 (Nâng cấp Nghiệp vụ Chỉnh sửa Đơn thuê, Thông báo & Tư vấn Sau Duyệt, Hero Carousel CMS, Bảo mật Media & Quản trị Phương tiện Động)
-- **Kiến trúc công nghệ**: Next.js 16.4.6 (App Router), React 19.3.1, Payload CMS 4.0.0-beta.8, SQLite (`@payloadcms/db-sqlite` + Drizzle ORM), Tailwind CSS 4.
-- **Trạng thái thực thi**: 287+ test cases tự động đạt chuẩn (`225` unit + `62` Chromium E2E + `test:admin` cô lập).
+- **Phiên bản tài liệu**: 2.7.0 (Nâng cấp Module 3.7 — Quản lý Đa Chi Nhánh, Kho Xe, Điểm Giao Nhận, Điều Chuyển Nguyên Tử, Giao Nhận Tận Nơi, Định Giá Theo Khu Vực & Phân Quyền Theo Chi Nhánh)
+- **Kiến trúc công nghệ**: Next.js 16.4.6 (App Router), React 19.3.1, Payload CMS 4.0.0-beta.8, SQLite (`@payloadcms/db-sqlite` + Drizzle ORM, `109` bảng), Tailwind CSS 4.
+- **Trạng thái thực thi**: Xem số liệu kiểm thử mới nhất tại [docs/TEST_REPORT.md](./TEST_REPORT.md) và [docs/PROJECT_STATUS.md](./PROJECT_STATUS.md).
 
 ---
 
@@ -204,3 +204,25 @@ sequenceDiagram
   VehAPI->>Cache: revalidateCatalogue -> revalidateTag("nori-catalogue", "nori-model-slug")
   VehAPI-->>Admin: 200/201 OK (Đồng bộ tức thì sang /vehicles & /vehicles/[slug])
 ```
+
+---
+
+## 9. Yêu cầu Nghiệp vụ Mở rộng Module 3.7 — Đa Chi Nhánh & Đa Địa Điểm (`v2.7.0`)
+
+- **`SPEC-21` — Quản lý Chi nhánh, Kho xe & Định danh Phương tiện Duy nhất**:
+  - Hỗ trợ trạng thái `ACTIVE`, `INACTIVE`, `TEMPORARILY_CLOSED`, `ARCHIVED`; cấm xóa cứng chi nhánh khi đã phát sinh xe, nhân viên, đơn thuê hoặc điều chuyển; cảnh báo đơn tương lai trước khi tạm ngừng mà không làm mất/hủy tự động đơn đã xác nhận.
+  - Phân biệt tuyệt đối `managingBranch` (chi nhánh quản lý) và `currentBranch` / `currentWarehouse` (vị trí vật lý hiện tại); tuyệt đối không nhân bản bản ghi phương tiện.
+- **`SPEC-22` — Động cơ Timeline Vị trí Phương tiện P0 (`evaluateVehicleLocationTimeline`)**:
+  - Tính vị trí vật lý dự kiến của xe theo trình tự thời gian từ các đơn giữ chỗ, lịch điều chuyển đã duyệt và lịch bảo dưỡng; tự động ngăn đặt xe sai chi nhánh hoặc xung đột tuyến một chiều.
+- **`SPEC-23` — Điều chuyển Phương tiện Liên Chi nhánh Nguyên tử (`VehicleTransfers`)**:
+  - 9 trạng thái (`DRAFT`, `PENDING_APPROVAL`, `APPROVED`, `IN_TRANSIT`, `ARRIVED`, `COMPLETED`, `EXCEPTION`, `REJECTED`, `CANCELLED`) kèm Optimistic Locking (`revision`), ghi nhận ODO & nhật ký vị trí (`VehicleLocationHistory`), rollback nguyên tử khi lỗi giữa chừng, cấm hủy sau khi xuất kho (`IN_TRANSIT`) và cấm xác nhận hoàn tất trùng lặp.
+- **`SPEC-24` — Phân quyền RBAC Theo Chi nhánh & Chống Leo thang Quyền**:
+  - 8 vai trò chức danh (`SUPER_ADMIN`, `SYSTEM_ADMIN`, `BRANCH_MANAGER`, `RENTAL_STAFF`, `WAREHOUSE_STAFF`, `DELIVERY_STAFF`, `ACCOUNTANT`, `OPERATOR`) trên 20 phân hệ và phạm vi `ALL` / `ASSIGNED`; kiểm soát đồng thời tại API, Payload Collection Access, Export CSV và thu hồi quyền tức thì (`REVOKED`).
+- **`SPEC-25` — Điểm Giao Nhận Đã Xác Minh & Giao Nhận Tận Nơi (`ServiceLocations`, `DeliveryZones`, `DeliveryJobs`)**:
+  - Chỉ hiển thị điểm giao nhận đã xác minh (`verified = true`, `status = ACTIVE`); chặn phân công trùng khung giờ cho cùng nhân viên giao nhận (`409 DELIVERY_STAFF_TIME_CONFLICT`); lỗi giao hàng (`FAILED`) không đẩy sai trạng thái đơn thuê.
+- **`SPEC-26` — Phân cấp Định giá 5 Tầng, Thuê Một Chiều & Khuyến mãi Theo Chi nhánh**:
+  - Thứ tự ưu tiên `VEHICLE_BRANCH` > `MODEL_BRANCH` > `BRANCH_DEFAULT` > `GLOBAL_DEFAULT` > `vehicle.pricePerDay`; kiểm tra quy tắc tuyến một chiều (`OneWayRentalRules`) và số ngày tối thiểu; đóng băng snapshot giá vĩnh viễn trên đơn đã tạo; hỗ trợ mã khuyến mãi toàn hệ thống hoặc theo danh sách chi nhánh (`SPECIFIC_BRANCHES`).
+- **`SPEC-27` — Báo cáo Đa Chi Nhánh Không Đếm Trùng & CSV Theo Phạm vi**:
+  - Phân bổ doanh thu đơn một chiều theo `revenueSplitMode` (`PICKUP_BRANCH`, `RETURN_BRANCH`, `SPLIT_50_50`, `CUSTOM_PERCENT`) bảo đảm `sum(branch.netRevenue) + unassigned.netRevenue === systemTotal.netRevenue` đến từng VNĐ.
+- **`SPEC-28` — Nâng cấp Schema Additive-Only & Bảo toàn Dữ liệu Hiện hữu**:
+  - Migration `20261120_020000_multi_branch_management` chỉ thêm bảng/cột/index mới (lũy kế an toàn), nâng từ `88` lên `109` bảng và bổ sung `12` composite indexes, bảo toàn 100% 21 xe DEMO hiện có ở trạng thái `UNALLOCATED` (không bịa địa chỉ chi nhánh thật).

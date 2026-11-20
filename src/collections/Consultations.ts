@@ -64,6 +64,13 @@ export const Consultations: CollectionConfig = {
       relationTo: 'users',
       index: true,
     },
+    {
+      name: 'branch',
+      label: 'Chi nhánh xử lý',
+      type: 'relationship',
+      relationTo: 'branches',
+      index: true,
+    },
     { name: 'bookingKeySnapshot', label: 'Mã đơn thuê', type: 'text' },
     { name: 'customerNameSnapshot', label: 'Tên khách hàng', type: 'text' },
     { name: 'customerPhoneSnapshot', label: 'Số điện thoại', type: 'text' },

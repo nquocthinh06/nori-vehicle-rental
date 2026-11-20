@@ -1,5 +1,34 @@
 # NHẬT KÝ THAY ĐỔI VÀ NÂNG CẤP HỆ THỐNG NORI (CHANGELOG)
 
+## [Phiên bản 2.7.0] — 2026-11-20: Module 3.7 — Quản Lý Đa Chi Nhánh, Kho Xe, Điểm Giao Nhận, Điều Chuyển Nguyên Tử, Giao Nhận Tận Nơi & Định Giá Địa Điểm
+
+### 1. Kiến trúc Đa Chi Nhánh & Schema Additive-Only (`src/collections/*`, `src/migrations/20261120_020000_multi_branch_management.ts`)
+
+- Bổ sung **10 Payload Collections mới** (`Branches`, `Warehouses`, `ServiceLocations`, `BranchStaff`, `VehicleTransfers`, `VehicleLocationHistory`, `DeliveryZones`, `DeliveryJobs`, `LocationPricingRules`, `OneWayRentalRules`) và mở rộng additive-only 9 collections hiện có (`Admins`, `Vehicles`, `Bookings`, `RentalDays`, `Promotions`, `Payments`, `MaintenanceSchedules`, `Consultations`, `AuditLogs`).
+- Nâng cấp lược đồ SQLite `./nori.db` an toàn lũy kế từ **`88` lên `109` bảng** (`+21` bảng mới, `12+` composite indexes), bảo toàn 100% dữ liệu hiện có (`21` xe DEMO giữ nguyên ở trạng thái `UNALLOCATED`, không giả mạo chi nhánh thật).
+- Bổ sung bảo vệ xuất snapshot nhạy cảm trong `src/lib/data-sync.ts`: chặn tuyệt đối `branch-staff`, `vehicle-transfers`, `vehicle-location-history`, `delivery-jobs` và các trường địa chỉ/SĐT giao nhận cá nhân.
+
+### 2. Động cơ Timeline Vị trí P0, Điều chuyển Nguyên tử, Giao nhận Tận nơi & Định giá 5 Tầng (`src/lib/multi-branch-rules.ts`, `src/lib/multi-branch-service.ts`)
+
+- Xây dựng **P0 Vehicle Location Timeline Engine (`evaluateVehicleLocationTimeline`)** xác định vị trí vật lý dự kiến của phương tiện theo dòng thời gian, ngăn đặt trùng lịch, sai chi nhánh hoặc đứt gãy chuỗi tuyến một chiều.
+- Xây dựng quy trình **Điều chuyển Phương tiện Liên Chi nhánh 9 Trạng thái Nguyên tử** (`createVehicleTransferAtomic`, `transitionVehicleTransferAtomic`) kèm khóa `rental_days`, Optimistic Locking (`revision`), rollback ACID khi lỗi giữa chừng, cấm hủy sau xuất kho (`IN_TRANSIT`) và cấm xác nhận hoàn tất trùng lặp (`409`).
+- Triển khai **Phân cấp Định giá 5 Tầng** (`VEHICLE_BRANCH > MODEL_BRANCH > VEHICLE_BASE > BRANCH_DEFAULT > GLOBAL_DEFAULT`), quy tắc tuyến một chiều (`OneWayRentalRules`), khuyến mãi theo phạm vi chi nhánh (`SPECIFIC_BRANCHES`), đóng băng bất biến `pricingRuleSnapshot` và báo cáo doanh thu đa chi nhánh không cộng trùng (`sum(branch) + unassigned === systemTotal`).
+- Triển khai **Phân quyền RBAC Theo Phạm vi Chi nhánh** (`src/access/nori.ts`, `src/lib/admin-api.ts`) cho 8 vai trò chức danh × 20 phân hệ (`ALL` / `ASSIGNED`), chống tự nâng quyền, chống `BRANCH_MANAGER` tạo `SUPER_ADMIN`, chặn IDOR (`403 BRANCH_SCOPE_FORBIDDEN`) và thu hồi quyền tức thì (`403 ACCOUNT_REVOKED`).
+
+### 3. Hệ thống API & 8 Phân hệ Quản trị Mới + Nâng cấp Giao diện Khách hàng
+
+- Bổ sung 1 Public API (`/nori-api/locations`) và 8 Admin APIs (`/nori-api/dashboard/{branches,warehouses,locations,staff,transfers,deliveries,location-pricing,branch-reports}`) cùng nâng cấp 12 API hiện hữu (`availability`, `fleet`, `bookings`, `dashboard`, `vehicles`, `bookings`, `maintenance`, `payments`, `promotions`, `reports`, `export`, `admins`).
+- Bổ sung 8 màn hình quản trị mới tại `/dashboard/{branches,warehouses,locations,staff,transfers,deliveries,location-pricing,branch-reports}` trong nhóm menu **"Chi nhánh & Địa điểm"** trên `AdminShell`.
+- Nâng cấp toàn bộ trải nghiệm khách hàng (`SearchBar`, `Catalogue`, `VehicleCard`, `VehicleDetail`, `CheckoutPanel`, `BookingsPanel`) hỗ trợ chọn chi nhánh nhận/trả, thuê một chiều, lọc tồn kho chi nhánh thời gian thực, chọn điểm giao nhận xác minh, giao/thu hồi tận nơi theo vùng, đối chiếu khuyến mãi theo chi nhánh và `idempotencyKey` chống double-submit.
+
+### 4. Kiểm thử Đa tầng, Benchmark Mở rộng & Bộ Tài liệu Chuyên sâu
+
+- Bổ sung `tests/multi-branch-rules.test.mjs`, `tests/multi-branch-integration.test.mjs`, `tests/e2e/multi-branch-workflow.spec.ts` và `scripts/benchmark-multi-branch.mjs` (`pnpm perf:multi-branch`).
+- Nâng tổng kiểm thử tự động lên **`406 / 406 PASS (100%)`** (`305` Unit/Integration/Resilience/Multi-Branch + `1` Isolated Admin + `100` Playwright E2E cô lập DB/Media + `3×` repeat flake check đạt `9/9 PASS`).
+- Bổ sung 7 tài liệu chuyên sâu (`docs/MULTI_BRANCH_MANAGEMENT.md`, `docs/VEHICLE_TRANSFER_WORKFLOW.md`, `docs/BRANCH_RBAC_MATRIX.md`, `docs/LOCATION_PRICING_RULES.md`, `docs/DATABASE_MIGRATION.md`, `docs/DATA_SYNC_GUIDE.md`, `docs/BRANCH_OPERATIONS_GUIDE.md`) và cập nhật toàn bộ tài liệu hệ thống.
+
+---
+
 ## [Phiên bản 2.6.1] — 2026-11-20: Kiểm Toán Hiệu Năng Toàn Hệ Thống, Khắc Phục Treo Dev/Mất Ảnh, Tối Ưu Media WebP, SQLite WAL & Chuẩn Hóa Production Standalone
 
 ### 1. Xử lý Nguyên nhân Gốc Gây Treo `pnpm dev`, Mất Ảnh & Cảnh báo Image Quality (`src/payload.config.ts`, `next.config.ts`, `src/components/home/hero.tsx`)

@@ -1,5 +1,12 @@
 import { APIError, type CollectionConfig } from 'payload'
-import { adminHasPermission, adminRoleOf, isSuperAdmin, superAdminField } from '@/access/nori'
+import {
+  STAFF_TITLES,
+  STAFF_TITLE_LABELS,
+  adminHasPermission,
+  adminRoleOf,
+  isSuperAdmin,
+  superAdminField,
+} from '@/access/nori'
 import { auditCollection } from '@/hooks/audit-nori'
 
 const audit = auditCollection({
@@ -9,6 +16,10 @@ const audit = auditCollection({
   fields: {
     fullName: 'Họ tên',
     adminRole: 'Vai trò',
+    staffTitle: 'Chức danh chi nhánh',
+    branchScopeMode: 'Phạm vi chi nhánh',
+    assignedBranchIds: 'Danh sách chi nhánh phụ trách',
+    accountStatus: 'Trạng thái tài khoản',
     email: 'Email',
     permissions: 'Phân quyền RBAC',
   },
@@ -110,6 +121,47 @@ export const Admins: CollectionConfig = {
       type: 'json',
       access: { create: superAdminField, update: superAdminField },
     },
+    {
+      name: 'staffTitle',
+      label: 'Chức danh vận hành / chi nhánh',
+      type: 'select',
+      options: STAFF_TITLES.map((v) => ({ label: STAFF_TITLE_LABELS[v], value: v })),
+      defaultValue: 'OPERATOR',
+      saveToJWT: true,
+      access: { create: superAdminField, update: superAdminField },
+    },
+    {
+      name: 'branchScopeMode',
+      label: 'Phạm vi chi nhánh',
+      type: 'select',
+      options: [
+        { label: 'Toàn hệ thống', value: 'ALL' },
+        { label: 'Theo chi nhánh được phân công', value: 'ASSIGNED' },
+      ],
+      defaultValue: 'ALL',
+      saveToJWT: true,
+      access: { create: superAdminField, update: superAdminField },
+    },
+    {
+      name: 'assignedBranchIds',
+      label: 'Danh sách ID chi nhánh phụ trách (JSON)',
+      type: 'json',
+      access: { create: superAdminField, update: superAdminField },
+    },
+    {
+      name: 'accountStatus',
+      label: 'Trạng thái hoạt động tài khoản',
+      type: 'select',
+      options: [
+        { label: 'Đang hoạt động', value: 'ACTIVE' },
+        { label: 'Đã thu hồi quyền', value: 'REVOKED' },
+        { label: 'Tạm khóa', value: 'SUSPENDED' },
+      ],
+      defaultValue: 'ACTIVE',
+      index: true,
+      access: { create: superAdminField, update: superAdminField },
+    },
+    { name: 'phone', label: 'Số điện thoại nội bộ', type: 'text', maxLength: 20 },
   ],
   versions: false,
 }

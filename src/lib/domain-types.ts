@@ -40,6 +40,13 @@ export type FleetView = {
   version: string | null
   location: string | null
   pickupLocation: string | null
+  managingBranchId?: string | null
+  managingBranchName?: string | null
+  currentBranchId?: string | null
+  currentBranchName?: string | null
+  currentWarehouseId?: string | null
+  currentWarehouseName?: string | null
+  allocationStatus?: string
   operationStatus: string
   photos: {
     image: Photo
@@ -55,6 +62,13 @@ export type FleetView = {
 
 export type Quote = {
   available: boolean
+  reasonCode?: string | null
+  reason?: string | null
+  isOneWay?: boolean
+  pickupBranchId?: string | null
+  returnBranchId?: string | null
+  pickupBranchName?: string | null
+  returnBranchName?: string | null
   totalDays: number
   weekendDays: number
   holidayDays?: number
@@ -62,7 +76,11 @@ export type Quote = {
   basePrice: number
   weekendSurchargeTotal: number
   holidaySurchargeTotal?: number
+  locationSurcharge?: number
+  oneWayFee?: number
   deliveryFee: number
+  pickupFee?: number
+  afterHoursFee?: number
   addonFee: number
   discountRate: number
   discountAmount: number
@@ -72,6 +90,8 @@ export type Quote = {
   promoStatus?: string | null
   promoMessage?: string | null
   promoError?: string | null
+  pricingRuleScope?: string | null
+  pricingRuleCode?: string | null
   estimatedTotal: number
   depositAmount: number
   initialPaymentDue: number
@@ -292,6 +312,21 @@ export type BookingView = {
   returnTime: string
   pickupLocation: string | null
   returnLocation?: string | null
+  pickupBranchId?: string | null
+  pickupBranchName?: string | null
+  returnBranchId?: string | null
+  returnBranchName?: string | null
+  pickupServiceLocationId?: string | null
+  returnServiceLocationId?: string | null
+  isOneWay?: boolean
+  pickupMethod?: string
+  returnMethod?: string
+  deliveryZoneId?: string | null
+  deliveryAddress?: string | null
+  pickupAddress?: string | null
+  deliveryContactName?: string | null
+  deliveryContactPhone?: string | null
+  deliveryDirections?: string | null
   deliveryRequested: boolean
   addonServices: string | null
   customerPhone?: string | null
@@ -301,7 +336,11 @@ export type BookingView = {
   dailyPriceSnapshot: number
   baseRentPrice: number
   weekendSurchargeTotal: number
+  locationSurchargeSnapshot?: number
+  oneWayFeeSnapshot?: number
   deliveryFeeSnapshot: number
+  pickupFeeSnapshot?: number
+  afterHoursFeeSnapshot?: number
   addonFeeTotal: number
   discountAmount: number
   extraFee?: number
@@ -309,6 +348,11 @@ export type BookingView = {
   contractNumber?: string | null
   returnOdometer?: number | null
   returnCondition?: string | null
+  returnFuelOrBattery?: string | null
+  returnInspectionStatus?: string | null
+  actualReturnBranchId?: string | null
+  actualReturnWarehouseId?: string | null
+  scheduleConflictAlert?: string | null
   promoCode?: string | null
   promoDiscountAmount?: number
   totalPrice: number
@@ -444,4 +488,80 @@ export type TimeSeriesPoint = {
   bookings: number
   inquiries: number
   expectedValue: number
+}
+
+export type PublicBranchOption = {
+  id: string
+  code: string
+  name: string
+  province: string
+  ward: string | null
+  address: string
+  hotline: string | null
+  operatingHoursLabel: string | null
+  workStartTime: string
+  workEndTime: string
+  supportsHomeDelivery: boolean
+  supportsHomePickup: boolean
+  deliveryStartTime: string
+  deliveryEndTime: string
+  defaultDeliveryFee: number | null
+  defaultPickupFee: number | null
+  afterHoursFee: number | null
+  freeDeliveryMinOrder: number | null
+  status: string
+}
+
+export type PublicServiceLocationOption = {
+  id: string
+  code: string
+  name: string
+  branchId: string
+  branchName: string
+  locationType: string
+  address: string
+  province: string | null
+  operatingHours: string | null
+  openTime: string
+  closeTime: string
+  pickupInstructions: string | null
+  returnInstructions: string | null
+  supportsPickup: boolean
+  supportsReturn: boolean
+  supportsHomeDelivery: boolean
+  supportsHomePickup: boolean
+  supportedCategories: string[]
+  surchargeFee: number | null
+}
+
+export type PublicDeliveryZoneOption = {
+  id: string
+  code: string
+  name: string
+  branchId: string
+  province: string
+  wards: string | null
+  deliveryFee: number
+  pickupFee: number
+  afterHoursFee: number
+  freeOverOrderAmount: number | null
+  serviceStartTime: string
+  serviceEndTime: string
+}
+
+export type PublicOneWayRuleOption = {
+  id: string
+  fromBranchId: string
+  toBranchId: string
+  vehicleCategory: string
+  allowed: boolean
+  fee: number
+  minRentalDays: number
+}
+
+export type PublicLocationsPayload = {
+  branches: PublicBranchOption[]
+  locations: PublicServiceLocationOption[]
+  deliveryZones: PublicDeliveryZoneOption[]
+  oneWayRules: PublicOneWayRuleOption[]
 }

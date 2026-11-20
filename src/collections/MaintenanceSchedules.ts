@@ -1,5 +1,5 @@
 import type { CollectionConfig } from 'payload'
-import { adminHasAnyPermission, adminPermission } from '@/access/nori'
+import { adminBranchPermission, adminHasAnyPermission, branchScopedWhere } from '@/access/nori'
 import { auditCollection } from '@/hooks/audit-nori'
 
 const maintAudit = auditCollection({
@@ -25,15 +25,17 @@ export const MaintenanceSchedules: CollectionConfig = {
     defaultColumns: ['title', 'vehicle', 'maintenanceType', 'startDate', 'endDate', 'status'],
   },
   access: {
-    create: adminPermission('maintenance', 'create'),
+    create: adminBranchPermission('maintenance', 'create', ['branch']),
     read: ({ req }) =>
       adminHasAnyPermission(req.user, [
         ['maintenance', 'read'],
         ['vehicles', 'read'],
         ['bookings', 'read'],
-      ]),
-    update: adminPermission('maintenance', 'update'),
-    delete: adminPermission('maintenance', 'delete'),
+      ])
+        ? branchScopedWhere(req.user, ['branch'])
+        : false,
+    update: adminBranchPermission('maintenance', 'update', ['branch']),
+    delete: adminBranchPermission('maintenance', 'delete', ['branch']),
   },
   hooks: {
     afterChange: [maintAudit.afterChange],
@@ -46,6 +48,20 @@ export const MaintenanceSchedules: CollectionConfig = {
       type: 'relationship',
       relationTo: 'vehicles',
       required: true,
+    },
+    {
+      name: 'branch',
+      label: 'Chi nhánh bảo dưỡng',
+      type: 'relationship',
+      relationTo: 'branches',
+      index: true,
+    },
+    {
+      name: 'warehouse',
+      label: 'Kho / Trung tâm bảo dưỡng',
+      type: 'relationship',
+      relationTo: 'warehouses',
+      index: true,
     },
     { name: 'title', label: 'Hạng mục bảo trì', type: 'text', required: true, maxLength: 160 },
     {

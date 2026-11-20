@@ -3,8 +3,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import type { Category, ModelView } from '@/lib/catalogue'
+import { api } from '@/lib/client-api'
+import type { PublicLocationsPayload } from '@/lib/domain-types'
 import { formatDate, subCategoryLabels } from '@/lib/rental-rules'
-import { Button, EmptyState, Heading, IconButton, Input, Select, Text, cn } from './ui'
+import { Button, EmptyState, Heading, IconButton, Input, Notice, Select, Text, cn } from './ui'
 import { Icon } from './ui/icon'
 import { VehicleCard, categoryIcons, categoryLabels } from './vehicle-card'
 
@@ -66,10 +68,60 @@ export function Catalogue({ models }: { models: ModelView[] }) {
 
   const startDate = params.get('startDate')
   const endDate = params.get('endDate')
+  const pickupBranchId = params.get('pickupBranchId') ?? ''
+  const returnBranchId = params.get('returnBranchId') ?? ''
   const querySearch = params.get('search') ?? ''
   const queryLocation = params.get('location') ?? ''
+  const [publicLocs, setPublicLocs] = useState<PublicLocationsPayload | null>(null)
+  const [branchAvailModelIds, setBranchAvailModelIds] = useState<string[] | null>(null)
+  const [branchAvailNotice, setBranchAvailNotice] = useState('')
   useEffect(() => setSearch(querySearch), [querySearch])
   useEffect(() => setLocation(queryLocation), [queryLocation])
+  useEffect(() => {
+    let active = true
+    api<PublicLocationsPayload>('/locations')
+      .then((res) => {
+        if (active) setPublicLocs(res)
+      })
+      .catch(() => {})
+    return () => {
+      active = false
+    }
+  }, [])
+  useEffect(() => {
+    if (intent !== 'rent' || !pickupBranchId) {
+      setBranchAvailModelIds(null)
+      setBranchAvailNotice('')
+      return
+    }
+    let active = true
+    const sp = new URLSearchParams({ mode: 'catalogue', pickupBranchId })
+    if (returnBranchId && returnBranchId !== pickupBranchId) {
+      sp.set('returnBranchId', returnBranchId)
+    }
+    if (startDate && endDate) {
+      sp.set('startDate', startDate)
+      sp.set('endDate', endDate)
+    }
+    api<{ availableModelIds: string[]; availableVehicleCount: number }>(
+      `/availability?${sp.toString()}`,
+    )
+      .then((res) => {
+        if (!active) return
+        setBranchAvailModelIds(res.availableModelIds ?? [])
+        setBranchAvailNotice(
+          res.availableVehicleCount === 0
+            ? 'Không có xe khả dụng tại chi nhánh / tuyến đường đã chọn trong khoảng ngày này.'
+            : '',
+        )
+      })
+      .catch(() => {
+        if (active) setBranchAvailModelIds(null)
+      })
+    return () => {
+      active = false
+    }
+  }, [intent, pickupBranchId, returnBranchId, startDate, endDate])
   useEffect(() => {
     if (!filtersOpen) return
     const onKeyDown = (event: KeyboardEvent) => {
@@ -104,6 +156,7 @@ export function Catalogue({ models }: { models: ModelView[] }) {
           (!fuelType || m.fuelType === fuelType) &&
           (!seats || m.seats === Number(seats)) &&
           (!location || m.locations.includes(location)) &&
+          (!branchAvailModelIds || branchAvailModelIds.includes(m.id)) &&
           tokens.every((token) => haystack.includes(token)) &&
           (!minPrice || (price !== null && price >= Number(minPrice))) &&
           (!maxPrice || (price !== null && price <= Number(maxPrice)))
@@ -127,6 +180,7 @@ export function Catalogue({ models }: { models: ModelView[] }) {
     fuelType,
     seats,
     location,
+    branchAvailModelIds,
     minPrice,
     maxPrice,
     sort,
@@ -271,16 +325,32 @@ export function Catalogue({ models }: { models: ModelView[] }) {
           </Button>
         </form>
       </div>
-      {intent === 'rent' && startDate && endDate && (
+      {intent === 'rent' && (startDate || pickupBranchId) && (
         <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-control bg-brand-soft p-4 text-small text-brand">
-          <Text className="flex items-center gap-2">
+          <Text className="flex flex-wrap items-center gap-2">
             <Icon name="calendar" className="size-4" />
-            Dự kiến: {formatDate(startDate)} — {formatDate(endDate)}
+            {startDate && endDate
+              ? `Dự kiến: ${formatDate(startDate)} — ${formatDate(endDate)}`
+              : 'Đang lọc theo chi nhánh khả dụng'}
+            {pickupBranchId && (
+              <span className="font-semibold">
+                · Nhận:{' '}
+                {publicLocs?.branches.find((b) => b.id === pickupBranchId)?.name ?? pickupBranchId}
+                {returnBranchId && returnBranchId !== pickupBranchId
+                  ? ` → Trả: ${publicLocs?.branches.find((b) => b.id === returnBranchId)?.name ?? returnBranchId} (Một chiều)`
+                  : ''}
+              </span>
+            )}
           </Text>
           <Text className="text-caption">
-            Chọn xe thực tế ở trang chi tiết để kiểm tra lịch trống.
+            Chỉ hiển thị các dòng xe có xe thực tế khả dụng tại địa điểm nhận đã chọn.
           </Text>
         </div>
+      )}
+      {branchAvailNotice && (
+        <Notice tone="info" className="mb-5">
+          {branchAvailNotice}
+        </Notice>
       )}
       <div className="mb-4 flex items-center justify-between lg:hidden">
         <Text className="font-medium">{filtered.length} dòng xe</Text>
@@ -446,6 +516,38 @@ export function Catalogue({ models }: { models: ModelView[] }) {
                   ))}
                 </Select>
               </div>
+              {intent === 'rent' && (publicLocs?.branches.length ?? 0) > 0 && (
+                <div className="space-y-3 border-t border-line pt-4">
+                  <Select
+                    id="filter-pickup-branch"
+                    label="Chi nhánh nhận xe"
+                    value={pickupBranchId}
+                    onChange={(e) => navigate('pickupBranchId', e.target.value)}
+                  >
+                    <option value="">Tất cả chi nhánh</option>
+                    {(publicLocs?.branches ?? []).map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {b.name} ({b.province})
+                      </option>
+                    ))}
+                  </Select>
+                  {pickupBranchId && (
+                    <Select
+                      id="filter-return-branch"
+                      label="Chi nhánh trả xe (tùy chọn một chiều)"
+                      value={returnBranchId}
+                      onChange={(e) => navigate('returnBranchId', e.target.value)}
+                    >
+                      <option value="">Cùng chi nhánh nhận</option>
+                      {(publicLocs?.branches ?? []).map((b) => (
+                        <option key={b.id} value={b.id}>
+                          {b.name} ({b.province})
+                        </option>
+                      ))}
+                    </Select>
+                  )}
+                </div>
+              )}
             </div>
             <div className="mt-5 border-t border-line pt-5">
               <Text className="mb-3 text-small font-semibold">
@@ -600,6 +702,8 @@ export function Catalogue({ models }: { models: ModelView[] }) {
                   layout={view}
                   startDate={startDate}
                   endDate={endDate}
+                  pickupBranchId={pickupBranchId || null}
+                  returnBranchId={returnBranchId || null}
                 />
               ))}
             </div>

@@ -4,6 +4,7 @@ import * as migration_20261118_050000_upgrade_bookings_notifications_hero_vehicl
 import * as migration_20261118_120000_hero_slide_focal_point from './20261118_120000_hero_slide_focal_point'
 import * as migration_20261118_185500_posts_promotion_link from './20261118_185500_posts_promotion_link'
 import * as migration_20261120_010000_online_payment_integration from './20261120_010000_online_payment_integration'
+import * as migration_20261120_020000_multi_branch_management from './20261120_020000_multi_branch_management'
 
 export const migrations = [
   {
@@ -35,5 +36,10 @@ export const migrations = [
     up: migration_20261120_010000_online_payment_integration.up,
     down: migration_20261120_010000_online_payment_integration.down,
     name: '20261120_010000_online_payment_integration',
+  },
+  {
+    up: migration_20261120_020000_multi_branch_management.up,
+    down: migration_20261120_020000_multi_branch_management.down,
+    name: '20261120_020000_multi_branch_management',
   },
 ]

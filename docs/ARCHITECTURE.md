@@ -133,3 +133,15 @@ flowchart TD
   - Lợi ích: Thực hiện sao lưu bản snapshot nhất quán của cơ sở dữ liệu ngay khi hệ thống đang phục vụ truy vấn mà không gây nghẽn (non-blocking).
   - Tự động chạy `PRAGMA integrity_check` trên tệp sao lưu để đảm bảo tính toàn vẹn 100%.
   - Khôi phục an toàn qua `scripts/restore-db.mjs` với kiểm tra an toàn tệp nguồn và kiểm tra khóa ngoại sau khôi phục.
+
+---
+
+## 7. Mở rộng Kiến trúc Đa Chi Nhánh & Đa Địa Điểm (Module 3.7 — `v2.7.0`)
+
+Xem tài liệu chuyên sâu kèm sơ đồ Use Case, ERD chi tiết, State Machine và Sequence Diagram tại:
+
+- [docs/MULTI_BRANCH_MANAGEMENT.md](./MULTI_BRANCH_MANAGEMENT.md) — Kiến trúc tổng thể 10 collections mới (`109` bảng SQLite), Động cơ Timeline Vị trí P0 (`evaluateVehicleLocationTimeline`) và Báo cáo Đa chi nhánh không đếm trùng.
+- [docs/VEHICLE_TRANSFER_WORKFLOW.md](./VEHICLE_TRANSFER_WORKFLOW.md) — Vòng đời điều chuyển xe 9 trạng thái và giao dịch nguyên tử (`createVehicleTransferAtomic` / `transitionVehicleTransferAtomic`).
+- [docs/BRANCH_RBAC_MATRIX.md](./BRANCH_RBAC_MATRIX.md) — Ma trận phân quyền 8 vai trò × 20 phân hệ × phạm vi chi nhánh (`ALL` / `ASSIGNED`) & chống leo thang/IDOR.
+- [docs/LOCATION_PRICING_RULES.md](./LOCATION_PRICING_RULES.md) — Phân cấp định giá 5 tầng, quy tắc thuê một chiều, phân bổ doanh thu và bất biến snapshot giá.
+- [docs/DATABASE_MIGRATION.md](./DATABASE_MIGRATION.md) — Chiến lược migration additive-only (`20261120_020000_multi_branch_management`), 12 composite indexes mới và kiểm chứng zero data loss.

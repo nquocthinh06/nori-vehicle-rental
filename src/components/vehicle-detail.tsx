@@ -4,7 +4,7 @@ import Image from 'next/image'
 import dynamic from 'next/dynamic'
 import { startTransition, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import type { GalleryKind, ModelView, SiteContent } from '@/lib/catalogue'
-import type { FleetView, Quote, ReviewView } from '@/lib/domain-types'
+import type { FleetView, PublicLocationsPayload, Quote, ReviewView } from '@/lib/domain-types'
 import { api, RequestError } from '@/lib/client-api'
 import {
   CAR_PICKUP_PHOTO_TYPES,
@@ -168,6 +168,10 @@ export function VehicleDetail({
   const [pickupTime, setPickupTime] = useState('08:00')
   const [returnTime, setReturnTime] = useState('20:00')
   const [deliveryRequested, setDeliveryRequested] = useState(false)
+  const [publicLocs, setPublicLocs] = useState<PublicLocationsPayload | null>(null)
+  const [pickupBranchId, setPickupBranchId] = useState('')
+  const [differentReturn, setDifferentReturn] = useState(false)
+  const [returnBranchId, setReturnBranchId] = useState('')
   const [selectedAddons, setSelectedAddons] = useState<AddonDefinition['id'][]>([])
   const [quote, setQuote] = useState<Quote | null>(null)
   const [quoteLoading, setQuoteLoading] = useState(false)
@@ -217,9 +221,26 @@ export function VehicleDetail({
     setIntent(sp.get('intent') === 'buy' ? 'buy' : 'rent')
     setStartDate(sp.get('startDate') ?? '')
     setEndDate(sp.get('endDate') ?? '')
+    const pBr = sp.get('pickupBranchId') ?? ''
+    const rBr = sp.get('returnBranchId') ?? ''
+    setPickupBranchId(pBr)
+    setReturnBranchId(rBr)
+    setDifferentReturn(Boolean(rBr && rBr !== pBr))
     setQuote(null)
     setError('')
   }, [model.id])
+
+  useEffect(() => {
+    let active = true
+    api<PublicLocationsPayload>('/locations')
+      .then((res) => {
+        if (active) setPublicLocs(res)
+      })
+      .catch(() => {})
+    return () => {
+      active = false
+    }
+  }, [])
 
   useEffect(() => {
     setToday(businessToday())
@@ -457,13 +478,19 @@ export function VehicleDetail({
         vehicle: selectedVehicle!.id,
         startDate,
         endDate,
+        pickupTime,
+        returnTime,
       })
+      if (pickupBranchId) qParams.set('pickupBranchId', pickupBranchId)
+      if (differentReturn && returnBranchId && returnBranchId !== pickupBranchId) {
+        qParams.set('returnBranchId', returnBranchId)
+      }
       if (deliveryRequested) qParams.set('delivery', '1')
       if (selectedAddons.length) qParams.set('addons', selectedAddons.join(','))
       const result = await api<Quote>(`/availability?${qParams}`)
       setQuote(result)
       if (!result.available)
-        setError('Xe đã có lịch trong khoảng ngày này. Vui lòng chọn ngày khác.')
+        setError(result.reason || 'Xe đã có lịch trong khoảng ngày này. Vui lòng chọn ngày khác.')
     } catch (e) {
       setError((e as Error).message)
     } finally {
@@ -551,6 +578,10 @@ export function VehicleDetail({
         endDate,
         pickupTime,
         returnTime,
+        ...(pickupBranchId ? { pickupBranchId } : {}),
+        ...(differentReturn && returnBranchId && returnBranchId !== pickupBranchId
+          ? { returnBranchId }
+          : {}),
         ...(deliveryRequested ? { delivery: '1' } : {}),
         ...(selectedAddons.length ? { addons: selectedAddons.join(',') } : {}),
       })}`
@@ -1908,6 +1939,7 @@ export function VehicleDetail({
                     {v.reference}
                     {v.version ? ` · ${v.version}` : ''}
                     {v.color ? ` · ${v.color}` : ''}
+                    {v.currentBranchName ? ` (${v.currentBranchName})` : ''}
                   </option>
                 ))}
               </Select>
@@ -1970,6 +2002,55 @@ export function VehicleDetail({
                     ))}
                   </Select>
                 </div>
+
+                {selectedVehicle && (publicLocs?.branches.length ?? 0) > 0 && (
+                  <div className="mt-3 space-y-2.5 border-t border-line pt-3">
+                    <Select
+                      id="detail-pickup-branch"
+                      label="Chi nhánh nhận xe"
+                      value={pickupBranchId || selectedVehicle.currentBranchId || ''}
+                      onChange={(e) => {
+                        setPickupBranchId(e.target.value)
+                        setQuote(null)
+                      }}
+                    >
+                      <option value="">Theo chi nhánh hiện tại của xe</option>
+                      {(publicLocs?.branches ?? []).map((b) => (
+                        <option key={b.id} value={b.id}>
+                          {b.name} ({b.province})
+                        </option>
+                      ))}
+                    </Select>
+                    <Checkbox
+                      id="detail-one-way"
+                      checked={differentReturn}
+                      onChange={(e) => {
+                        setDifferentReturn(e.target.checked)
+                        if (!e.target.checked) setReturnBranchId('')
+                        setQuote(null)
+                      }}
+                      label="Trả xe tại chi nhánh khác"
+                    />
+                    {differentReturn && (
+                      <Select
+                        id="detail-return-branch"
+                        label="Chi nhánh trả xe"
+                        value={returnBranchId}
+                        onChange={(e) => {
+                          setReturnBranchId(e.target.value)
+                          setQuote(null)
+                        }}
+                      >
+                        <option value="">Chọn chi nhánh trả xe</option>
+                        {(publicLocs?.branches ?? []).map((b) => (
+                          <option key={b.id} value={b.id}>
+                            {b.name} ({b.province})
+                          </option>
+                        ))}
+                      </Select>
+                    )}
+                  </div>
+                )}
 
                 {selectedVehicle && (
                   <div className="mt-3 space-y-1 border-t border-line pt-3">
@@ -2047,6 +2128,24 @@ export function VehicleDetail({
                       <div className="flex justify-between gap-2">
                         <Text>Phí giao nhận tận nơi</Text>
                         <Text className="font-medium">+{formatMoney(quote.deliveryFee)}</Text>
+                      </div>
+                    )}
+                    {(quote.locationSurcharge ?? 0) > 0 && (
+                      <div className="flex justify-between gap-2">
+                        <Text>Phụ phí địa điểm</Text>
+                        <Text className="font-medium">+{formatMoney(quote.locationSurcharge)}</Text>
+                      </div>
+                    )}
+                    {(quote.oneWayFee ?? 0) > 0 && (
+                      <div className="flex justify-between gap-2">
+                        <Text>Phí trả xe khác chi nhánh</Text>
+                        <Text className="font-medium">+{formatMoney(quote.oneWayFee)}</Text>
+                      </div>
+                    )}
+                    {(quote.afterHoursFee ?? 0) > 0 && (
+                      <div className="flex justify-between gap-2">
+                        <Text>Phí giao nhận ngoài giờ</Text>
+                        <Text className="font-medium">+{formatMoney(quote.afterHoursFee)}</Text>
                       </div>
                     )}
                     {quote.addonFee > 0 && (

@@ -3,25 +3,29 @@ import {
   adminField,
   adminHasAnyPermission,
   adminHasPermission,
+  branchScopedWhere,
   customerOnly,
   serverField,
 } from '@/access/nori'
 import { auditCollection } from '@/hooks/audit-nori'
+import {
+  detectReturnScheduleConflicts,
+  evaluateVehicleBookingAvailabilityAndPricing,
+  recordVehicleLocationEvent,
+} from '@/lib/multi-branch-service'
+import type { PickupMethod, ReturnMethod } from '@/lib/multi-branch-rules'
 import { dispatchBookingConfirmationNotice } from '@/lib/notifications'
 import {
   consumePromoSlotAtomically,
-  lookupAndEvaluatePromotion,
   promoErrorHttpStatus,
   releasePromoSlotAtomically,
 } from '@/lib/promo-service'
 import {
-  applyPromotionToQuote,
   BOOKING_CONFIRMED_LOCK_MESSAGE,
   bookingStatusLabels,
   businessToday,
   calculateBookingFinancialSummary,
   calculateNextContactSlot,
-  calculateRentalQuote,
   canModifyBooking,
   canTransition,
   checkHandoverFinancialEligibility,
@@ -75,10 +79,11 @@ export const Bookings: CollectionConfig = {
           ['bookings', 'read'],
           ['customers', 'read'],
           ['payments', 'read'],
+          ['deliveries', 'read'],
           ['reports', 'read'],
         ])
       ) {
-        return true
+        return branchScopedWhere(req.user, ['pickupBranch', 'returnBranch'])
       }
       if (req.user?.collection === 'users' && req.user.status === 'ACTIVE') {
         return { customer: { equals: req.user.id } }
@@ -86,7 +91,9 @@ export const Bookings: CollectionConfig = {
       return false
     },
     update: ({ req }) => {
-      if (adminHasPermission(req.user, 'bookings', 'update')) return true
+      if (adminHasPermission(req.user, 'bookings', 'update')) {
+        return branchScopedWhere(req.user, ['pickupBranch', 'returnBranch'])
+      }
       if (req.user?.collection === 'users' && req.user.status === 'ACTIVE') {
         return { customer: { equals: req.user.id } }
       }
@@ -232,12 +239,121 @@ export const Bookings: CollectionConfig = {
           const transactionID = await req.transactionID
           if (!transactionID)
             throw new APIError('Chưa thể giữ lịch an toàn. Vui lòng thử lại sau.', 503)
+
+          const addonKeys = parseAddonKeys(data.addonServices)
+          const pickupMethod: PickupMethod =
+            data.pickupMethod === 'HOME_DELIVERY' || Boolean(data.deliveryRequested)
+              ? 'HOME_DELIVERY'
+              : 'BRANCH_PICKUP'
+          const returnMethod: ReturnMethod =
+            data.returnMethod === 'HOME_PICKUP' ? 'HOME_PICKUP' : 'BRANCH_RETURN'
+          const deliveryRequested = pickupMethod === 'HOME_DELIVERY'
+          const pickupTimeVal = validateTimeString(data.pickupTime)
+            ? String(data.pickupTime)
+            : '08:00'
+          const returnTimeVal = validateTimeString(data.returnTime)
+            ? String(data.returnTime)
+            : '20:00'
+          const deliveryAddress =
+            typeof data.deliveryAddress === 'string'
+              ? data.deliveryAddress.trim().slice(0, 300)
+              : ''
+          const pickupAddress =
+            typeof data.pickupAddress === 'string' ? data.pickupAddress.trim().slice(0, 300) : ''
+
+          const reqPickupBranchId = relationId(data.pickupBranch) ?? null
+          const reqReturnBranchId = relationId(data.returnBranch) ?? null
+          const reqPickupLocId = relationId(data.pickupServiceLocation) ?? null
+          const reqReturnLocId = relationId(data.returnServiceLocation) ?? null
+          const reqDeliveryZoneId = relationId(data.deliveryZone) ?? null
+
+          if (pickupMethod === 'HOME_DELIVERY' && (reqPickupBranchId || reqDeliveryZoneId)) {
+            const effectiveAddr =
+              deliveryAddress ||
+              (typeof data.pickupLocation === 'string' ? data.pickupLocation.trim() : '')
+            if (effectiveAddr.length < 5) {
+              throw new APIError(
+                'Vui lòng nhập địa chỉ giao xe tận nơi cụ thể (tối thiểu 5 ký tự).',
+                400,
+              )
+            }
+          }
+          if (returnMethod === 'HOME_PICKUP') {
+            const effectivePickupAddr = pickupAddress || deliveryAddress
+            if (effectivePickupAddr.length < 5) {
+              throw new APIError(
+                'Vui lòng nhập địa chỉ thu hồi xe tận nơi cụ thể (tối thiểu 5 ký tự).',
+                400,
+              )
+            }
+          }
+
+          const rawPromo =
+            typeof data.promoCode === 'string' ? data.promoCode.trim().toUpperCase() : ''
+
+          const evaluation = await evaluateVehicleBookingAvailabilityAndPricing(req.payload, {
+            vehicleId: String(vehicle.id),
+            startDate: String(data.startDate),
+            endDate: String(data.endDate),
+            pickupTime: pickupTimeVal,
+            returnTime: returnTimeVal,
+            pickupBranchId: reqPickupBranchId,
+            returnBranchId: reqReturnBranchId,
+            pickupServiceLocationId: reqPickupLocId,
+            returnServiceLocationId: reqReturnLocId,
+            pickupMethod,
+            returnMethod,
+            deliveryRequested,
+            deliveryZoneId: reqDeliveryZoneId,
+            deliveryAddress: deliveryAddress || null,
+            pickupAddress: pickupAddress || null,
+            addonKeys,
+            promoCode: rawPromo || null,
+            req,
+            user: req.user,
+          })
+
+          if (!evaluation.available) {
+            const statusCode = [
+              'INVALID_DATES',
+              'DELIVERY_ZONE_REQUIRED',
+              'PICKUP_ZONE_REQUIRED',
+              'DELIVERY_ZONE_BRANCH_MISMATCH',
+              'DELIVERY_TIME_NOT_SUPPORTED',
+              'BRANCH_OUTSIDE_OPERATING_HOURS',
+              'ONE_WAY_MIN_DAYS_NOT_MET',
+            ].includes(evaluation.reasonCode)
+              ? 400
+              : 409
+            throw new APIError(
+              evaluation.reason ?? 'Xe chưa khả dụng tại địa điểm hoặc thời gian đã chọn.',
+              statusCode,
+            )
+          }
+          if (!evaluation.quote) {
+            throw new APIError('Chưa thể xác định đơn giá thuê hợp lệ cho phương tiện.', 409)
+          }
+          if (rawPromo && (!evaluation.promoEval?.valid || !evaluation.promoId)) {
+            throw new APIError(
+              evaluation.promoEval?.message ?? 'Mã khuyến mãi không đủ điều kiện áp dụng.',
+              evaluation.promoEval ? promoErrorHttpStatus(evaluation.promoEval) : 400,
+            )
+          }
+
           const bookingKey = `NR-${crypto.randomUUID()}`
           for (const day of rentalDays(data.startDate, data.endDate)) {
             try {
               await req.payload.create({
                 collection: 'rental-days',
-                data: { key: `${vehicle.id}:${day}`, vehicle: vehicle.id, day, bookingKey },
+                data: {
+                  key: `${vehicle.id}:${day}`,
+                  vehicle: vehicle.id,
+                  day,
+                  bookingKey,
+                  lockType: 'BOOKING',
+                  referenceId: bookingKey,
+                  branchId: evaluation.pickupBranchId ?? undefined,
+                } as never,
                 req,
                 overrideAccess: true,
               })
@@ -248,41 +364,14 @@ export const Bookings: CollectionConfig = {
               )
             }
           }
-          const addonKeys = parseAddonKeys(data.addonServices)
-          const deliveryRequested = Boolean(data.deliveryRequested)
-          const quote = calculateRentalQuote({
-            startDate: String(data.startDate),
-            endDate: String(data.endDate),
-            dailyPrice: vehicle.pricePerDay,
-            weeklyPrice: vehicle.pricePerWeek,
-            monthlyPrice: vehicle.pricePerMonth,
-            weekendSurcharge: vehicle.weekendSurcharge,
-            holidaySurcharge: vehicle.holidaySurcharge,
-            deliveryRequested,
-            vehicleDeliveryFee: vehicle.deliveryFee,
-            addonKeys,
-            vehicleDeposit: vehicle.depositAmount,
-          })
+
           let appliedPromoCode: string | undefined
-          let promoEval = null
-          const rawPromo =
-            typeof data.promoCode === 'string' ? data.promoCode.trim().toUpperCase() : ''
-          if (rawPromo) {
-            const { promo, evaluation } = await lookupAndEvaluatePromotion(req.payload, {
-              code: rawPromo,
-              serviceType: 'RENT',
-              totalDays: quote.totalDays,
-              subtotalBeforePromo: quote.estimatedTotal,
-              req,
-            })
-            if (!evaluation.valid || !promo) {
-              throw new APIError(evaluation.message, promoErrorHttpStatus(evaluation))
-            }
-            await consumePromoSlotAtomically(req.payload, promo.id, req)
-            promoEval = evaluation
-            appliedPromoCode = promo.code
+          if (rawPromo && evaluation.promoId && evaluation.promoCodeNormalized) {
+            await consumePromoSlotAtomically(req.payload, evaluation.promoId, req)
+            appliedPromoCode = evaluation.promoCodeNormalized
           }
-          const finalQuote = applyPromotionToQuote(quote, promoEval)
+
+          const finalQuote = evaluation.quote
           const expectedTotalPrice = req.context?.expectedTotalPrice
           if (
             typeof expectedTotalPrice === 'number' &&
@@ -297,24 +386,51 @@ export const Bookings: CollectionConfig = {
           const pickupLoc =
             typeof data.pickupLocation === 'string' && data.pickupLocation.trim()
               ? data.pickupLocation.trim().slice(0, 200)
-              : (vehicle.pickupLocation ?? vehicle.location ?? '')
+              : (evaluation.pickupLocationLabel ?? vehicle.pickupLocation ?? vehicle.location ?? '')
           const returnLoc =
             typeof data.returnLocation === 'string' && data.returnLocation.trim()
               ? data.returnLocation.trim().slice(0, 200)
-              : pickupLoc
+              : (evaluation.returnLocationLabel ?? pickupLoc)
           const custPhone =
             rawPhone || (req.user.phone ? String(req.user.phone).trim().slice(0, 16) : undefined)
           const custEmail = rawEmail || (req.user.email ?? undefined)
+          const idempotencyKey =
+            typeof data.idempotencyKey === 'string' && data.idempotencyKey.trim()
+              ? data.idempotencyKey.trim().slice(0, 120)
+              : undefined
+
           return {
             ...data,
             customer: req.user.id,
             bookingKey,
             status: 'PENDING',
             revision: 1,
-            pickupTime: validateTimeString(data.pickupTime) ? data.pickupTime : '08:00',
-            returnTime: validateTimeString(data.returnTime) ? data.returnTime : '20:00',
+            pickupTime: pickupTimeVal,
+            returnTime: returnTimeVal,
             pickupLocation: pickupLoc,
             returnLocation: returnLoc,
+            pickupBranch: evaluation.pickupBranchId ?? undefined,
+            returnBranch: evaluation.returnBranchId ?? undefined,
+            pickupServiceLocation: evaluation.pickupServiceLocationId ?? undefined,
+            returnServiceLocation: evaluation.returnServiceLocationId ?? undefined,
+            isOneWay: evaluation.isOneWay,
+            pickupMethod,
+            returnMethod,
+            deliveryZone: evaluation.deliveryZoneId ?? undefined,
+            deliveryAddress: deliveryAddress || undefined,
+            pickupAddress: pickupAddress || undefined,
+            deliveryContactName:
+              typeof data.deliveryContactName === 'string' && data.deliveryContactName.trim()
+                ? data.deliveryContactName.trim().slice(0, 120)
+                : req.user.fullName,
+            deliveryContactPhone:
+              typeof data.deliveryContactPhone === 'string' && data.deliveryContactPhone.trim()
+                ? data.deliveryContactPhone.trim().slice(0, 20)
+                : custPhone,
+            deliveryDirections:
+              typeof data.deliveryDirections === 'string' && data.deliveryDirections.trim()
+                ? data.deliveryDirections.trim().slice(0, 500)
+                : undefined,
             customerPhone: custPhone,
             customerEmail: custEmail,
             deliveryRequested,
@@ -324,7 +440,11 @@ export const Bookings: CollectionConfig = {
             baseRentPrice: finalQuote.basePrice,
             weekendSurchargeTotal:
               finalQuote.weekendSurchargeTotal + finalQuote.holidaySurchargeTotal,
+            locationSurchargeSnapshot: finalQuote.locationSurcharge,
+            oneWayFeeSnapshot: finalQuote.oneWayFee,
             deliveryFeeSnapshot: finalQuote.deliveryFee,
+            pickupFeeSnapshot: finalQuote.pickupFee,
+            afterHoursFeeSnapshot: finalQuote.afterHoursFee,
             addonFeeTotal: finalQuote.addonFee,
             discountAmount: finalQuote.discountAmount,
             promoCode: appliedPromoCode,
@@ -333,6 +453,11 @@ export const Bookings: CollectionConfig = {
             depositSnapshot: finalQuote.depositAmount,
             initialPaymentDue: finalQuote.initialPaymentDue,
             remainingAmount: finalQuote.remainingAmount,
+            pricingRuleSnapshot: evaluation.pricingRuleSnapshot,
+            revenueAttributionBranch: evaluation.pickupBranchId ?? undefined,
+            revenueSplitPickupPercent: evaluation.revenueSplitPickupPercent,
+            returnInspectionStatus: 'NOT_APPLICABLE',
+            idempotencyKey,
             vehicleNameSnapshot: model.name,
             vehicleReferenceSnapshot: vehicle.reference,
             modificationHistory: [],
@@ -341,7 +466,9 @@ export const Bookings: CollectionConfig = {
                 status: 'PENDING',
                 changedAt: new Date().toISOString(),
                 changedBy: req.user.email ?? 'Khách hàng',
-                note: 'Khách hàng tạo yêu cầu thuê xe',
+                note: evaluation.isOneWay
+                  ? 'Khách hàng tạo yêu cầu thuê xe trả khác chi nhánh (One-way)'
+                  : 'Khách hàng tạo yêu cầu thuê xe',
               },
             ],
           }
@@ -526,6 +653,60 @@ export const Bookings: CollectionConfig = {
           })
           if (!model?.visible) throw new APIError('Dòng xe chưa được công bố.', 409)
 
+          const nextPickupBranchId =
+            modInput.pickupBranch !== undefined
+              ? String(modInput.pickupBranch ?? '').trim() || null
+              : (relationId(originalDoc.pickupBranch) ?? null)
+          const nextReturnBranchId =
+            modInput.returnBranch !== undefined
+              ? String(modInput.returnBranch ?? '').trim() || null
+              : (relationId(originalDoc.returnBranch) ?? nextPickupBranchId)
+          const nextPickupLocId =
+            modInput.pickupServiceLocation !== undefined
+              ? String(modInput.pickupServiceLocation ?? '').trim() || null
+              : (relationId(originalDoc.pickupServiceLocation) ?? null)
+          const nextReturnLocId =
+            modInput.returnServiceLocation !== undefined
+              ? String(modInput.returnServiceLocation ?? '').trim() || null
+              : (relationId(originalDoc.returnServiceLocation) ?? null)
+          const nextDeliveryZoneId =
+            modInput.deliveryZone !== undefined
+              ? String(modInput.deliveryZone ?? '').trim() || null
+              : (relationId(originalDoc.deliveryZone) ?? null)
+          const nextDeliveryRequested =
+            modInput.deliveryRequested !== undefined
+              ? Boolean(modInput.deliveryRequested)
+              : Boolean(originalDoc.deliveryRequested)
+          const nextPickupMethod: PickupMethod =
+            modInput.pickupMethod !== undefined
+              ? modInput.pickupMethod === 'HOME_DELIVERY'
+                ? 'HOME_DELIVERY'
+                : 'BRANCH_PICKUP'
+              : nextDeliveryRequested
+                ? 'HOME_DELIVERY'
+                : originalDoc.pickupMethod === 'HOME_DELIVERY'
+                  ? 'HOME_DELIVERY'
+                  : 'BRANCH_PICKUP'
+          const nextReturnMethod: ReturnMethod =
+            modInput.returnMethod !== undefined
+              ? modInput.returnMethod === 'HOME_PICKUP'
+                ? 'HOME_PICKUP'
+                : 'BRANCH_RETURN'
+              : originalDoc.returnMethod === 'HOME_PICKUP'
+                ? 'HOME_PICKUP'
+                : 'BRANCH_RETURN'
+          const nextDeliveryAddress =
+            modInput.deliveryAddress !== undefined
+              ? String(modInput.deliveryAddress ?? '')
+                  .trim()
+                  .slice(0, 300)
+              : String(originalDoc.deliveryAddress ?? '')
+          const nextPickupAddress =
+            modInput.pickupAddress !== undefined
+              ? String(modInput.pickupAddress ?? '')
+                  .trim()
+                  .slice(0, 300)
+              : String(originalDoc.pickupAddress ?? '')
           const nextPickupLocation =
             modInput.pickupLocation !== undefined
               ? String(modInput.pickupLocation ?? '')
@@ -538,10 +719,6 @@ export const Bookings: CollectionConfig = {
                   .trim()
                   .slice(0, 200)
               : String(originalDoc.returnLocation ?? originalDoc.pickupLocation ?? '')
-          const nextDeliveryRequested =
-            modInput.deliveryRequested !== undefined
-              ? Boolean(modInput.deliveryRequested)
-              : Boolean(originalDoc.deliveryRequested)
           const nextAddonKeys =
             modInput.addonServices !== undefined
               ? parseAddonKeys(modInput.addonServices as string | string[])
@@ -650,11 +827,93 @@ export const Bookings: CollectionConfig = {
             originalDoc.customerEmail ?? req.user?.email,
             nextCustomerEmail,
           )
+          pushDiff(
+            'pickupBranch',
+            'Chi nhánh nhận xe',
+            relationId(originalDoc.pickupBranch),
+            nextPickupBranchId,
+          )
+          pushDiff(
+            'returnBranch',
+            'Chi nhánh trả xe',
+            relationId(originalDoc.returnBranch),
+            nextReturnBranchId,
+          )
+          pushDiff(
+            'pickupMethod',
+            'Phương thức nhận xe',
+            originalDoc.pickupMethod ?? 'BRANCH_PICKUP',
+            nextPickupMethod,
+          )
+          pushDiff(
+            'returnMethod',
+            'Phương thức trả xe',
+            originalDoc.returnMethod ?? 'BRANCH_RETURN',
+            nextReturnMethod,
+          )
+          pushDiff(
+            'deliveryZone',
+            'Khu vực giao nhận',
+            relationId(originalDoc.deliveryZone),
+            nextDeliveryZoneId,
+          )
+          pushDiff(
+            'deliveryAddress',
+            'Địa chỉ giao xe',
+            originalDoc.deliveryAddress,
+            nextDeliveryAddress,
+          )
+          pushDiff(
+            'pickupAddress',
+            'Địa chỉ thu hồi xe',
+            originalDoc.pickupAddress,
+            nextPickupAddress,
+          )
           pushDiff('note', 'Ghi chú hành trình', originalDoc.note, nextNote)
           pushDiff('promoCode', 'Mã khuyến mãi', oldPromo, nextRawPromo)
 
           if (changes.length === 0) {
             throw new APIError('Thông tin đơn thuê chưa có thay đổi nào để lưu.', 400)
+          }
+
+          // Re-evaluate multi-branch availability, one-way rules, delivery zones, location pricing & promo BEFORE touching locks
+          const isSamePromo = nextRawPromo === oldPromo
+          const modEval = await evaluateVehicleBookingAvailabilityAndPricing(req.payload, {
+            vehicleId: String(vehicle.id),
+            startDate: nextStartDate,
+            endDate: nextEndDate,
+            pickupTime: nextPickupTime,
+            returnTime: nextReturnTime,
+            pickupBranchId: nextPickupBranchId,
+            returnBranchId: nextReturnBranchId,
+            pickupServiceLocationId: nextPickupLocId,
+            returnServiceLocationId: nextReturnLocId,
+            pickupMethod: nextPickupMethod,
+            returnMethod: nextReturnMethod,
+            deliveryRequested: nextPickupMethod === 'HOME_DELIVERY',
+            deliveryZoneId: nextDeliveryZoneId,
+            deliveryAddress: nextDeliveryAddress || null,
+            pickupAddress: nextPickupAddress || null,
+            addonKeys: nextAddonKeys,
+            promoCode: nextRawPromo || null,
+            excludeBookingId: String(originalDoc.id),
+            excludeBookingKey: String(originalDoc.bookingKey),
+            alreadyHeldPromoCode: isSamePromo ? oldPromo : null,
+            req,
+            user: req.user,
+          })
+          if (!modEval.available || !modEval.quote) {
+            throw new APIError(
+              modEval.reason ??
+                'Phương tiện không khả dụng với lựa chọn lịch trình hoặc địa điểm mới.',
+              409,
+            )
+          }
+          if (nextRawPromo && (!modEval.promoEval?.valid || !modEval.promoId)) {
+            throw new APIError(
+              modEval.promoEval?.message ?? 'Mã khuyến mãi không còn hợp lệ với lựa chọn mới.',
+              modEval.promoEval ? promoErrorHttpStatus(modEval.promoEval) : 400,
+            )
           }
 
           // Atomic rental-days swap: INSERT newly added days BEFORE deleting removed old days
@@ -675,7 +934,10 @@ export const Bookings: CollectionConfig = {
                   vehicle: slot.vehicleId,
                   day: slot.day,
                   bookingKey: String(originalDoc.bookingKey),
-                },
+                  lockType: 'BOOKING',
+                  referenceId: String(originalDoc.bookingKey),
+                  branchId: modEval.pickupBranchId ?? undefined,
+                } as never,
                 req,
                 overrideAccess: true,
               })
@@ -700,47 +962,18 @@ export const Bookings: CollectionConfig = {
             })
           }
 
-          // Recalculate quote from authoritative vehicle policy
-          const quote = calculateRentalQuote({
-            startDate: nextStartDate,
-            endDate: nextEndDate,
-            dailyPrice: vehicle.pricePerDay,
-            weeklyPrice: vehicle.pricePerWeek,
-            monthlyPrice: vehicle.pricePerMonth,
-            weekendSurcharge: vehicle.weekendSurcharge,
-            holidaySurcharge: vehicle.holidaySurcharge,
-            deliveryRequested: nextDeliveryRequested,
-            vehicleDeliveryFee: vehicle.deliveryFee,
-            addonKeys: nextAddonKeys,
-            vehicleDeposit: vehicle.depositAmount,
-          })
-
           let appliedPromoCode: string | null = null
-          let promoEval = null
-          const isSamePromo = nextRawPromo === oldPromo
-          if (nextRawPromo) {
-            const { promo, evaluation } = await lookupAndEvaluatePromotion(req.payload, {
-              code: nextRawPromo,
-              serviceType: 'RENT',
-              totalDays: quote.totalDays,
-              subtotalBeforePromo: quote.estimatedTotal,
-              alreadyHeldByCurrentBooking: isSamePromo,
-              req,
-            })
-            if (!evaluation.valid || !promo) {
-              throw new APIError(evaluation.message, promoErrorHttpStatus(evaluation))
-            }
+          if (nextRawPromo && modEval.promoId && modEval.promoCodeNormalized) {
             if (!isSamePromo) {
-              await consumePromoSlotAtomically(req.payload, promo.id, req)
+              await consumePromoSlotAtomically(req.payload, modEval.promoId, req)
             }
-            promoEval = evaluation
-            appliedPromoCode = promo.code
+            appliedPromoCode = modEval.promoCodeNormalized
           }
           if (oldPromo && !isSamePromo) {
             await releasePromoSlotAtomically(req.payload, oldPromo, req)
           }
 
-          const finalQuote = applyPromotionToQuote(quote, promoEval)
+          const finalQuote = modEval.quote
           const expectedTotalPrice = req.context?.expectedTotalPrice
           if (
             typeof expectedTotalPrice === 'number' &&
@@ -774,26 +1007,44 @@ export const Bookings: CollectionConfig = {
             endDate: nextEndDate,
             pickupTime: nextPickupTime,
             returnTime: nextReturnTime,
-            pickupLocation: nextPickupLocation || null,
-            returnLocation: nextReturnLocation || null,
-            deliveryRequested: nextDeliveryRequested,
+            pickupLocation: nextPickupLocation || modEval.pickupLocationLabel || null,
+            returnLocation: nextReturnLocation || modEval.returnLocationLabel || null,
+            pickupBranch: modEval.pickupBranchId ?? null,
+            returnBranch: modEval.returnBranchId ?? null,
+            pickupServiceLocation: modEval.pickupServiceLocationId ?? null,
+            returnServiceLocation: modEval.returnServiceLocationId ?? null,
+            isOneWay: modEval.isOneWay,
+            pickupMethod: nextPickupMethod,
+            returnMethod: nextReturnMethod,
+            deliveryZone: modEval.deliveryZoneId ?? null,
+            deliveryAddress: nextDeliveryAddress || null,
+            pickupAddress: nextPickupAddress || null,
+            deliveryRequested: nextPickupMethod === 'HOME_DELIVERY',
             addonServices: nextAddonServices || null,
             customerPhone: nextCustomerPhone || null,
             customerEmail: nextCustomerEmail || null,
             note: nextNote || null,
-            totalDays: quote.totalDays,
-            dailyPriceSnapshot: quote.dailyPrice,
-            baseRentPrice: quote.basePrice,
-            weekendSurchargeTotal: quote.weekendSurchargeTotal + quote.holidaySurchargeTotal,
-            deliveryFeeSnapshot: quote.deliveryFee,
-            addonFeeTotal: quote.addonFee,
-            discountAmount: quote.discountAmount,
+            totalDays: finalQuote.totalDays,
+            dailyPriceSnapshot: finalQuote.dailyPrice,
+            baseRentPrice: finalQuote.basePrice,
+            weekendSurchargeTotal:
+              finalQuote.weekendSurchargeTotal + finalQuote.holidaySurchargeTotal,
+            locationSurchargeSnapshot: finalQuote.locationSurcharge,
+            oneWayFeeSnapshot: finalQuote.oneWayFee,
+            deliveryFeeSnapshot: finalQuote.deliveryFee,
+            pickupFeeSnapshot: finalQuote.pickupFee,
+            afterHoursFeeSnapshot: finalQuote.afterHoursFee,
+            addonFeeTotal: finalQuote.addonFee,
+            discountAmount: finalQuote.discountAmount,
             promoCode: appliedPromoCode,
             promoDiscountAmount,
             totalPrice: finalTotal,
-            depositSnapshot: quote.depositAmount,
-            initialPaymentDue: quote.initialPaymentDue,
+            depositSnapshot: finalQuote.depositAmount,
+            initialPaymentDue: finalQuote.initialPaymentDue,
             remainingAmount: finalRemaining,
+            pricingRuleSnapshot: modEval.pricingRuleSnapshot,
+            revenueAttributionBranch: modEval.pickupBranchId ?? null,
+            revenueSplitPickupPercent: modEval.revenueSplitPickupPercent,
             vehicleNameSnapshot: model.name,
             vehicleReferenceSnapshot: vehicle.reference,
             status: 'PENDING',
@@ -809,7 +1060,7 @@ export const Bookings: CollectionConfig = {
                 previousTotalPrice: Number(originalDoc.totalPrice ?? 0),
                 newTotalPrice: finalTotal,
                 previousDeposit: Number(originalDoc.depositSnapshot ?? 0),
-                newDeposit: quote.depositAmount,
+                newDeposit: finalQuote.depositAmount,
                 changes,
               },
             ],
@@ -1033,27 +1284,63 @@ export const Bookings: CollectionConfig = {
         let isUrgentApproval = Boolean(originalDoc.isUrgentApproval)
 
         if (next === 'CONFIRMED' && originalDoc.status !== 'CONFIRMED') {
-          const site = await req.payload.findGlobal({
-            slug: 'nori-site',
-            req,
-            overrideAccess: true,
-            draft: false,
-            depth: 0,
-          })
+          const pickupBranchId = relationId(originalDoc.pickupBranch)
+          const [site, branchDoc] = await Promise.all([
+            req.payload.findGlobal({
+              slug: 'nori-site',
+              req,
+              overrideAccess: true,
+              draft: false,
+              depth: 0,
+            }),
+            pickupBranchId
+              ? req.payload
+                  .findByID({
+                    collection: 'branches' as never,
+                    id: pickupBranchId,
+                    req,
+                    overrideAccess: true,
+                    depth: 0,
+                  })
+                  .catch(() => null)
+              : Promise.resolve(null),
+          ])
           const siteRec = site as unknown as Record<string, unknown>
+          const bRec = branchDoc as Record<string, unknown> | null
           const slot = calculateNextContactSlot(
             new Date(),
             {
-              timezone: String(siteRec.businessTimezone ?? 'Asia/Ho_Chi_Minh'),
-              workingDays: String(siteRec.workingDays ?? '1,2,3,4,5'),
-              workStartTime: siteRec.workStartTime ? String(siteRec.workStartTime) : null,
-              workEndTime: siteRec.workEndTime ? String(siteRec.workEndTime) : null,
-              lunchBreakStart: siteRec.lunchBreakStart ? String(siteRec.lunchBreakStart) : null,
-              lunchBreakEnd: siteRec.lunchBreakEnd ? String(siteRec.lunchBreakEnd) : null,
-              holidays: Array.isArray(siteRec.holidays)
-                ? (siteRec.holidays as { date: string; name?: string }[])
-                : [],
-              fallbackHoursLabel: site.openingHours ?? null,
+              timezone: String(bRec?.timezone ?? siteRec.businessTimezone ?? 'Asia/Ho_Chi_Minh'),
+              workingDays: String(bRec?.workingDays ?? siteRec.workingDays ?? '1,2,3,4,5'),
+              workStartTime: bRec?.workStartTime
+                ? String(bRec.workStartTime)
+                : siteRec.workStartTime
+                  ? String(siteRec.workStartTime)
+                  : null,
+              workEndTime: bRec?.workEndTime
+                ? String(bRec.workEndTime)
+                : siteRec.workEndTime
+                  ? String(siteRec.workEndTime)
+                  : null,
+              lunchBreakStart: bRec?.lunchBreakStart
+                ? String(bRec.lunchBreakStart)
+                : siteRec.lunchBreakStart
+                  ? String(siteRec.lunchBreakStart)
+                  : null,
+              lunchBreakEnd: bRec?.lunchBreakEnd
+                ? String(bRec.lunchBreakEnd)
+                : siteRec.lunchBreakEnd
+                  ? String(siteRec.lunchBreakEnd)
+                  : null,
+              holidays: Array.isArray(bRec?.holidays)
+                ? (bRec.holidays as { date: string; name?: string }[])
+                : Array.isArray(siteRec.holidays)
+                  ? (siteRec.holidays as { date: string; name?: string }[])
+                  : [],
+              fallbackHoursLabel:
+                (bRec?.operatingHoursLabel ? String(bRec.operatingHoursLabel) : null) ??
+                site.openingHours ??
+                null,
             },
             {
               startDate: String(originalDoc.startDate),
@@ -1063,6 +1350,51 @@ export const Bookings: CollectionConfig = {
           expectedContactDate = slot.expectedContactDate
           workingHoursSnapshot = slot.workingHoursLabel
           isUrgentApproval = slot.isUrgent
+        }
+
+        let scheduleConflictAlert = originalDoc.scheduleConflictAlert ?? null
+        let actualReturnAt = originalDoc.actualReturnAt ?? null
+        let actualReturnBranch = data.actualReturnBranch ?? originalDoc.actualReturnBranch
+        let actualReturnWarehouse = data.actualReturnWarehouse ?? originalDoc.actualReturnWarehouse
+        let returnInspectionStatus =
+          data.returnInspectionStatus ?? originalDoc.returnInspectionStatus ?? 'NOT_APPLICABLE'
+
+        if (
+          actor === 'admin' &&
+          (next === 'INSPECTING' || next === 'COMPLETED') &&
+          originalDoc.status !== next
+        ) {
+          actualReturnAt = actualReturnAt || new Date().toISOString()
+          const resolvedReturnBranchId =
+            relationId(actualReturnBranch) ??
+            relationId(originalDoc.returnBranch) ??
+            relationId(originalDoc.pickupBranch) ??
+            null
+          if (!actualReturnBranch && resolvedReturnBranchId) {
+            actualReturnBranch = resolvedReturnBranchId
+          }
+          if (next === 'INSPECTING' && returnInspectionStatus === 'NOT_APPLICABLE') {
+            returnInspectionStatus = 'PENDING_INSPECTION'
+          } else if (next === 'COMPLETED' && returnInspectionStatus === 'NOT_APPLICABLE') {
+            returnInspectionStatus = 'PASSED'
+          }
+          const isLate = businessToday() > String(originalDoc.endDate)
+          const isDamaged = returnInspectionStatus === 'DAMAGED_NEEDS_REPAIR'
+          const vehicleId = relationId(originalDoc.vehicle)
+          if (vehicleId) {
+            scheduleConflictAlert = await detectReturnScheduleConflicts(req.payload, req, {
+              bookingId: String(originalDoc.id),
+              vehicleId: String(vehicleId),
+              actualReturnBranchId: resolvedReturnBranchId,
+              expectedReturnBranchId:
+                relationId(originalDoc.returnBranch) ??
+                relationId(originalDoc.pickupBranch) ??
+                null,
+              expectedEndDate: String(originalDoc.endDate),
+              isLateReturn: isLate,
+              isDamaged,
+            })
+          }
         }
 
         const prevHistory = Array.isArray(originalDoc.statusHistory)
@@ -1099,6 +1431,19 @@ export const Bookings: CollectionConfig = {
           returnTime: originalDoc.returnTime,
           pickupLocation: originalDoc.pickupLocation,
           returnLocation: originalDoc.returnLocation,
+          pickupBranch: originalDoc.pickupBranch,
+          returnBranch: originalDoc.returnBranch,
+          pickupServiceLocation: originalDoc.pickupServiceLocation,
+          returnServiceLocation: originalDoc.returnServiceLocation,
+          isOneWay: originalDoc.isOneWay,
+          pickupMethod: originalDoc.pickupMethod,
+          returnMethod: originalDoc.returnMethod,
+          deliveryZone: originalDoc.deliveryZone,
+          deliveryAddress: originalDoc.deliveryAddress,
+          pickupAddress: originalDoc.pickupAddress,
+          deliveryContactName: originalDoc.deliveryContactName,
+          deliveryContactPhone: originalDoc.deliveryContactPhone,
+          deliveryDirections: originalDoc.deliveryDirections,
           deliveryRequested: originalDoc.deliveryRequested,
           addonServices: originalDoc.addonServices,
           customerPhone: originalDoc.customerPhone,
@@ -1107,7 +1452,11 @@ export const Bookings: CollectionConfig = {
           dailyPriceSnapshot: originalDoc.dailyPriceSnapshot,
           baseRentPrice: originalDoc.baseRentPrice,
           weekendSurchargeTotal: originalDoc.weekendSurchargeTotal,
+          locationSurchargeSnapshot: originalDoc.locationSurchargeSnapshot,
+          oneWayFeeSnapshot: originalDoc.oneWayFeeSnapshot,
           deliveryFeeSnapshot: originalDoc.deliveryFeeSnapshot,
+          pickupFeeSnapshot: originalDoc.pickupFeeSnapshot,
+          afterHoursFeeSnapshot: originalDoc.afterHoursFeeSnapshot,
           addonFeeTotal: originalDoc.addonFeeTotal,
           discountAmount: originalDoc.discountAmount,
           promoCode: originalDoc.promoCode,
@@ -1118,6 +1467,15 @@ export const Bookings: CollectionConfig = {
           remainingAmount: ['CANCELLED', 'REJECTED'].includes(String(next))
             ? 0
             : originalDoc.remainingAmount,
+          pricingRuleSnapshot: originalDoc.pricingRuleSnapshot,
+          revenueAttributionBranch: originalDoc.revenueAttributionBranch,
+          revenueSplitPickupPercent: originalDoc.revenueSplitPickupPercent,
+          actualReturnBranch,
+          actualReturnWarehouse,
+          actualReturnAt,
+          returnInspectionStatus,
+          scheduleConflictAlert,
+          idempotencyKey: originalDoc.idempotencyKey,
           vehicleNameSnapshot: originalDoc.vehicleNameSnapshot,
           vehicleReferenceSnapshot: originalDoc.vehicleReferenceSnapshot,
           modificationHistory: originalDoc.modificationHistory,
@@ -1311,6 +1669,7 @@ export const Bookings: CollectionConfig = {
                   consultationKey: `BOOKING_APPROVAL:${doc.id}`,
                   booking: doc.id,
                   customer: customerId,
+                  branch: relationId(doc.pickupBranch) ?? undefined,
                   bookingKeySnapshot: String(doc.bookingKey ?? doc.id),
                   customerNameSnapshot: custName,
                   customerPhoneSnapshot: rawPhone,
@@ -1471,13 +1830,83 @@ export const Bookings: CollectionConfig = {
           }
 
           if (doc.status === 'ONGOING' && vehicleId) {
+            const pickupBranchId = relationId(doc.pickupBranch) ?? null
+            const returnBranchId = relationId(doc.returnBranch) ?? pickupBranchId
             await req.payload.update({
               collection: 'vehicles',
               id: vehicleId,
               req,
               overrideAccess: true,
-              data: { operationStatus: 'RENTED' },
+              data: {
+                operationStatus: 'RENTED',
+                ...(returnBranchId ? { nextExpectedBranch: returnBranchId } : {}),
+                nextExpectedLocationNote: doc.isOneWay
+                  ? `Đơn một chiều ${doc.bookingKey} dự kiến trả tại chi nhánh đích ngày ${doc.endDate}`
+                  : `Đơn ${doc.bookingKey} dự kiến trả ngày ${doc.endDate}`,
+              } as never,
             })
+            await recordVehicleLocationEvent(req.payload, req, {
+              vehicleId: String(vehicleId),
+              vehicleReference: doc.vehicleReferenceSnapshot ?? undefined,
+              eventType: 'BOOKING_HANDOVER',
+              fromBranchId: pickupBranchId,
+              toBranchId: returnBranchId,
+              relatedBookingId: String(doc.id),
+              actorEmail: req.user?.email ?? 'Admin NORI',
+              note: `Bàn giao xe cho khách theo đơn ${doc.bookingKey}`,
+            }).catch(() => undefined)
+          } else if (doc.status === 'INSPECTING' && vehicleId) {
+            const actualRetBranchId =
+              relationId(doc.actualReturnBranch) ??
+              relationId(doc.returnBranch) ??
+              relationId(doc.pickupBranch) ??
+              null
+            const actualRetWhId = relationId(doc.actualReturnWarehouse) ?? null
+            const retBranchDoc = actualRetBranchId
+              ? ((await req.payload
+                  .findByID({
+                    collection: 'branches' as never,
+                    id: actualRetBranchId,
+                    req,
+                    overrideAccess: true,
+                    depth: 0,
+                  })
+                  .catch(() => null)) as Record<string, unknown> | null)
+              : null
+            await req.payload.update({
+              collection: 'vehicles',
+              id: vehicleId,
+              req,
+              overrideAccess: true,
+              data: {
+                operationStatus:
+                  doc.returnInspectionStatus === 'DAMAGED_NEEDS_REPAIR'
+                    ? 'MAINTENANCE'
+                    : 'PENDING_INSPECTION',
+                ...(actualRetBranchId ? { currentBranch: actualRetBranchId } : {}),
+                ...(actualRetWhId ? { currentWarehouse: actualRetWhId } : {}),
+                ...(retBranchDoc?.province ? { location: String(retBranchDoc.province) } : {}),
+                nextExpectedBranch: null,
+                nextExpectedLocationNote: null,
+                ...(typeof doc.returnOdometer === 'number' ? { odometer: doc.returnOdometer } : {}),
+                ...(typeof doc.returnCondition === 'string' && doc.returnCondition.trim()
+                  ? { condition: doc.returnCondition.trim() }
+                  : {}),
+              } as never,
+            })
+            await recordVehicleLocationEvent(req.payload, req, {
+              vehicleId: String(vehicleId),
+              vehicleReference: doc.vehicleReferenceSnapshot ?? undefined,
+              eventType: doc.isOneWay ? 'ONE_WAY_RETURN' : 'BOOKING_RETURN',
+              fromBranchId: relationId(doc.pickupBranch) ?? null,
+              toBranchId: actualRetBranchId,
+              toWarehouseId: actualRetWhId,
+              relatedBookingId: String(doc.id),
+              odometer: typeof doc.returnOdometer === 'number' ? doc.returnOdometer : null,
+              conditionNote: doc.returnCondition ?? null,
+              actorEmail: req.user?.email ?? 'Admin NORI',
+              note: `Tiếp nhận xe trả về từ đơn ${doc.bookingKey} (chờ kiểm tra & quyết toán)`,
+            }).catch(() => undefined)
           } else if (['CANCELLED', 'REJECTED', 'COMPLETED'].includes(doc.status)) {
             await req.payload.delete({
               collection: 'rental-days',
@@ -1486,6 +1915,28 @@ export const Bookings: CollectionConfig = {
               overrideAccess: true,
             })
             if (vehicleId) {
+              const actualRetBranchId =
+                doc.status === 'COMPLETED'
+                  ? (relationId(doc.actualReturnBranch) ??
+                    relationId(doc.returnBranch) ??
+                    relationId(doc.pickupBranch) ??
+                    null)
+                  : null
+              const actualRetWhId =
+                doc.status === 'COMPLETED' ? (relationId(doc.actualReturnWarehouse) ?? null) : null
+              const retBranchDoc =
+                doc.status === 'COMPLETED' && actualRetBranchId
+                  ? ((await req.payload
+                      .findByID({
+                        collection: 'branches' as never,
+                        id: actualRetBranchId,
+                        req,
+                        overrideAccess: true,
+                        depth: 0,
+                      })
+                      .catch(() => null)) as Record<string, unknown> | null)
+                  : null
+
               const [otherOngoing, activePurchaseHold, vehicle] = await Promise.all([
                 req.payload.count({
                   collection: 'bookings',
@@ -1518,6 +1969,22 @@ export const Bookings: CollectionConfig = {
                   depth: 0,
                 }),
               ])
+              const locationReturnPatch =
+                doc.status === 'COMPLETED'
+                  ? {
+                      ...(actualRetBranchId ? { currentBranch: actualRetBranchId } : {}),
+                      ...(actualRetWhId ? { currentWarehouse: actualRetWhId } : {}),
+                      ...(retBranchDoc?.province
+                        ? { location: String(retBranchDoc.province) }
+                        : {}),
+                      nextExpectedBranch: null,
+                      nextExpectedLocationNote: null,
+                    }
+                  : {
+                      nextExpectedBranch: null,
+                      nextExpectedLocationNote: null,
+                    }
+
               if (otherOngoing.totalDocs > 0) {
                 if (vehicle?.operationStatus !== 'RENTED') {
                   await req.payload.update({
@@ -1539,17 +2006,29 @@ export const Bookings: CollectionConfig = {
                     id: vehicleId,
                     req,
                     overrideAccess: true,
-                    data: { operationStatus: 'RESERVED' },
+                    data: { operationStatus: 'RESERVED', ...locationReturnPatch } as never,
                   })
                 }
-              } else if (vehicle?.operationStatus === 'RENTED') {
+              } else if (
+                vehicle?.operationStatus === 'RENTED' ||
+                vehicle?.operationStatus === 'PENDING_INSPECTION'
+              ) {
+                const nextVehOp =
+                  doc.status === 'COMPLETED' &&
+                  doc.returnInspectionStatus === 'DAMAGED_NEEDS_REPAIR'
+                    ? 'MAINTENANCE'
+                    : doc.status === 'COMPLETED' &&
+                        doc.returnInspectionStatus === 'PENDING_INSPECTION'
+                      ? 'PENDING_INSPECTION'
+                      : 'READY'
                 await req.payload.update({
                   collection: 'vehicles',
                   id: vehicleId,
                   req,
                   overrideAccess: true,
                   data: {
-                    operationStatus: 'READY',
+                    operationStatus: nextVehOp,
+                    ...locationReturnPatch,
                     ...(doc.status === 'COMPLETED' && typeof doc.returnOdometer === 'number'
                       ? { odometer: doc.returnOdometer }
                       : {}),
@@ -1558,11 +2037,12 @@ export const Bookings: CollectionConfig = {
                     doc.returnCondition.trim()
                       ? { condition: doc.returnCondition.trim() }
                       : {}),
-                  },
+                  } as never,
                 })
               } else if (
                 doc.status === 'COMPLETED' &&
                 (typeof doc.returnOdometer === 'number' ||
+                  actualRetBranchId ||
                   (typeof doc.returnCondition === 'string' && doc.returnCondition.trim()))
               ) {
                 await req.payload.update({
@@ -1571,14 +2051,31 @@ export const Bookings: CollectionConfig = {
                   req,
                   overrideAccess: true,
                   data: {
+                    ...locationReturnPatch,
                     ...(typeof doc.returnOdometer === 'number'
                       ? { odometer: doc.returnOdometer }
                       : {}),
                     ...(typeof doc.returnCondition === 'string' && doc.returnCondition.trim()
                       ? { condition: doc.returnCondition.trim() }
                       : {}),
-                  },
+                  } as never,
                 })
+              }
+
+              if (doc.status === 'COMPLETED' && previousDoc?.status !== 'INSPECTING') {
+                await recordVehicleLocationEvent(req.payload, req, {
+                  vehicleId: String(vehicleId),
+                  vehicleReference: doc.vehicleReferenceSnapshot ?? undefined,
+                  eventType: doc.isOneWay ? 'ONE_WAY_RETURN' : 'BOOKING_RETURN',
+                  fromBranchId: relationId(doc.pickupBranch) ?? null,
+                  toBranchId: actualRetBranchId,
+                  toWarehouseId: actualRetWhId,
+                  relatedBookingId: String(doc.id),
+                  odometer: typeof doc.returnOdometer === 'number' ? doc.returnOdometer : null,
+                  conditionNote: doc.returnCondition ?? null,
+                  actorEmail: req.user?.email ?? 'Admin NORI',
+                  note: `Hoàn tất tiếp nhận trả xe đơn ${doc.bookingKey}`,
+                }).catch(() => undefined)
               }
             }
           }
@@ -1656,6 +2153,102 @@ export const Bookings: CollectionConfig = {
       name: 'returnLocation',
       label: 'Địa điểm trả xe',
       type: 'text',
+      access: { update: serverField },
+    },
+    {
+      name: 'pickupBranch',
+      label: 'Chi nhánh nhận xe',
+      type: 'relationship',
+      relationTo: 'branches',
+      index: true,
+      access: { update: serverField },
+    },
+    {
+      name: 'returnBranch',
+      label: 'Chi nhánh trả xe',
+      type: 'relationship',
+      relationTo: 'branches',
+      index: true,
+      access: { update: serverField },
+    },
+    {
+      name: 'pickupServiceLocation',
+      label: 'Điểm nhận xe đã chọn',
+      type: 'relationship',
+      relationTo: 'service-locations',
+      access: { update: serverField },
+    },
+    {
+      name: 'returnServiceLocation',
+      label: 'Điểm trả xe đã chọn',
+      type: 'relationship',
+      relationTo: 'service-locations',
+      access: { update: serverField },
+    },
+    {
+      name: 'isOneWay',
+      label: 'Thuê trả xe khác chi nhánh (One-way)',
+      type: 'checkbox',
+      defaultValue: false,
+      index: true,
+      access: { create: serverField, update: serverField },
+    },
+    {
+      name: 'pickupMethod',
+      label: 'Phương thức nhận xe',
+      type: 'select',
+      options: ['BRANCH_PICKUP', 'HOME_DELIVERY'],
+      defaultValue: 'BRANCH_PICKUP',
+      access: { update: serverField },
+    },
+    {
+      name: 'returnMethod',
+      label: 'Phương thức trả xe',
+      type: 'select',
+      options: ['BRANCH_RETURN', 'HOME_PICKUP'],
+      defaultValue: 'BRANCH_RETURN',
+      access: { update: serverField },
+    },
+    {
+      name: 'deliveryZone',
+      label: 'Khu vực giao nhận tận nơi',
+      type: 'relationship',
+      relationTo: 'delivery-zones',
+      access: { update: serverField },
+    },
+    {
+      name: 'deliveryAddress',
+      label: 'Địa chỉ giao xe tận nơi',
+      type: 'text',
+      maxLength: 300,
+      access: { update: serverField },
+    },
+    {
+      name: 'pickupAddress',
+      label: 'Địa chỉ thu hồi xe tận nơi',
+      type: 'text',
+      maxLength: 300,
+      access: { update: serverField },
+    },
+    {
+      name: 'deliveryContactName',
+      label: 'Người liên hệ giao nhận',
+      type: 'text',
+      maxLength: 120,
+      access: { update: serverField },
+    },
+    {
+      name: 'deliveryContactPhone',
+      label: 'Số điện thoại giao nhận',
+      type: 'text',
+      maxLength: 20,
+      access: { update: serverField },
+    },
+    {
+      name: 'deliveryDirections',
+      label: 'Hướng dẫn tìm địa điểm giao nhận',
+      type: 'textarea',
+      maxLength: 500,
       access: { update: serverField },
     },
     {
@@ -1737,6 +2330,102 @@ export const Bookings: CollectionConfig = {
       label: 'Phí giao nhận xe (snapshot)',
       type: 'number',
       access: { create: serverField, update: serverField },
+    },
+    {
+      name: 'locationSurchargeSnapshot',
+      label: 'Phụ phí địa điểm (snapshot)',
+      type: 'number',
+      defaultValue: 0,
+      access: { create: serverField, update: serverField },
+    },
+    {
+      name: 'oneWayFeeSnapshot',
+      label: 'Phí trả xe khác chi nhánh (snapshot)',
+      type: 'number',
+      defaultValue: 0,
+      access: { create: serverField, update: serverField },
+    },
+    {
+      name: 'pickupFeeSnapshot',
+      label: 'Phí thu hồi xe tận nơi (snapshot)',
+      type: 'number',
+      defaultValue: 0,
+      access: { create: serverField, update: serverField },
+    },
+    {
+      name: 'afterHoursFeeSnapshot',
+      label: 'Phí giao nhận ngoài giờ (snapshot)',
+      type: 'number',
+      defaultValue: 0,
+      access: { create: serverField, update: serverField },
+    },
+    {
+      name: 'pricingRuleSnapshot',
+      label: 'Price Snapshot lúc chốt đơn (JSON)',
+      type: 'json',
+      access: { create: serverField, update: serverField },
+    },
+    {
+      name: 'revenueAttributionBranch',
+      label: 'Chi nhánh ghi nhận doanh thu chính',
+      type: 'relationship',
+      relationTo: 'branches',
+      access: { create: serverField, update: serverField },
+    },
+    {
+      name: 'revenueSplitPickupPercent',
+      label: 'Tỷ lệ doanh thu chi nhánh nhận (%)',
+      type: 'number',
+      defaultValue: 100,
+      access: { create: serverField, update: serverField },
+    },
+    {
+      name: 'actualReturnBranch',
+      label: 'Chi nhánh tiếp nhận trả xe thực tế',
+      type: 'relationship',
+      relationTo: 'branches',
+      access: { create: adminField, update: adminField },
+    },
+    {
+      name: 'actualReturnWarehouse',
+      label: 'Kho tiếp nhận trả xe thực tế',
+      type: 'relationship',
+      relationTo: 'warehouses',
+      access: { create: adminField, update: adminField },
+    },
+    {
+      name: 'actualReturnAt',
+      label: 'Thời điểm trả xe thực tế',
+      type: 'text',
+      access: { create: adminField, update: adminField },
+    },
+    {
+      name: 'returnFuelOrBattery',
+      label: 'Mức nhiên liệu / pin lúc trả xe',
+      type: 'text',
+      maxLength: 60,
+      access: { create: adminField, update: adminField },
+    },
+    {
+      name: 'returnInspectionStatus',
+      label: 'Trạng thái kiểm tra sau trả xe',
+      type: 'select',
+      options: ['NOT_APPLICABLE', 'PENDING_INSPECTION', 'PASSED', 'DAMAGED_NEEDS_REPAIR'],
+      defaultValue: 'NOT_APPLICABLE',
+      access: { create: adminField, update: adminField },
+    },
+    {
+      name: 'scheduleConflictAlert',
+      label: 'Cảnh báo xung đột lịch tiếp theo',
+      type: 'text',
+      access: { create: serverField, update: serverField },
+    },
+    {
+      name: 'idempotencyKey',
+      label: 'Khóa chống gửi đơn trùng',
+      type: 'text',
+      index: true,
+      access: { update: serverField },
     },
     {
       name: 'addonFeeTotal',
