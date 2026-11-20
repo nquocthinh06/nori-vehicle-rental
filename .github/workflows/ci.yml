@@ -51,7 +51,7 @@ jobs:
         run: pnpm lint
 
       - name: Initialize Database For Tests
-        run: node scripts/init-ci.mjs
+        run: node --test scripts/init-ci.mjs
 
       - name: Run Test Suite
         run: pnpm test
