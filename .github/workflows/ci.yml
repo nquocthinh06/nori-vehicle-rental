@@ -52,7 +52,14 @@ jobs:
         run: pnpm lint
 
       - name: Initialize Database For Tests
-        run: node scripts/init-ci.mjs
+        run: |
+          node scripts/init-ci.mjs 2>&1 | tee /tmp/init-db.log || {
+            echo "### Database Init Failed" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            cat /tmp/init-db.log >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            exit 1
+          }
 
       - name: Run Test Suite
         run: pnpm test
