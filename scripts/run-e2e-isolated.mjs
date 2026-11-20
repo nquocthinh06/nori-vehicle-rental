@@ -4,6 +4,7 @@ import net from 'node:net'
 import path from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { detectLanIPv4 } from './lan-network.mjs'
+import { checkDatabaseCompatibility } from './check-db-schema.mjs'
 
 function getFreePort() {
   return new Promise((resolve, reject) => {
@@ -105,6 +106,22 @@ async function main() {
   if (preIntegrity?.integrity_check !== 'ok' || preFk.length > 0) {
     throw new Error(
       `Source DB ${sourceDb} failed pre-copy health check (integrity=${preIntegrity?.integrity_check}, fkViolations=${preFk.length})`,
+    )
+  }
+
+  const compat = checkDatabaseCompatibility({ dbPath: sourceDb })
+  if (!compat.ok) {
+    const missingDetails = []
+    if (compat.missingColumns && Object.keys(compat.missingColumns).length > 0) {
+      for (const [tbl, cols] of Object.entries(compat.missingColumns)) {
+        missingDetails.push(`${tbl}: [${cols.join(', ')}]`)
+      }
+    }
+    if (compat.pendingMigrations?.length > 0) {
+      missingDetails.push(`pending: [${compat.pendingMigrations.join(', ')}]`)
+    }
+    throw new Error(
+      `[isolated-e2e] Source DB ${sourceDb} failed schema compatibility preflight check (${missingDetails.join('; ')}). Run 'pnpm db:migrate' before running isolated E2E tests.`,
     )
   }
 

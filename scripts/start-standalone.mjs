@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
+import { checkDatabaseCompatibility } from './check-db-schema.mjs'
 
 const rootDir = process.cwd()
 const standaloneDir = path.join(rootDir, '.next', 'standalone')
@@ -88,6 +89,28 @@ const childEnv = {
   NORI_SQLITE_PATH: resolvedDbPath,
   NORI_MEDIA_DIR: resolvedMediaDir,
   NORI_IMAGE_CACHE_DIR: resolvedCacheDir,
+}
+
+// Preflight Database Compatibility Guard
+const dbCheck = checkDatabaseCompatibility({ dbPath: resolvedDbPath })
+if (!dbCheck.ok) {
+  console.error('\n========================================================')
+  console.error(' [NORI STANDALONE BLOCKED] DATABASE SCHEMA INCOMPATIBLE')
+  console.error('========================================================')
+  console.error(`Database:  ${dbCheck.dbPath}`)
+  console.error(`Integrity: ${dbCheck.integrity} (FK Violations: ${dbCheck.fkViolations})`)
+  if (dbCheck.missingColumns && Object.keys(dbCheck.missingColumns).length > 0) {
+    for (const [table, cols] of Object.entries(dbCheck.missingColumns)) {
+      console.error(`  - Table "${table}": missing [${cols.join(', ')}]`)
+    }
+  }
+  if (dbCheck.pendingMigrations?.length > 0) {
+    console.error(`\nPending migrations: [${dbCheck.pendingMigrations.join(', ')}]`)
+  }
+  console.error('\nVui lòng chạy migration trước khi khởi động production server:')
+  console.error('  pnpm db:migrate')
+  console.error('========================================================\n')
+  process.exit(1)
 }
 
 console.log(

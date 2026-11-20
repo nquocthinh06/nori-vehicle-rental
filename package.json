@@ -18,7 +18,7 @@
     "generate:types": "payload generate:types",
     "payload": "payload",
     "typecheck": "tsc --noEmit",
-    "test": "node --test tests/rental-rules.test.mjs tests/rbac-access.test.mjs tests/data-sync.test.mjs tests/payment-rules.test.mjs tests/payment-integration.test.mjs tests/payment-resilience.test.mjs tests/multi-branch-rules.test.mjs tests/multi-branch-integration.test.mjs tests/lan-network.test.mjs",
+    "test": "node --test tests/rental-rules.test.mjs tests/rbac-access.test.mjs tests/data-sync.test.mjs tests/payment-rules.test.mjs tests/payment-business-audit.test.mjs tests/payment-integration.test.mjs tests/payment-resilience.test.mjs tests/multi-branch-rules.test.mjs tests/multi-branch-integration.test.mjs tests/lan-network.test.mjs tests/db-migration-regression.test.mjs",
     "perf:multi-branch": "node scripts/benchmark-multi-branch.mjs",
     "test:e2e": "playwright test",
     "test:e2e:isolated": "node scripts/run-e2e-isolated.mjs",
@@ -33,7 +33,9 @@
     "data:restore": "node scripts/data-restore.ts",
     "media:validate": "node scripts/media-validate.ts",
     "media:audit": "node scripts/media-validate.ts --audit",
+    "db:check": "node scripts/check-db-schema.mjs",
     "db:migrate": "node scripts/db-migrate.ts",
+    "db:migrate:safe": "node scripts/migrate-db-safe.mjs",
     "db:backup": "node scripts/backup-db.mjs",
     "db:restore": "node scripts/restore-db.mjs"
   },

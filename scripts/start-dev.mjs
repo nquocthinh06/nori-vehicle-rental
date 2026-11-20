@@ -1,12 +1,36 @@
 import { spawn, spawnSync } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
+import { checkDatabaseCompatibility } from './check-db-schema.mjs'
 
 function main() {
   const rootDir = process.cwd()
   const nextBin = path.resolve(rootDir, 'node_modules', 'next', 'dist', 'bin', 'next')
   if (!fs.existsSync(nextBin)) {
     console.error('[NORI DEV] Không tìm thấy Next.js CLI. Vui lòng chạy `pnpm install` trước.')
+    process.exit(1)
+  }
+
+  // Preflight Database Compatibility Guard
+  const dbCheck = checkDatabaseCompatibility({ rootDir })
+  if (!dbCheck.ok) {
+    console.error('\n========================================================')
+    console.error(' [NORI DEV BLOCKED] DATABASE SCHEMA MISMATCH / PENDING MIGRATION')
+    console.error('========================================================')
+    console.error(`Database:  ${dbCheck.dbPath}`)
+    console.error(`Integrity: ${dbCheck.integrity} (FK Violations: ${dbCheck.fkViolations})`)
+    if (dbCheck.missingColumns && Object.keys(dbCheck.missingColumns).length > 0) {
+      console.error('\nMissing columns detected:')
+      for (const [table, cols] of Object.entries(dbCheck.missingColumns)) {
+        console.error(`  - Table "${table}": missing [${cols.join(', ')}]`)
+      }
+    }
+    if (dbCheck.pendingMigrations?.length > 0) {
+      console.error(`\nPending migrations: [${dbCheck.pendingMigrations.join(', ')}]`)
+    }
+    console.error('\nHướng dẫn xử lý: Vui lòng chạy lệnh migration an toàn:')
+    console.error('  pnpm db:migrate')
+    console.error('========================================================\n')
     process.exit(1)
   }
 

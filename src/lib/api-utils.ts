@@ -151,6 +151,32 @@ export function apiError(error: unknown) {
               : 'VALIDATION_ERROR')
     return fail(err.message, err.status, code)
   }
-  console.error('[NORI] Request failed:', error)
+
+  const errorMessage = error instanceof Error ? error.message : String(error)
+  const isDbError =
+    errorMessage.includes('SQLITE_ERROR') ||
+    errorMessage.includes('LibsqlError') ||
+    errorMessage.includes('no such column') ||
+    errorMessage.includes('no such table')
+
+  const requestId = Math.random().toString(36).slice(2, 10)
+  if (isDbError) {
+    // Distinguish database schema/query errors without leaking raw SQL or schema internals to client
+    const isColumnMissing = errorMessage.includes('no such column')
+    const isTableMissing = errorMessage.includes('no such table')
+    const summary = isColumnMissing
+      ? 'Cơ sở dữ liệu đang thiếu cột dữ liệu nghiệp vụ (cần chạy migration).'
+      : isTableMissing
+        ? 'Cơ sở dữ liệu chưa hoàn thiện bảng nghiệp vụ (cần chạy migration).'
+        : 'Lỗi truy vấn cơ sở dữ liệu.'
+    console.error(`[NORI DB ERROR][req-${requestId}] ${summary}: ${errorMessage.slice(0, 300)}`)
+    return fail(
+      'Hệ thống đang bảo trì dữ liệu hoặc cơ sở dữ liệu chưa sẵn sàng. Vui lòng thử lại sau.',
+      503,
+      'DATABASE_ERROR',
+    )
+  }
+
+  console.error(`[NORI][req-${requestId}] Request failed:`, errorMessage.slice(0, 300))
   return fail('NORI chưa thể xử lý yêu cầu. Vui lòng thử lại sau.', 503, 'SERVICE_UNAVAILABLE')
 }
