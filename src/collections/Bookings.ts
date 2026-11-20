@@ -26,6 +26,7 @@ import {
   businessToday,
   calculateBookingFinancialSummary,
   calculateNextContactSlot,
+  calculateReservationDeposit,
   canModifyBooking,
   canTransition,
   checkHandoverFinancialEligibility,
@@ -399,6 +400,18 @@ export const Bookings: CollectionConfig = {
               ? data.idempotencyKey.trim().slice(0, 120)
               : undefined
 
+          const chosenPaymentOption = data.paymentOption === 'FULL' ? 'FULL' : 'DEPOSIT'
+          const reservationDepositRequired = calculateReservationDeposit(
+            finalQuote.estimatedTotal,
+            { policyMode: 'PERCENT_OF_RENTAL', depositPercent: 30 },
+          )
+          const calculatedInitialDue =
+            chosenPaymentOption === 'FULL' ? finalQuote.estimatedTotal : reservationDepositRequired
+          const calculatedRemainingAmount =
+            chosenPaymentOption === 'FULL'
+              ? 0
+              : Math.max(0, finalQuote.estimatedTotal - reservationDepositRequired)
+
           return {
             ...data,
             customer: req.user.id,
@@ -450,9 +463,11 @@ export const Bookings: CollectionConfig = {
             promoCode: appliedPromoCode,
             promoDiscountAmount: finalQuote.promoDiscountAmount,
             totalPrice: finalQuote.estimatedTotal,
+            paymentOption: chosenPaymentOption,
+            reservationDepositSnapshot: reservationDepositRequired,
             depositSnapshot: finalQuote.depositAmount,
-            initialPaymentDue: finalQuote.initialPaymentDue,
-            remainingAmount: finalQuote.remainingAmount,
+            initialPaymentDue: calculatedInitialDue,
+            remainingAmount: calculatedRemainingAmount,
             pricingRuleSnapshot: evaluation.pricingRuleSnapshot,
             revenueAttributionBranch: evaluation.pickupBranchId ?? undefined,
             revenueSplitPickupPercent: evaluation.revenueSplitPickupPercent,
@@ -1039,9 +1054,33 @@ export const Bookings: CollectionConfig = {
             promoCode: appliedPromoCode,
             promoDiscountAmount,
             totalPrice: finalTotal,
+            paymentOption:
+              (data.paymentOption ?? originalDoc.paymentOption ?? 'DEPOSIT') === 'FULL'
+                ? 'FULL'
+                : 'DEPOSIT',
+            reservationDepositSnapshot: calculateReservationDeposit(finalTotal, {
+              policyMode: 'PERCENT_OF_RENTAL',
+              depositPercent: 30,
+            }),
             depositSnapshot: finalQuote.depositAmount,
-            initialPaymentDue: finalQuote.initialPaymentDue,
-            remainingAmount: finalRemaining,
+            initialPaymentDue:
+              (data.paymentOption ?? originalDoc.paymentOption ?? 'DEPOSIT') === 'FULL'
+                ? finalTotal
+                : calculateReservationDeposit(finalTotal, {
+                    policyMode: 'PERCENT_OF_RENTAL',
+                    depositPercent: 30,
+                  }),
+            remainingAmount:
+              (data.paymentOption ?? originalDoc.paymentOption ?? 'DEPOSIT') === 'FULL'
+                ? 0
+                : Math.max(
+                    0,
+                    finalTotal -
+                      calculateReservationDeposit(finalTotal, {
+                        policyMode: 'PERCENT_OF_RENTAL',
+                        depositPercent: 30,
+                      }),
+                  ),
             pricingRuleSnapshot: modEval.pricingRuleSnapshot,
             revenueAttributionBranch: modEval.pickupBranchId ?? null,
             revenueSplitPickupPercent: modEval.revenueSplitPickupPercent,
@@ -1462,6 +1501,8 @@ export const Bookings: CollectionConfig = {
           promoCode: originalDoc.promoCode,
           promoDiscountAmount: originalDoc.promoDiscountAmount,
           totalPrice: originalDoc.totalPrice,
+          paymentOption: originalDoc.paymentOption ?? 'DEPOSIT',
+          reservationDepositSnapshot: originalDoc.reservationDepositSnapshot ?? 0,
           depositSnapshot: originalDoc.depositSnapshot,
           initialPaymentDue: originalDoc.initialPaymentDue,
           remainingAmount: ['CANCELLED', 'REJECTED'].includes(String(next))
@@ -2459,8 +2500,26 @@ export const Bookings: CollectionConfig = {
       access: { create: serverField, update: serverField },
     },
     {
+      name: 'paymentOption',
+      label: 'Kế hoạch thanh toán ban đầu',
+      type: 'select',
+      options: [
+        { label: 'Đặt cọc giữ xe (30% tổng tiền thuê)', value: 'DEPOSIT' },
+        { label: 'Thanh toán toàn bộ tiền thuê (100%)', value: 'FULL' },
+      ],
+      defaultValue: 'DEPOSIT',
+      access: { create: serverField, update: serverField },
+    },
+    {
+      name: 'reservationDepositSnapshot',
+      label: 'Mức cọc giữ xe đã chốt (VNĐ)',
+      type: 'number',
+      defaultValue: 0,
+      access: { create: serverField, update: serverField },
+    },
+    {
       name: 'depositSnapshot',
-      label: 'Tiền đặt cọc đảm bảo (tách riêng)',
+      label: 'Tiền ký quỹ bảo đảm tài sản (tách riêng)',
       type: 'number',
       access: { create: serverField, update: serverField },
     },

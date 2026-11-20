@@ -94,6 +94,7 @@ export type Quote = {
   pricingRuleCode?: string | null
   estimatedTotal: number
   depositAmount: number
+  reservationDepositAmount?: number
   initialPaymentDue: number
   remainingAmount: number
   kmLimitPerDay: number | null
@@ -356,6 +357,8 @@ export type BookingView = {
   promoCode?: string | null
   promoDiscountAmount?: number
   totalPrice: number
+  paymentOption?: 'DEPOSIT' | 'FULL' | null
+  reservationDepositSnapshot?: number | null
   depositSnapshot: number
   initialPaymentDue: number
   remainingAmount: number

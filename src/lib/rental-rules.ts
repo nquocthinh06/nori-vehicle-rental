@@ -2543,6 +2543,16 @@ export function checkSettlementCompletionEligibility(params: {
   }
   if (
     params.hasOnlineOrRecordedPayments &&
+    params.financial.totalRemainingRentalObligation > 0 &&
+    !(params.approveFinancialException && params.exceptionNote?.trim())
+  ) {
+    return {
+      allowed: false,
+      reason: `Đơn thuê còn nghĩa vụ thanh toán tiền thuê chưa quyết toán (${formatVnd(params.financial.totalRemainingRentalObligation)}). Vui lòng thu đủ hoặc xác nhận ngoại lệ có lý do kiểm toán.`,
+    }
+  }
+  if (
+    params.hasOnlineOrRecordedPayments &&
     params.financial.remainingExtraFeeDue > 0 &&
     !(params.approveFinancialException && params.exceptionNote?.trim())
   ) {

@@ -172,6 +172,8 @@ function bookingView(
     extraFee: booking.extraFee ?? 0,
     extraFeeNote: booking.extraFeeNote ?? null,
     totalPrice,
+    paymentOption: (booking.paymentOption as 'DEPOSIT' | 'FULL') ?? 'DEPOSIT',
+    reservationDepositSnapshot: booking.reservationDepositSnapshot ?? 0,
     depositSnapshot: booking.depositSnapshot ?? 0,
     initialPaymentDue:
       fin?.reservationDepositRequired ?? booking.initialPaymentDue ?? booking.depositSnapshot ?? 0,
@@ -425,6 +427,7 @@ export async function POST(request: Request) {
       'driverLicenseNumber',
       'note',
       'promoCode',
+      'paymentOption',
       'expectedTotalPrice',
       'idempotencyKey',
     ])
@@ -505,6 +508,7 @@ export async function POST(request: Request) {
           driverLicenseNumber: text(data.driverLicenseNumber, 40) || undefined,
           note: text(data.note, 500) || undefined,
           promoCode: text(data.promoCode, 40) || undefined,
+          paymentOption: data.paymentOption === 'FULL' ? 'FULL' : 'DEPOSIT',
           idempotencyKey,
         },
       })
@@ -553,6 +557,7 @@ export async function PUT(request: Request) {
       'customerEmail',
       'note',
       'promoCode',
+      'paymentOption',
       'reason',
     ])
     const id = text(data.id, 100)
@@ -616,6 +621,8 @@ export async function PUT(request: Request) {
       modifyPayload.customerEmail = text(data.customerEmail, 254)
     if (data.note !== undefined) modifyPayload.note = text(data.note, 500)
     if (data.promoCode !== undefined) modifyPayload.promoCode = text(data.promoCode, 40)
+    if (data.paymentOption !== undefined)
+      modifyPayload.paymentOption = data.paymentOption === 'FULL' ? 'FULL' : 'DEPOSIT'
     if (data.reason !== undefined) modifyPayload.reason = text(data.reason, 300)
 
     return await withBookingWriteLock(async () => {

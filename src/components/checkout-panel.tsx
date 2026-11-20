@@ -91,6 +91,7 @@ export function CheckoutPanel({ address }: { address: string | null }) {
   const [customerPhone, setCustomerPhone] = useState('')
   const [driverLicenseNumber, setDriverLicenseNumber] = useState('')
   const [note, setNote] = useState('')
+  const [paymentOption, setPaymentOption] = useState<'DEPOSIT' | 'FULL'>('DEPOSIT')
 
   // Explicit 3-state promo model: draft input vs validating vs Backend-confirmed code
   const [promoDraft, setPromoDraft] = useState('')
@@ -189,6 +190,10 @@ export function CheckoutPanel({ address }: { address: string | null }) {
         driverLicenseNumber?: string
         note?: string
         confirmedPromoCode?: string
+        paymentOption?: 'DEPOSIT' | 'FULL'
+      }
+      if (draft.paymentOption === 'FULL' || draft.paymentOption === 'DEPOSIT') {
+        setPaymentOption(draft.paymentOption)
       }
       if (draft.pickupTime && timeSlots.includes(draft.pickupTime)) setPickupTime(draft.pickupTime)
       if (draft.returnTime && timeSlots.includes(draft.returnTime)) setReturnTime(draft.returnTime)
@@ -240,6 +245,7 @@ export function CheckoutPanel({ address }: { address: string | null }) {
                 driverLicenseNumber,
                 note,
                 confirmedPromoCode,
+                paymentOption,
               }
             : {
                 pickupTime,
@@ -248,6 +254,7 @@ export function CheckoutPanel({ address }: { address: string | null }) {
                 deliveryRequested,
                 addonKeys,
                 confirmedPromoCode,
+                paymentOption,
               },
         ),
       )
@@ -268,6 +275,7 @@ export function CheckoutPanel({ address }: { address: string | null }) {
     driverLicenseNumber,
     note,
     confirmedPromoCode,
+    paymentOption,
   ])
 
   useEffect(() => {
@@ -608,6 +616,7 @@ export function CheckoutPanel({ address }: { address: string | null }) {
           driverLicenseNumber: driverLicenseNumber.trim() || undefined,
           note: note.trim() || undefined,
           promoCode: promoToSubmit,
+          paymentOption,
           expectedTotalPrice: quote.estimatedTotal,
           idempotencyKey: idempotencyKeyRef.current || undefined,
         }),
@@ -699,6 +708,14 @@ export function CheckoutPanel({ address }: { address: string | null }) {
             </div>
           )}
           <div className="flex flex-wrap items-baseline justify-between gap-3 border-t border-line pt-3">
+            <Text className="text-small text-muted">Kế hoạch thanh toán</Text>
+            <Badge tone={created.paymentOption === 'FULL' ? 'brand' : 'muted'}>
+              {created.paymentOption === 'FULL'
+                ? 'Thanh toán toàn bộ (100%)'
+                : 'Đặt cọc giữ xe (30%)'}
+            </Badge>
+          </div>
+          <div className="flex flex-wrap items-baseline justify-between gap-3 border-t border-line pt-3">
             <Text className="text-small text-muted">Tổng tiền thuê dự kiến</Text>
             <Text className="text-subtitle font-semibold text-brand">
               {formatVnd(created.totalPrice)}
@@ -706,7 +723,7 @@ export function CheckoutPanel({ address }: { address: string | null }) {
           </div>
           {created.depositSnapshot > 0 && (
             <div className="flex flex-wrap items-baseline justify-between gap-3 text-caption text-muted">
-              <span>Đặt cọc đảm bảo (hoàn trả sau khi kết thúc hợp đồng)</span>
+              <span>Ký quỹ tài sản bảo đảm (thế chấp khi nhận xe, hoàn trả sau hợp đồng)</span>
               <span className="font-medium text-ink">{formatMoney(created.depositSnapshot)}</span>
             </div>
           )}
@@ -1094,23 +1111,123 @@ export function CheckoutPanel({ address }: { address: string | null }) {
             <span className="flex size-8 items-center justify-center rounded-pill bg-brand-soft text-small text-brand">
               3
             </span>
-            Phương thức thanh toán
+            Kế hoạch & Phương thức thanh toán
           </Heading>
-          <div className="mt-5 space-y-4">
+          <div className="mt-5 space-y-5">
+            {/* Payment plan selection (A vs B) */}
+            <div className="space-y-3">
+              <Text className="font-semibold text-ink">
+                Chọn kế hoạch thanh toán mong muốn (thực hiện sau khi NORI duyệt đơn):
+              </Text>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label
+                  className={`flex cursor-pointer flex-col justify-between rounded-card border p-4 transition-all ${
+                    paymentOption === 'DEPOSIT'
+                      ? 'border-brand bg-brand-soft ring-2 ring-brand/20'
+                      : 'border-line bg-subtle hover:border-brand/40'
+                  }`}
+                >
+                  <div>
+                    <div className="flex items-center justify-between">
+                      <span className="font-semibold text-ink">A. Đặt cọc giữ xe (30%)</span>
+                      <input
+                        type="radio"
+                        name="paymentOption"
+                        value="DEPOSIT"
+                        checked={paymentOption === 'DEPOSIT'}
+                        onChange={() => setPaymentOption('DEPOSIT')}
+                        className="size-4 text-brand focus:ring-brand"
+                      />
+                    </div>
+                    <Text className="mt-1 text-caption text-muted">
+                      Thanh toán trước 30% tiền thuê để khóa lịch xe. 70% còn lại thanh toán trước
+                      hoặc khi nhận xe.
+                    </Text>
+                  </div>
+                  <div className="mt-3 border-t border-line/60 pt-2 text-caption">
+                    <div className="flex justify-between">
+                      <span className="text-muted">Cọc giữ xe cần trả:</span>
+                      <strong className="text-brand">
+                        {formatVnd(
+                          calculateReservationDeposit(quote.estimatedTotal, {
+                            policyMode: 'PERCENT_OF_RENTAL',
+                            depositPercent: 30,
+                          }),
+                        )}
+                      </strong>
+                    </div>
+                    <div className="flex justify-between mt-1">
+                      <span className="text-muted">Còn lại khi nhận xe:</span>
+                      <span className="font-medium text-ink">
+                        {formatVnd(
+                          Math.max(
+                            0,
+                            quote.estimatedTotal -
+                              calculateReservationDeposit(quote.estimatedTotal, {
+                                policyMode: 'PERCENT_OF_RENTAL',
+                                depositPercent: 30,
+                              }),
+                          ),
+                        )}
+                      </span>
+                    </div>
+                  </div>
+                </label>
+
+                <label
+                  className={`flex cursor-pointer flex-col justify-between rounded-card border p-4 transition-all ${
+                    paymentOption === 'FULL'
+                      ? 'border-brand bg-brand-soft ring-2 ring-brand/20'
+                      : 'border-line bg-subtle hover:border-brand/40'
+                  }`}
+                >
+                  <div>
+                    <div className="flex items-center justify-between">
+                      <span className="font-semibold text-ink">B. Thanh toán toàn bộ (100%)</span>
+                      <input
+                        type="radio"
+                        name="paymentOption"
+                        value="FULL"
+                        checked={paymentOption === 'FULL'}
+                        onChange={() => setPaymentOption('FULL')}
+                        className="size-4 text-brand focus:ring-brand"
+                      />
+                    </div>
+                    <Text className="mt-1 text-caption text-muted">
+                      Thanh toán 100% tiền thuê một lần qua VietQR / SePay sau khi duyệt, nhận xe
+                      nhanh chóng.
+                    </Text>
+                  </div>
+                  <div className="mt-3 border-t border-line/60 pt-2 text-caption">
+                    <div className="flex justify-between">
+                      <span className="text-muted">Số tiền thanh toán:</span>
+                      <strong className="text-brand">{formatVnd(quote.estimatedTotal)}</strong>
+                    </div>
+                    <div className="flex justify-between mt-1">
+                      <span className="text-muted">Còn lại khi nhận xe:</span>
+                      <span className="font-medium text-ink">0 ₫</span>
+                    </div>
+                  </div>
+                </label>
+              </div>
+            </div>
+
             <div className="flex items-start gap-3 rounded-control border border-brand bg-brand-soft p-5 text-brand">
               <Icon name="wallet" className="mt-0.5 shrink-0" />
               <div>
                 <Text className="font-semibold">
-                  Thanh toán đặt cọc trực tuyến VietQR / SePay sau khi đơn được duyệt
+                  Thanh toán trực tuyến VietQR / SePay sau khi đơn được duyệt
                 </Text>
                 <Text className="mt-2 text-small">
                   Tại bước tạo đơn (<strong>Chờ xác nhận</strong>), hệ thống chưa thu tiền để chuyên
                   viên NORI kiểm tra xe và đối chiếu lịch trình. Ngay sau khi đơn được duyệt, bạn có
                   thể quét mã <strong>VietQR / SePay</strong> hoặc chuyển khoản trực tiếp tại trang{' '}
-                  <strong>Đơn thuê của tôi</strong> để xác nhận giữ xe tự động.
+                  <strong>Đơn thuê của tôi</strong> theo kế hoạch đã chọn (
+                  {paymentOption === 'FULL' ? '100% tiền thuê' : 'Cọc 30%'}).
                 </Text>
               </div>
             </div>
+
             <div className="grid gap-3 text-caption sm:grid-cols-3">
               <div className="rounded-control border border-line bg-subtle p-3.5">
                 <Text className="font-semibold text-ink">1. Khi gửi đơn thuê</Text>
@@ -1121,29 +1238,28 @@ export function CheckoutPanel({ address }: { address: string | null }) {
               <div className="rounded-control border border-line bg-subtle p-3.5">
                 <Text className="font-semibold text-ink">2. Sau khi NORI duyệt đơn</Text>
                 <Text className="mt-1 text-muted">
-                  Thanh toán cọc giữ chỗ dự kiến{' '}
+                  Thanh toán {paymentOption === 'FULL' ? 'toàn bộ tiền thuê' : 'cọc giữ xe (30%)'}:{' '}
                   <strong className="text-brand">
                     {formatVnd(
-                      quote.depositAmount > quote.estimatedTotal
-                        ? calculateReservationDeposit(quote.estimatedTotal, {
+                      paymentOption === 'FULL'
+                        ? quote.estimatedTotal
+                        : calculateReservationDeposit(quote.estimatedTotal, {
                             policyMode: 'PERCENT_OF_RENTAL',
                             depositPercent: 30,
-                          })
-                        : quote.initialPaymentDue ||
-                            calculateReservationDeposit(quote.estimatedTotal, {
-                              policyMode: 'PERCENT_OF_RENTAL',
-                              depositPercent: 30,
-                            }),
+                          }),
                     )}
                   </strong>{' '}
-                  qua VietQR / SePay hoặc toàn bộ tiền thuê.
+                  qua VietQR / SePay.
                 </Text>
               </div>
               <div className="rounded-control border border-line bg-subtle p-3.5">
                 <Text className="font-semibold text-ink">3. Khi nhận & trả xe</Text>
                 <Text className="mt-1 text-muted">
-                  Thanh toán phần tiền thuê còn lại và cọc bảo đảm tài sản (hoàn trả sau khi kết
-                  thúc hợp đồng).
+                  {paymentOption === 'FULL'
+                    ? 'Không còn tiền thuê phải trả. '
+                    : `Thanh toán ${formatVnd(Math.max(0, quote.estimatedTotal - calculateReservationDeposit(quote.estimatedTotal, { policyMode: 'PERCENT_OF_RENTAL', depositPercent: 30 })))} tiền thuê còn lại. `}
+                  Ký quỹ tài sản bảo đảm {formatMoney(quote.depositAmount)} khi nhận xe (hoàn trả
+                  sau khi trả xe).
                 </Text>
               </div>
             </div>
@@ -1311,36 +1427,38 @@ export function CheckoutPanel({ address }: { address: string | null }) {
 
         {isQuoteFresh &&
           (() => {
-            const estReservationDeposit =
-              quote.depositAmount > quote.estimatedTotal
-                ? calculateReservationDeposit(quote.estimatedTotal, {
-                    policyMode: 'PERCENT_OF_RENTAL',
-                    depositPercent: 30,
-                  })
-                : quote.initialPaymentDue ||
-                  calculateReservationDeposit(quote.estimatedTotal, {
-                    policyMode: 'PERCENT_OF_RENTAL',
-                    depositPercent: 30,
-                  })
-            const estRemainingRental = Math.max(0, quote.estimatedTotal - estReservationDeposit)
+            const reservationDeposit = calculateReservationDeposit(quote.estimatedTotal, {
+              policyMode: 'PERCENT_OF_RENTAL',
+              depositPercent: 30,
+            })
+            const remainingRental = Math.max(0, quote.estimatedTotal - reservationDeposit)
+            const dueNow = paymentOption === 'FULL' ? quote.estimatedTotal : reservationDeposit
+            const dueAtPickup = paymentOption === 'FULL' ? 0 : remainingRental
+
             return (
               <div className="mt-3 space-y-2 rounded-control border border-line bg-subtle p-3 text-caption">
                 <div className="flex flex-wrap items-baseline justify-between gap-2">
-                  <span className="text-muted">Cọc giữ chỗ dự kiến (sau khi duyệt đơn)</span>
-                  <span className="font-semibold text-brand">
-                    {formatVnd(estReservationDeposit)}
+                  <span className="text-muted">Kế hoạch thanh toán:</span>
+                  <Badge tone={paymentOption === 'FULL' ? 'brand' : 'muted'}>
+                    {paymentOption === 'FULL' ? 'Thanh toán 100%' : 'Đặt cọc 30%'}
+                  </Badge>
+                </div>
+                <div className="flex flex-wrap items-baseline justify-between gap-2 border-t border-line/50 pt-2">
+                  <span className="text-muted">
+                    {paymentOption === 'FULL'
+                      ? 'Khoản thanh toán sau duyệt (100%):'
+                      : 'Cọc giữ xe sau duyệt (30%):'}
                   </span>
+                  <span className="font-semibold text-brand">{formatVnd(dueNow)}</span>
                 </div>
                 <div className="flex flex-wrap items-baseline justify-between gap-2">
-                  <span className="text-muted">
-                    Tiền thuê còn lại (thanh toán trước/khi nhận xe)
-                  </span>
-                  <span className="font-medium text-ink">{formatVnd(estRemainingRental)}</span>
+                  <span className="text-muted">Tiền thuê còn lại khi nhận xe:</span>
+                  <span className="font-medium text-ink">{formatVnd(dueAtPickup)}</span>
                 </div>
                 {quote.depositAmount > 0 && (
                   <div className="flex flex-wrap items-baseline justify-between gap-2 border-t border-line pt-2">
                     <span className="text-muted">
-                      Tiền cọc đảm bảo tài sản (tách riêng, hoàn trả sau thuê)
+                      Ký quỹ tài sản (thế chấp nhận xe, hoàn trả sau hợp đồng):
                     </span>
                     <span className="font-semibold text-ink">
                       {formatMoney(quote.depositAmount)}

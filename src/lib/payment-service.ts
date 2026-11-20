@@ -149,7 +149,10 @@ export function resolveBookingDepositAndSecurityStructure(
   booking: Pick<
     Booking,
     'totalPrice' | 'depositSnapshot' | 'initialPaymentDue' | 'extraFee' | 'status'
-  >,
+  > & {
+    paymentOption?: 'DEPOSIT' | 'FULL' | string | null
+    reservationDepositSnapshot?: number | null
+  },
   config?: Pick<
     SitePaymentConfiguration,
     'reservationDepositPolicyMode' | 'reservationDepositPercent'
@@ -161,8 +164,36 @@ export function resolveBookingDepositAndSecurityStructure(
   const mode = config?.reservationDepositPolicyMode ?? 'VEHICLE_FIXED'
   const pct = config?.reservationDepositPercent ?? 30
 
-  // If policy mode is PERCENT_OF_RENTAL or if the vehicle deposit snapshot is larger than the rental fee
-  // (meaning depositSnapshot represents the asset security deposit, e.g. 5,000,000 VND on a 2,700,000 VND rental),
+  // 1. Customer selected FULL payment plan
+  if (booking.paymentOption === 'FULL') {
+    const reservationDepositRequired =
+      booking.reservationDepositSnapshot != null && Number(booking.reservationDepositSnapshot) > 0
+        ? roundVndInteger(booking.reservationDepositSnapshot)
+        : calculateReservationDeposit(totalRentalPrice, {
+            policyMode: 'PERCENT_OF_RENTAL',
+            depositPercent: pct,
+          })
+    return {
+      reservationDepositRequired,
+      securityDepositAmount: rawDepositSnapshot,
+      deductReservationDepositFromRental: true,
+    }
+  }
+
+  // 2. Explicit reservation deposit snapshot recorded on the booking document
+  if (
+    booking.reservationDepositSnapshot != null &&
+    Number(booking.reservationDepositSnapshot) > 0
+  ) {
+    return {
+      reservationDepositRequired: roundVndInteger(booking.reservationDepositSnapshot),
+      securityDepositAmount: rawDepositSnapshot,
+      deductReservationDepositFromRental: true,
+    }
+  }
+
+  // 3. If policy mode is PERCENT_OF_RENTAL or if the vehicle deposit snapshot is larger than the rental fee
+  // (meaning depositSnapshot represents the asset security deposit, e.g. 15,000,000 VND on a 13,010,000 VND rental),
   // calculate the reservation deposit as pct% of the rental fee and track depositSnapshot as securityDepositAmount.
   if (
     mode === 'PERCENT_OF_RENTAL' ||
@@ -386,6 +417,47 @@ export async function sweepExpiredPayments(
         // Ignore duplicate notification
       }
     }
+  }
+
+  // Also sweep pending/processing payments for bookings that were cancelled or rejected
+  try {
+    const cancelledBookingPayments = await payload.find({
+      collection: 'payments',
+      ...(options?.req ? { req: options.req } : {}),
+      overrideAccess: true,
+      depth: 1,
+      limit: 50,
+      where: {
+        and: [
+          { status: { in: ['PENDING', 'PROCESSING'] } },
+          ...(options?.bookingId ? [{ booking: { equals: options.bookingId } }] : []),
+          ...(options?.bookingIds && options.bookingIds.length > 0
+            ? [{ booking: { in: options.bookingIds } }]
+            : []),
+        ],
+      },
+    })
+    for (const p of cancelledBookingPayments.docs) {
+      const b = typeof p.booking === 'object' && p.booking ? p.booking : null
+      if (b && ['CANCELLED', 'REJECTED'].includes(String(b.status))) {
+        await payload.update({
+          collection: 'payments',
+          id: p.id,
+          ...(options?.req ? { req: options.req } : {}),
+          overrideAccess: true,
+          data: {
+            status: 'CANCELLED',
+            failureReason: `Đơn thuê đã bị ${b.status === 'REJECTED' ? 'từ chối' : 'hủy'}.`,
+            note: p.note
+              ? `${p.note} · Tự động hủy do đơn thuê chuyển trạng thái ${b.status}`
+              : `Tự động hủy do đơn thuê chuyển trạng thái ${b.status}`,
+          },
+        })
+        expiredCount += 1
+      }
+    }
+  } catch {
+    // Non-blocking sweep
   }
 
   return expiredCount

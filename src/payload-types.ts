@@ -1243,6 +1243,8 @@ export interface Booking {
   promoCode?: string | null;
   promoDiscountAmount?: number | null;
   totalPrice?: number | null;
+  paymentOption?: ('DEPOSIT' | 'FULL') | null;
+  reservationDepositSnapshot?: number | null;
   depositSnapshot?: number | null;
   initialPaymentDue?: number | null;
   remainingAmount?: number | null;
@@ -2988,6 +2990,8 @@ export interface BookingsSelect<T extends boolean = true> {
   promoCode?: T;
   promoDiscountAmount?: T;
   totalPrice?: T;
+  paymentOption?: T;
+  reservationDepositSnapshot?: T;
   depositSnapshot?: T;
   initialPaymentDue?: T;
   remainingAmount?: T;

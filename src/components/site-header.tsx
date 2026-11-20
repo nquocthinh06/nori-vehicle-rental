@@ -356,10 +356,26 @@ export function SiteHeader() {
             role="dialog"
             aria-modal="true"
             aria-label="Menu điều hướng di động"
-            className="fixed inset-x-0 top-[calc(var(--spacing-header)+env(safe-area-inset-top,0px))] bottom-0 z-40 flex flex-col overflow-y-auto bg-canvas pb-24 border-t border-line shadow-float lg:hidden animate-enter"
+            className="fixed inset-0 z-50 flex flex-col bg-canvas lg:hidden overscroll-contain animate-enter"
           >
-            <div className="flex-1 space-y-1.5 p-5">
-              <Text className="px-3 pt-2 text-caption font-semibold tracking-wider text-muted uppercase">
+            {/* Drawer Header */}
+            <div className="flex h-header shrink-0 items-center justify-between border-b border-line px-5 pt-[env(safe-area-inset-top,0px)]">
+              <Brand />
+              <IconButton
+                icon="close"
+                label="Đóng menu"
+                aria-label="Đóng menu"
+                className="size-11"
+                onClick={() => setMobile(false)}
+              />
+            </div>
+
+            {/* Drawer Scrollable Content */}
+            <div
+              className="flex-1 space-y-1.5 overflow-y-auto overscroll-contain px-5 py-5 pb-[calc(5rem+env(safe-area-inset-bottom,0px))]"
+              style={{ WebkitOverflowScrolling: 'touch' }}
+            >
+              <Text className="px-3 pt-1 text-caption font-semibold tracking-wider text-muted uppercase">
                 Phương tiện
               </Text>
               {categories.map((c) => (
@@ -367,7 +383,7 @@ export function SiteHeader() {
                   key={c.type}
                   href={`/vehicles?type=${c.type}`}
                   onClick={() => setMobile(false)}
-                  className="flex min-h-control items-center gap-3.5 rounded-control px-3.5 py-2.5 font-medium hover:bg-subtle active:bg-brand-soft"
+                  className="flex min-h-touch items-center gap-3.5 rounded-control px-3.5 py-3 font-medium hover:bg-subtle active:bg-brand-soft"
                 >
                   <Icon name={c.icon} className="size-5 text-brand" />
                   <span className="text-body font-semibold">Thuê {c.name.toLowerCase()}</span>
@@ -378,7 +394,7 @@ export function SiteHeader() {
               <NoriLink
                 href="/vehicles?intent=buy"
                 onClick={() => setMobile(false)}
-                className="flex min-h-control items-center gap-3.5 rounded-control px-3.5 py-2.5 font-medium hover:bg-subtle"
+                className="flex min-h-touch items-center gap-3.5 rounded-control px-3.5 py-3 font-medium hover:bg-subtle"
               >
                 <Icon name="bag" className="size-5 text-brand" />
                 <span className="text-body font-semibold">Mua xe & Lái thử</span>
@@ -394,7 +410,7 @@ export function SiteHeader() {
               <NoriLink
                 href="/favorites"
                 onClick={() => setMobile(false)}
-                className="flex min-h-control items-center gap-3.5 rounded-control px-3.5 py-2.5 text-body font-medium hover:bg-subtle"
+                className="flex min-h-touch items-center gap-3.5 rounded-control px-3.5 py-3 text-body font-medium hover:bg-subtle"
               >
                 <Icon name="heart" className="size-5 text-muted" />
                 Xe yêu thích
@@ -403,7 +419,7 @@ export function SiteHeader() {
               <NoriLink
                 href="/my-bookings"
                 onClick={() => setMobile(false)}
-                className="flex min-h-control items-center gap-3.5 rounded-control px-3.5 py-2.5 text-body font-medium hover:bg-subtle"
+                className="flex min-h-touch items-center gap-3.5 rounded-control px-3.5 py-3 text-body font-medium hover:bg-subtle"
               >
                 <Icon name="calendar" className="size-5 text-muted" />
                 Tra cứu đơn thuê
@@ -412,7 +428,7 @@ export function SiteHeader() {
               <NoriLink
                 href="/posts"
                 onClick={() => setMobile(false)}
-                className="flex min-h-control items-center gap-3.5 rounded-control px-3.5 py-2.5 text-body font-medium hover:bg-subtle"
+                className="flex min-h-touch items-center gap-3.5 rounded-control px-3.5 py-3 text-body font-medium hover:bg-subtle"
               >
                 <Icon name="sparkles" className="size-5 text-muted" />
                 Tin tức &amp; Ưu đãi
@@ -421,7 +437,7 @@ export function SiteHeader() {
               <NoriLink
                 href="/about"
                 onClick={() => setMobile(false)}
-                className="flex min-h-control items-center gap-3.5 rounded-control px-3.5 py-2.5 text-body font-medium hover:bg-subtle"
+                className="flex min-h-touch items-center gap-3.5 rounded-control px-3.5 py-3 text-body font-medium hover:bg-subtle"
               >
                 <Icon name="road" className="size-5 text-muted" />
                 Về NORI
@@ -430,7 +446,7 @@ export function SiteHeader() {
               <NoriLink
                 href="/support"
                 onClick={() => setMobile(false)}
-                className="flex min-h-control items-center gap-3.5 rounded-control px-3.5 py-2.5 text-body font-medium hover:bg-subtle"
+                className="flex min-h-touch items-center gap-3.5 rounded-control px-3.5 py-3 text-body font-medium hover:bg-subtle"
               >
                 <Icon name="headphones" className="size-5 text-muted" />
                 Trung tâm hỗ trợ
@@ -440,19 +456,19 @@ export function SiteHeader() {
                 <NoriLink
                   href="/dashboard"
                   onClick={() => setMobile(false)}
-                  className="flex min-h-control items-center gap-3.5 rounded-control bg-brand-soft px-3.5 py-2.5 text-body font-semibold text-brand"
+                  className="flex min-h-touch items-center gap-3.5 rounded-control bg-brand-soft px-3.5 py-3 text-body font-semibold text-brand"
                 >
                   <Icon name="shield" className="size-5 text-brand" />
                   Quản trị hệ thống
                 </NoriLink>
               )}
 
-              <div className="pt-4">
+              <div className="pt-4 pb-6">
                 <ButtonLink
                   href={user ? (user.isAdmin ? '/dashboard' : '/account') : '/login'}
                   onClick={() => setMobile(false)}
                   variant={user ? 'secondary' : 'primary'}
-                  className="w-full justify-center text-body font-semibold py-3"
+                  className="w-full justify-center text-body font-semibold py-3.5 shadow-sm"
                 >
                   <Icon name="user" className="size-4" />
                   {user

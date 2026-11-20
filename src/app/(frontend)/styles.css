@@ -262,3 +262,25 @@
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Mobile Responsive Hardening & Accessibility Standards */
+html,
+body {
+  overflow-x: hidden;
+  max-width: 100vw;
+}
+
+@media (max-width: 639.98px) {
+  /* Prevent iOS Safari auto-zoom on form focus */
+  input:not([type='checkbox']):not([type='radio']),
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}
+
+/* Smooth momentum scrolling on mobile */
+.overflow-x-auto,
+.overflow-y-auto {
+  -webkit-overflow-scrolling: touch;
+}

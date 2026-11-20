@@ -626,7 +626,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
                   )}
                 </button>
                 {notifOpen && (
-                  <div className="absolute right-0 mt-2 w-80 rounded-card border border-line bg-canvas p-4 shadow-float">
+                  <div className="absolute right-0 mt-2 w-80 max-w-[calc(100vw-2rem)] rounded-card border border-line bg-canvas p-4 shadow-float z-40">
                     <Text className="mb-3 text-small font-semibold text-ink">
                       Việc cần xử lý ngay
                     </Text>
@@ -702,54 +702,129 @@ export function AdminShell({ children }: { children: ReactNode }) {
                   <Icon name="chevron-down" className="size-4 text-muted" />
                 </button>
                 {accountOpen && (
-                  <div className="absolute right-0 mt-2 w-64 rounded-card border border-line bg-canvas p-3 shadow-float">
-                    <div className="border-b border-line pb-3">
-                      <Text className="text-small font-semibold">{user.fullName}</Text>
-                      <Text className="break-all text-caption text-muted">{user.email}</Text>
-                      <div className="mt-1.5 flex flex-wrap gap-1.5">
-                        <Badge tone="brand">
-                          {user.staffTitle && user.staffTitle in STAFF_TITLE_LABELS
-                            ? STAFF_TITLE_LABELS[user.staffTitle as StaffTitle]
-                            : user.adminRole === 'SUPER_ADMIN'
-                              ? 'Quản trị viên cấp cao'
-                              : 'Nhân viên vận hành'}
-                        </Badge>
-                        <Badge tone={user.branchScopeMode === 'ASSIGNED' ? 'warning' : 'muted'}>
-                          {user.branchScopeMode === 'ASSIGNED'
-                            ? `${user.assignedBranchIds?.length ?? 0} chi nhánh`
-                            : 'Toàn hệ thống'}
-                        </Badge>
+                  <>
+                    {/* Mobile Bottom Sheet Backdrop & Sheet (<sm) */}
+                    <div
+                      className="fixed inset-0 z-50 bg-overlay/60 backdrop-blur-xs sm:hidden"
+                      onClick={() => setAccountOpen(false)}
+                      aria-hidden="true"
+                    />
+                    <div
+                      role="dialog"
+                      aria-modal="true"
+                      aria-label="Tài khoản quản trị"
+                      className="fixed inset-x-0 bottom-0 z-50 max-h-[85vh] overflow-y-auto rounded-t-panel border-t border-line bg-canvas p-5 pb-[calc(2rem+env(safe-area-inset-bottom,0px))] shadow-float sm:hidden animate-enter"
+                    >
+                      <div className="flex items-start justify-between border-b border-line pb-4">
+                        <div>
+                          <Text className="text-body font-semibold text-ink">{user.fullName}</Text>
+                          <Text className="break-all text-caption text-muted">{user.email}</Text>
+                          <div className="mt-2 flex flex-wrap gap-1.5">
+                            <Badge tone="brand">
+                              {user.staffTitle && user.staffTitle in STAFF_TITLE_LABELS
+                                ? STAFF_TITLE_LABELS[user.staffTitle as StaffTitle]
+                                : user.adminRole === 'SUPER_ADMIN'
+                                  ? 'Quản trị viên cấp cao'
+                                  : 'Nhân viên vận hành'}
+                            </Badge>
+                            <Badge tone={user.branchScopeMode === 'ASSIGNED' ? 'warning' : 'muted'}>
+                              {user.branchScopeMode === 'ASSIGNED'
+                                ? `${user.assignedBranchIds?.length ?? 0} chi nhánh`
+                                : 'Toàn hệ thống'}
+                            </Badge>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setAccountOpen(false)}
+                          aria-label="Đóng menu tài khoản"
+                          className="inline-flex size-11 items-center justify-center rounded-control text-muted hover:bg-subtle"
+                        >
+                          <Icon name="close" className="size-5" />
+                        </button>
+                      </div>
+
+                      <div className="mt-4 space-y-2 text-body">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAccountOpen(false)
+                            setPwdOpen(true)
+                          }}
+                          className="flex min-h-touch w-full items-center gap-3 rounded-control px-3.5 py-3 text-left font-medium hover:bg-subtle"
+                        >
+                          <Icon name="lock" className="size-5 text-muted" />
+                          Đổi mật khẩu quản trị
+                        </button>
+                        <NoriLink
+                          href="/"
+                          onClick={() => setAccountOpen(false)}
+                          className="flex min-h-touch w-full items-center gap-3 rounded-control px-3.5 py-3 font-medium hover:bg-subtle"
+                        >
+                          <Icon name="home" className="size-5 text-muted" />
+                          Về website chính
+                        </NoriLink>
+                        <button
+                          type="button"
+                          onClick={() => void handleLogout()}
+                          className="flex min-h-touch w-full items-center gap-3 rounded-control px-3.5 py-3 text-left font-semibold text-danger hover:bg-danger-soft"
+                        >
+                          <Icon name="logout" className="size-5" />
+                          Đăng xuất quản trị
+                        </button>
                       </div>
                     </div>
-                    <div className="mt-2 space-y-1 text-small">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setAccountOpen(false)
-                          setPwdOpen(true)
-                        }}
-                        className="flex w-full items-center gap-2.5 rounded-control px-3 py-2 text-left hover:bg-subtle"
-                      >
-                        <Icon name="lock" className="size-4 text-muted" />
-                        Đổi mật khẩu
-                      </button>
-                      <NoriLink
-                        href="/"
-                        className="flex items-center gap-2.5 rounded-control px-3 py-2 hover:bg-subtle"
-                      >
-                        <Icon name="home" className="size-4 text-muted" />
-                        Về website chính
-                      </NoriLink>
-                      <button
-                        type="button"
-                        onClick={() => void handleLogout()}
-                        className="flex w-full items-center gap-2.5 rounded-control px-3 py-2 text-left text-danger hover:bg-danger-soft"
-                      >
-                        <Icon name="logout" className="size-4" />
-                        Đăng xuất quản trị
-                      </button>
+
+                    {/* Desktop / Tablet Dropdown Menu (>=sm) */}
+                    <div className="hidden sm:block absolute right-0 mt-2 w-72 max-w-[calc(100vw-2rem)] rounded-card border border-line bg-canvas p-3 shadow-float z-40">
+                      <div className="border-b border-line pb-3">
+                        <Text className="text-small font-semibold">{user.fullName}</Text>
+                        <Text className="break-all text-caption text-muted">{user.email}</Text>
+                        <div className="mt-1.5 flex flex-wrap gap-1.5">
+                          <Badge tone="brand">
+                            {user.staffTitle && user.staffTitle in STAFF_TITLE_LABELS
+                              ? STAFF_TITLE_LABELS[user.staffTitle as StaffTitle]
+                              : user.adminRole === 'SUPER_ADMIN'
+                                ? 'Quản trị viên cấp cao'
+                                : 'Nhân viên vận hành'}
+                          </Badge>
+                          <Badge tone={user.branchScopeMode === 'ASSIGNED' ? 'warning' : 'muted'}>
+                            {user.branchScopeMode === 'ASSIGNED'
+                              ? `${user.assignedBranchIds?.length ?? 0} chi nhánh`
+                              : 'Toàn hệ thống'}
+                          </Badge>
+                        </div>
+                      </div>
+                      <div className="mt-2 space-y-1 text-small">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAccountOpen(false)
+                            setPwdOpen(true)
+                          }}
+                          className="flex w-full items-center gap-2.5 rounded-control px-3 py-2 text-left hover:bg-subtle"
+                        >
+                          <Icon name="lock" className="size-4 text-muted" />
+                          Đổi mật khẩu
+                        </button>
+                        <NoriLink
+                          href="/"
+                          className="flex items-center gap-2.5 rounded-control px-3 py-2 hover:bg-subtle"
+                        >
+                          <Icon name="home" className="size-4 text-muted" />
+                          Về website chính
+                        </NoriLink>
+                        <button
+                          type="button"
+                          onClick={() => void handleLogout()}
+                          className="flex w-full items-center gap-2.5 rounded-control px-3 py-2 text-left text-danger hover:bg-danger-soft"
+                        >
+                          <Icon name="logout" className="size-4" />
+                          Đăng xuất quản trị
+                        </button>
+                      </div>
                     </div>
-                  </div>
+                  </>
                 )}
               </div>
             </div>

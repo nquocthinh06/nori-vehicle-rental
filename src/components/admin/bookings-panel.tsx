@@ -380,16 +380,20 @@ export function BookingsPanel() {
                     )}
                   </div>
                   <div className="text-right">
-                    <Text className="text-subtitle font-bold text-ink">
-                      {formatVnd(b.totalPrice)}
-                    </Text>
+                    <div className="flex items-center justify-end gap-1.5">
+                      {b.paymentOption === 'FULL' && <Badge tone="brand">Thanh toán 100%</Badge>}
+                      <Text className="text-subtitle font-bold text-ink">
+                        {formatVnd(b.totalPrice)}
+                      </Text>
+                    </div>
                     <Text className="text-caption text-muted">
-                      Cọc: {formatMoney(b.depositSnapshot)}
+                      Ký quỹ tài sản:{' '}
+                      <strong className="text-ink">{formatMoney(b.depositSnapshot)}</strong>
                       {b.extraFee ? ` · Phụ phí: ${formatMoney(b.extraFee)}` : ''}
                     </Text>
                     {b.financial && (
                       <Text className="mt-0.5 text-caption">
-                        Đã thu:{' '}
+                        Đã thu tiền thuê:{' '}
                         <strong className="text-brand">
                           {formatVnd(b.financial.rentalRevenueCollected)}
                         </strong>{' '}
@@ -538,13 +542,39 @@ export function BookingsPanel() {
                 <p className="font-semibold text-ink">
                   Tổng tiền thuê dự kiến: {formatVnd(detail.totalPrice)}
                 </p>
-                <p>Tiền đặt cọc đảm bảo (tách riêng): {formatMoney(detail.depositSnapshot)}</p>
+                <p>
+                  Kế hoạch thanh toán:{' '}
+                  <strong className="text-brand">
+                    {detail.paymentOption === 'FULL'
+                      ? 'Thanh toán toàn bộ (100%)'
+                      : 'Đặt cọc giữ xe (30%)'}
+                  </strong>
+                </p>
+                <p>
+                  Ký quỹ tài sản (thế chấp nhận xe, tách riêng):{' '}
+                  {formatMoney(detail.depositSnapshot)}
+                </p>
                 <p>Tiền thuê còn lại dự kiến: {formatVnd(detail.remainingAmount)}</p>
+              </div>
+              <div className="mt-3 rounded-control border border-line bg-subtle p-3 text-caption">
+                <p className="font-semibold text-ink">Phân định hạch toán tài chính chuẩn:</p>
+                <p className="mt-1 text-muted">
+                  • <strong>Tổng tiền thuê ({formatVnd(detail.totalPrice)}):</strong> Doanh thu dịch
+                  vụ thuê xe.
+                  {detail.financial
+                    ? ` Đã thu: ${formatVnd(detail.financial.rentalRevenueCollected)} · Còn lại phải thu: ${formatVnd(detail.financial.totalRemainingRentalObligation)}.`
+                    : ''}
+                </p>
+                <p className="mt-1 text-muted">
+                  • <strong>Ký quỹ bảo đảm tài sản ({formatMoney(detail.depositSnapshot)}):</strong>{' '}
+                  Khoản thế chấp bảo đảm phương tiện khi giao nhận xe (tiền mặt / hiện vật), không
+                  tính vào doanh thu thuê, được hoàn trả sau khi kết thúc hợp đồng và nghiệm thu xe.
+                </p>
               </div>
               {detail.financial && (
                 <div className="mt-3 grid gap-2 border-t border-line pt-3 text-caption sm:grid-cols-3">
                   <p>
-                    Cọc giữ chỗ yêu cầu:{' '}
+                    Cọc giữ xe yêu cầu:{' '}
                     <strong>{formatVnd(detail.financial.reservationDepositRequired)}</strong>
                   </p>
                   <p>

@@ -1213,6 +1213,9 @@ function BookingsPanelInner() {
                     )}
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
+                    {booking.paymentOption === 'FULL' && (
+                      <Badge tone="brand">Thanh toán 100%</Badge>
+                    )}
                     <Badge tone={paymentSummaryTone(paySummary)}>
                       {paymentSummaryLabels[paySummary] ?? paySummary}
                     </Badge>
@@ -1254,7 +1257,7 @@ function BookingsPanelInner() {
                     </Text>
                   </div>
                   <div>
-                    <Text className="mb-1 text-caption text-muted">Đặt cọc tách riêng</Text>
+                    <Text className="mb-1 text-caption text-muted">Ký quỹ tài sản (thế chấp)</Text>
                     <Text className="text-small font-medium">
                       {booking.depositSnapshot > 0
                         ? formatMoney(booking.depositSnapshot)
@@ -1524,10 +1527,18 @@ function BookingsPanelInner() {
                 <p className="pt-1 font-semibold text-brand">
                   Tổng tiền thuê dự kiến: {formatVnd(detailBooking.totalPrice)}
                 </p>
+                <p>
+                  Kế hoạch thanh toán:{' '}
+                  <strong>
+                    {detailBooking.paymentOption === 'FULL'
+                      ? 'Thanh toán toàn bộ tiền thuê (100%)'
+                      : 'Đặt cọc giữ xe (30%)'}
+                  </strong>
+                </p>
                 {detailBooking.financial && (
                   <>
                     <p>
-                      Cọc giữ chỗ cần đóng:{' '}
+                      Cọc giữ xe yêu cầu:{' '}
                       <strong>
                         {formatVnd(detailBooking.financial.reservationDepositRequired)}
                       </strong>
@@ -1537,7 +1548,7 @@ function BookingsPanelInner() {
                       <strong>{formatVnd(detailBooking.financial.rentalRevenueCollected)}</strong>
                     </p>
                     <p>
-                      Còn phải trả:{' '}
+                      Còn phải thanh toán:{' '}
                       <strong>
                         {formatVnd(detailBooking.financial.totalRemainingRentalObligation)}
                       </strong>
@@ -1550,7 +1561,10 @@ function BookingsPanelInner() {
                     )}
                   </>
                 )}
-                <p>Tiền đặt cọc tách riêng: {formatMoney(detailBooking.depositSnapshot)}</p>
+                <p className="border-t border-line/60 pt-2 text-muted">
+                  Ký quỹ tài sản (thế chấp nhận xe, hoàn trả sau thuê):{' '}
+                  <strong className="text-ink">{formatMoney(detailBooking.depositSnapshot)}</strong>
+                </p>
               </div>
             </div>
 
