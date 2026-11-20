@@ -25,8 +25,17 @@ console.log('========================================================')
 console.log(`Target Database: ${dbPath}`)
 
 if (!fs.existsSync(dbPath)) {
-  console.error(`[ERROR] Database not found at ${dbPath}`)
-  process.exit(1)
+  console.log(`[SAFE-MIGRATE] Database does not exist yet. Initializing fresh database at ${dbPath}...`)
+  try {
+    const initRes = runDatabaseMigration({ dbPath })
+    console.log(
+      `[SAFE-MIGRATE] Fresh database initialized successfully: ${initRes.tablesCount} tables, version=${initRes.schemaVersion}, integrity=${initRes.integrity}`,
+    )
+    process.exit(initRes.ok ? 0 : 1)
+  } catch (initErr) {
+    console.error('[SAFE-MIGRATE] Fresh database initialization failed:', initErr)
+    process.exit(1)
+  }
 }
 
 const preCheck = checkDatabaseCompatibility({ dbPath })
@@ -98,5 +107,3 @@ console.log(`Tables Count: ${postCheck.tablesCount}`)
 console.log(`Integrity:    ${postCheck.integrity}`)
 console.log(`FK Check:     0 violations`)
 console.log(`Safety Backup: ${backupRes.dbBackupPath}`)
-console.log('========================================================\n')
-process.exit(0)
