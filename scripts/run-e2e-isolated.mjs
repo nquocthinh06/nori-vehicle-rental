@@ -3,6 +3,7 @@ import fs from 'node:fs'
 import net from 'node:net'
 import path from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
+import { detectLanIPv4 } from './lan-network.mjs'
 
 function getFreePort() {
   return new Promise((resolve, reject) => {
@@ -65,12 +66,28 @@ async function waitForHealth(url, timeoutMs = 45_000) {
 }
 
 async function main() {
+  const rawArgs = process.argv.slice(2)
+  const useLan = rawArgs.includes('--lan')
+  const extraArgs = rawArgs.filter((arg) => arg !== '--lan')
+
+  let targetHost = process.env.NORI_E2E_HOST?.trim() || 'localhost'
+  if (useLan) {
+    const detected = detectLanIPv4({ explicitIp: process.env.NORI_LAN_IP })
+    if (!detected.ip) {
+      throw new Error(
+        '[isolated-e2e] --lan requires an active LAN IPv4 interface or NORI_LAN_IP=<ipv4>.',
+      )
+    }
+    targetHost = detected.ip
+  }
+
   const sourceDb = path.resolve(process.cwd(), process.env.NORI_SOURCE_DB || 'nori.db')
   const isolatedDb = path.resolve(process.cwd(), 'nori-e2e-isolated.db')
   const sourceMediaDir = path.resolve(process.cwd(), process.env.NORI_SOURCE_MEDIA_DIR || 'media')
   const isolatedMediaDir = path.resolve(process.cwd(), '.tmp-e2e-media')
   const port = process.env.NORI_E2E_PORT ? String(process.env.NORI_E2E_PORT) : await getFreePort()
-  const baseUrl = `http://localhost:${port}`
+  const localBaseUrl = `http://localhost:${port}`
+  const baseUrl = `http://${targetHost}:${port}`
 
   if (!fs.existsSync(sourceDb)) {
     throw new Error(`Source database not found: ${sourceDb}`)
@@ -153,13 +170,16 @@ async function main() {
 
   try {
     await waitForHealth(`${baseUrl}/nori-api/health`)
+    if (baseUrl !== localBaseUrl) {
+      await waitForHealth(`${localBaseUrl}/nori-api/health`)
+    }
 
     const pwBin = path.resolve(process.cwd(), 'node_modules', '@playwright', 'test', 'cli.js')
-    const extraArgs = process.argv.slice(2)
     const pwRes = await runAsyncCommand(process.execPath, [pwBin, 'test', ...extraArgs], {
       env: {
         ...serverEnv,
         NORI_TEST_BASE_URL: baseUrl,
+        ...(baseUrl !== localBaseUrl ? { NORI_TEST_LOCAL_URL: localBaseUrl } : {}),
       },
       stdio: 'inherit',
     })
@@ -183,6 +203,7 @@ async function main() {
     console.log(
       JSON.stringify({
         isolatedE2EResult: pwRes.status === 0 && !serverUnexpectedExit ? 'PASS' : 'FAIL',
+        baseUrl,
         exitCode: pwRes.status ?? 1,
         serverUnexpectedExit,
         postIntegrity: postIntegrity.integrity_check,

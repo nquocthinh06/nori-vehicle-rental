@@ -2,6 +2,7 @@ import { withPayload } from '@payloadcms/next/withPayload'
 import type { NextConfig } from 'next'
 import path from 'path'
 import { fileURLToPath } from 'url'
+import { getLocalLanIPv4List, isValidIPv4 } from './scripts/lan-network.mjs'
 
 const __filename = fileURLToPath(import.meta.url)
 const dirname = path.dirname(__filename)
@@ -17,6 +18,41 @@ const makePublicPreviewOrigin = (() => {
     return undefined
   }
 })()
+
+const isDevMode = process.env.NODE_ENV !== 'production'
+const devPort = process.env.PORT?.trim() || '3000'
+const devLanHostnames = (() => {
+  if (!isDevMode) return [] as string[]
+  const hosts = new Set<string>(getLocalLanIPv4List())
+  const manualLanIp = process.env.NORI_LAN_IP?.trim()
+  if (manualLanIp && isValidIPv4(manualLanIp) && manualLanIp !== '0.0.0.0') {
+    hosts.add(manualLanIp)
+  }
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL?.trim()
+  if (siteUrl) {
+    try {
+      const parsed = new URL(siteUrl)
+      if (parsed.hostname && parsed.hostname !== 'localhost') {
+        hosts.add(parsed.hostname)
+      }
+    } catch {
+      // ignore invalid NEXT_PUBLIC_SITE_URL
+    }
+  }
+  return [...hosts]
+})()
+
+const devServerActionOrigins = devLanHostnames.flatMap((host) => [host, `${host}:${devPort}`])
+const allowedDevOrigins = [
+  ...new Set([makePublicPreviewOrigin, ...devLanHostnames].filter((v): v is string => Boolean(v))),
+]
+const serverActionAllowedOrigins = [
+  ...new Set(
+    [makePublicPreviewOrigin, ...(isDevMode ? devServerActionOrigins : [])].filter(
+      (v): v is string => Boolean(v),
+    ),
+  ),
+]
 
 const nextConfig: NextConfig = {
   webpack: (webpackConfig) => {
@@ -57,7 +93,7 @@ const nextConfig: NextConfig = {
   // so the Payload `/admin` panel renders blank in the preview iframe.
   // Dev-only - ignored by `next build`.
   //
-  allowedDevOrigins: makePublicPreviewOrigin ? [makePublicPreviewOrigin] : [],
+  allowedDevOrigins,
   // Prerender source maps add ~100 MB per static build worker
   enablePrerenderSourceMaps: false,
   experimental: {
@@ -65,13 +101,15 @@ const nextConfig: NextConfig = {
     cpus: 1,
     // Payload Admin uses Next Server Actions. In the Make preview proxy, the
     // browser origin is the public sandbox host while `x-forwarded-host` points
-    // at the local dev server. Allow only that exact platform-provisioned host.
+    // at the local dev server. In LAN dev, trusted local network IPv4 hosts are
+    // also allowed without enabling wildcards or relaxing production rules.
     serverActions: {
-      allowedOrigins: makePublicPreviewOrigin ? [makePublicPreviewOrigin] : [],
+      allowedOrigins: serverActionAllowedOrigins,
     },
   },
   env: {
-    NEXT_PUBLIC_SITE_URL: process.env.FIGMA_PUBLIC_URL || 'http://localhost:3000',
+    NEXT_PUBLIC_SITE_URL:
+      process.env.FIGMA_PUBLIC_URL || process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000',
     // NOTE: Do not add FIGMA_OAUTH_CLIENT_SECRET, FIGMA_CONTENT_API_ACCESS_KEY,
     // or any other credential here. Values placed in `env` are inlined into
     // the JavaScript bundle by Next.js at build time and become readable by
