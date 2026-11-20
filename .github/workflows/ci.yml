@@ -20,6 +20,7 @@ jobs:
 
     env:
       NODE_ENV: test
+      NODE_OPTIONS: --experimental-strip-types
       PAYLOAD_SECRET: ci-test-payload-secret-at-least-32-chars-long-for-testing
       NORI_SESSION_SECRET: ci-test-session-secret-at-least-32-chars-long-for-testing
       DATABASE_URI: file:./nori.db
@@ -52,20 +53,8 @@ jobs:
 
       - name: Initialize Database For Tests
         run: |
-          set +e
-          echo "### Database Initialization Diagnostic" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          node scripts/db-migrate.ts >> $GITHUB_STEP_SUMMARY 2>&1
-          MIGRATE_EXIT=$?
-          echo "db-migrate exit code: $MIGRATE_EXIT" >> $GITHUB_STEP_SUMMARY
-          node scripts/data-import.ts --skip-backup >> $GITHUB_STEP_SUMMARY 2>&1
-          IMPORT_EXIT=$?
-          echo "data-import exit code: $IMPORT_EXIT" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          if [ $MIGRATE_EXIT -ne 0 ] || [ $IMPORT_EXIT -ne 0 ]; then
-            echo "Database initialization failed: migrate=$MIGRATE_EXIT, import=$IMPORT_EXIT"
-            exit 1
-          fi
+          pnpm db:migrate
+          pnpm data:import --skip-backup
 
       - name: Run Test Suite
         run: pnpm test
