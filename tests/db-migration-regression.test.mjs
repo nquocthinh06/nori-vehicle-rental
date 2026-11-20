@@ -69,8 +69,20 @@ describe('NORI Database Migration & Schema Compatibility Regression Suite', () =
     const liveDbPath = path.resolve('nori.db')
 
     try {
-      // Create a pre-migration snapshot by copying live nori.db (which currently lacks payment_option)
+      // Create a pre-migration snapshot by copying live nori.db
       fs.copyFileSync(liveDbPath, upgradeDbPath)
+
+      // Ensure the test DB simulates legacy state by removing payment_option migration & columns
+      const dbSim = new DatabaseSync(upgradeDbPath)
+      try {
+        dbSim.exec("DELETE FROM payload_migrations WHERE name = '20261120_030000_booking_payment_option_plans'")
+        dbSim.exec('DROP INDEX IF EXISTS bookings_payment_option_idx')
+        dbSim.exec('ALTER TABLE bookings DROP COLUMN payment_option')
+        dbSim.exec('ALTER TABLE bookings DROP COLUMN reservation_deposit_snapshot')
+      } catch (dropErr) {
+        // Fallback for older SQLite versions if drop column is constrained
+      }
+      dbSim.close()
 
       // Verify it initially fails preflight due to missing payment_option
       const preCheck = checkDatabaseCompatibility({ dbPath: upgradeDbPath })
@@ -154,6 +166,20 @@ describe('NORI Database Migration & Schema Compatibility Regression Suite', () =
 
     try {
       fs.copyFileSync(liveDbPath, testDbPath)
+
+      // Simulate un-migrated state by removing the pending migration record and columns
+      const dbPrep = new DatabaseSync(testDbPath)
+      try {
+        dbPrep.exec("DELETE FROM payload_migrations WHERE name = '20261120_030000_booking_payment_option_plans'")
+      } catch {}
+      try {
+        dbPrep.exec('ALTER TABLE bookings DROP COLUMN payment_option')
+      } catch {}
+      try {
+        dbPrep.exec('ALTER TABLE bookings DROP COLUMN reservation_deposit_snapshot')
+      } catch {}
+      dbPrep.close()
+
       const res = checkDatabaseCompatibility({ dbPath: testDbPath })
       assert.equal(res.ok, false)
       assert.ok(res.pendingMigrations.includes('20261120_030000_booking_payment_option_plans'))

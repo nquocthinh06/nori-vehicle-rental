@@ -20,7 +20,6 @@ jobs:
 
     env:
       NODE_ENV: test
-      NODE_OPTIONS: --experimental-strip-types
       PAYLOAD_SECRET: ci-test-payload-secret-at-least-32-chars-long-for-testing
       NORI_SESSION_SECRET: ci-test-session-secret-at-least-32-chars-long-for-testing
       DATABASE_URI: file:./nori.db
@@ -52,9 +51,7 @@ jobs:
         run: pnpm lint
 
       - name: Initialize Database For Tests
-        run: |
-          pnpm db:migrate
-          pnpm data:import --skip-backup
+        run: node scripts/init-ci.mjs
 
       - name: Run Test Suite
         run: pnpm test
