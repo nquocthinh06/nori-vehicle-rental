@@ -33,6 +33,10 @@ async function buildCookieOptions(maxAge: number, request?: Request) {
       request?.headers.get('x-forwarded-proto') ?? reqHeaders.get('x-forwarded-proto'),
     originHeader: request?.headers.get('origin') ?? reqHeaders.get('origin'),
     refererHeader: request?.headers.get('referer') ?? reqHeaders.get('referer'),
+    cfVisitorHeader:
+      request?.headers.get('cf-visitor') ?? reqHeaders.get('cf-visitor'),
+    forwardedSsl:
+      request?.headers.get('x-forwarded-ssl') ?? reqHeaders.get('x-forwarded-ssl'),
     figmaPublicUrl: process.env.FIGMA_PUBLIC_URL ?? null,
     maxAge,
   })

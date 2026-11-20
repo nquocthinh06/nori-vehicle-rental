@@ -1,4 +1,5 @@
 import { restoreFromBackup } from '../src/lib/data-sync.ts'
+import { resolveMediaDir, resolveSqlitePath } from '../src/lib/env.ts'
 
 function parseArg(flag) {
   const idx = process.argv.indexOf(flag)
@@ -6,8 +7,8 @@ function parseArg(flag) {
 }
 
 const explicitSource = parseArg('--source')
-const explicitTarget = parseArg('--target')
-const explicitMedia = parseArg('--media')
+const explicitTarget = parseArg('--target') || resolveSqlitePath()
+const explicitMedia = parseArg('--media') || resolveMediaDir()
 
 try {
   const res = restoreFromBackup({

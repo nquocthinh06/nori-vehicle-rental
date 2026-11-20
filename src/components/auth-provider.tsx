@@ -86,8 +86,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
         return nextUser
       } catch {
+        // Transient network error, timeout, or abort during background focus/visibility sync
+        // must never wipe out an active customer session.
         if (seq === refreshSeqRef.current) {
-          setUser(null)
+          setUser((prev) => (prev ? prev : null))
         }
         return null
       } finally {

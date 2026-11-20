@@ -26,11 +26,22 @@ build/
 # Runtime sync state & Backups & Test Artifacts
 /data/runtime/
 /data/backups/
+/data/media/*
+!/data/media/seed/
 backups/
 test-results/
 playwright-report/
 playwright/.cache/
 coverage/
+
+# Cloudflare Tunnel credentials & tokens (Never commit to Git)
+tunnel-credentials.json
+*.pem
+cert.pem
+.cloudflared/
+deploy/cloudflare/*.json
+deploy/cloudflare/*.pem
+deploy/cloudflare/cert.pem
 
 # Logs & Diagnostics
 logs/

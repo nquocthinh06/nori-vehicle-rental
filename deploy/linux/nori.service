@@ -1,0 +1,27 @@
+[Unit]
+Description=NORI Vehicle Rental Production Server
+After=network.target
+
+[Service]
+Type=simple
+User=nori
+WorkingDirectory=/opt/nori/app
+Environment=NODE_ENV=production
+EnvironmentFile=/opt/nori/app/.env
+ExecStart=/usr/bin/node scripts/start-standalone.mjs
+Restart=always
+RestartSec=5s
+LimitNOFILE=65535
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=full
+PrivateTmp=true
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=nori-app
+
+[Install]
+WantedBy=multi-user.target

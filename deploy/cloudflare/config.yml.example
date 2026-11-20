@@ -1,0 +1,24 @@
+# Example Cloudflare Named Tunnel Configuration for NORI
+# Copy this file to config.yml (or ~/.cloudflared/config.yml)
+#
+# Replace:
+#   YOUR_TUNNEL_ID: The UUID of your tunnel generated via `cloudflared tunnel create nori-home`
+#   YOUR_CREDENTIALS_FILE: Absolute path to your tunnel JSON credentials file
+#   your-domain.example: Your registered domain or subdomain (e.g. nori.vn or car.nori.vn)
+
+tunnel: YOUR_TUNNEL_ID
+credentials-file: /path/to/YOUR_TUNNEL_ID.json
+
+# Ingress Rules
+# Traffic is routed securely from Cloudflare's global edge to your local NORI instance:
+ingress:
+  # 1. Main public hostname for NORI
+  - hostname: your-domain.example
+    service: http://127.0.0.1:3000
+    originRequest:
+      connectTimeout: 30s
+      noTLSVerify: false
+      httpHostHeader: your-domain.example
+
+  # 2. Catch-all rule (Required by cloudflared: rejects unrecognized hostnames with 404)
+  - service: http_status:404

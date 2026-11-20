@@ -1,5 +1,6 @@
 import 'server-only'
 import { APIError } from 'payload'
+import { extractClientIp } from './session-cookie'
 
 const NO_STORE_HEADERS = {
   'Cache-Control': 'private, no-store, no-cache, must-revalidate',
@@ -55,8 +56,7 @@ export function assertRateLimit(
   maxRequests = 40,
   windowMs = 60_000,
 ) {
-  const forwarded = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
-  const ip = forwarded || request.headers.get('x-real-ip')?.trim() || 'local'
+  const ip = extractClientIp(request.headers)
   const key = `${bucket}:${ip}`
   const now = Date.now()
   if (rateLimitBuckets.size > 5000) {
@@ -92,6 +92,8 @@ export function assertOrigin(request: Request) {
   if (!candidateOrigin) return
   const allowed = new Set<string>()
   for (const value of [
+    process.env.APP_URL,
+    process.env.NEXT_PUBLIC_APP_URL,
     process.env.NEXT_PUBLIC_SITE_URL,
     process.env.FIGMA_PUBLIC_URL,
     request.url,
@@ -100,9 +102,21 @@ export function assertOrigin(request: Request) {
     try {
       allowed.add(new URL(value).origin)
     } catch {
-      // ignore malformed env URL
+      // ignore invalid env URLs
     }
   }
+
+  const rawAllowedOrigins = process.env.ALLOWED_ORIGINS?.split(',') ?? []
+  for (const item of rawAllowedOrigins) {
+    const trimmed = item.trim()
+    if (!trimmed) continue
+    try {
+      allowed.add(new URL(trimmed).origin)
+    } catch {
+      // ignore invalid URLs
+    }
+  }
+
   const urlProto = new URL(request.url).protocol
   const rawForwardedProto = request.headers
     .get('x-forwarded-proto')
@@ -120,7 +134,23 @@ export function assertOrigin(request: Request) {
     allowed.add(`${urlProto}//${h}`)
     if (forwardedProto) allowed.add(`${forwardedProto}//${h}`)
   }
-  if (!allowed.has(candidateOrigin)) throw new APIError('Nguồn yêu cầu không hợp lệ.', 403)
+
+  // Also support cf-visitor header scheme matching
+  const cfVisitor = request.headers.get('cf-visitor')
+  if (cfVisitor) {
+    try {
+      const parsed = JSON.parse(cfVisitor)
+      if (parsed?.scheme === 'https' && candidateOrigin.startsWith('http://')) {
+        candidateOrigin = candidateOrigin.replace('http://', 'https://')
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  if (!allowed.has(candidateOrigin)) {
+    throw new APIError('Nguồn yêu cầu không được phép.', 403)
+  }
 }
 
 export function apiError(error: unknown) {

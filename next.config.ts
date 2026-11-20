@@ -19,6 +19,30 @@ const makePublicPreviewOrigin = (() => {
   }
 })()
 
+const configuredSiteOrigins = (() => {
+  const hosts = new Set<string>()
+  for (const candidate of [
+    process.env.APP_URL,
+    process.env.NEXT_PUBLIC_APP_URL,
+    process.env.NEXT_PUBLIC_SITE_URL,
+    ...(process.env.ALLOWED_ORIGINS?.split(',') ?? []),
+  ]) {
+    if (!candidate?.trim()) continue
+    try {
+      const parsed = new URL(candidate.trim())
+      if (parsed.host) {
+        hosts.add(parsed.host)
+        if (parsed.hostname && parsed.hostname !== parsed.host) {
+          hosts.add(parsed.hostname)
+        }
+      }
+    } catch {
+      // ignore invalid URL
+    }
+  }
+  return Array.from(hosts)
+})()
+
 const isDevMode = process.env.NODE_ENV !== 'production'
 const devPort = process.env.PORT?.trim() || '3000'
 const devLanHostnames = (() => {
@@ -28,29 +52,27 @@ const devLanHostnames = (() => {
   if (manualLanIp && isValidIPv4(manualLanIp) && manualLanIp !== '0.0.0.0') {
     hosts.add(manualLanIp)
   }
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL?.trim()
-  if (siteUrl) {
-    try {
-      const parsed = new URL(siteUrl)
-      if (parsed.hostname && parsed.hostname !== 'localhost') {
-        hosts.add(parsed.hostname)
-      }
-    } catch {
-      // ignore invalid NEXT_PUBLIC_SITE_URL
-    }
+  for (const siteOrigin of configuredSiteOrigins) {
+    hosts.add(siteOrigin)
   }
   return [...hosts]
 })()
 
 const devServerActionOrigins = devLanHostnames.flatMap((host) => [host, `${host}:${devPort}`])
 const allowedDevOrigins = [
-  ...new Set([makePublicPreviewOrigin, ...devLanHostnames].filter((v): v is string => Boolean(v))),
+  ...new Set(
+    [makePublicPreviewOrigin, ...configuredSiteOrigins, ...devLanHostnames].filter(
+      (v): v is string => Boolean(v),
+    ),
+  ),
 ]
 const serverActionAllowedOrigins = [
   ...new Set(
-    [makePublicPreviewOrigin, ...(isDevMode ? devServerActionOrigins : [])].filter(
-      (v): v is string => Boolean(v),
-    ),
+    [
+      makePublicPreviewOrigin,
+      ...configuredSiteOrigins,
+      ...(isDevMode ? devServerActionOrigins : []),
+    ].filter((v): v is string => Boolean(v)),
   ),
 ]
 

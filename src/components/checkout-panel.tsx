@@ -500,6 +500,18 @@ export function CheckoutPanel({ address }: { address: string | null }) {
     setCheckingPromoCode('')
     setConfirmedPromoCode('')
     setPromoFeedback({ tone: 'info', message: PROMO_REMOVED_MESSAGE })
+    if (activeDraftKey && typeof window !== 'undefined') {
+      try {
+        const raw = window.sessionStorage.getItem(activeDraftKey)
+        if (raw) {
+          const draft = JSON.parse(raw)
+          draft.confirmedPromoCode = ''
+          window.sessionStorage.setItem(activeDraftKey, JSON.stringify(draft))
+        }
+      } catch {
+        // ignore storage errors
+      }
+    }
     void requestQuote('')
   }
 
@@ -643,9 +655,19 @@ export function CheckoutPanel({ address }: { address: string | null }) {
       }
       const msg = (e as Error).message
       setError(msg)
-      // Refresh authoritative quote immediately if promo status, availability, or price changed on Backend
-      // while keeping the submission error visible to the customer.
-      void requestQuote(promoToSubmit ?? '', { preserveSubmitError: true })
+      const isPromoFailure =
+        msg.toLowerCase().includes('mã') ||
+        msg.toLowerCase().includes('khuyến mãi') ||
+        msg.toLowerCase().includes('ưu đãi') ||
+        msg.toLowerCase().includes('hết lượt')
+      if (isPromoFailure) {
+        // Clear failing promo so customer is never locked out from booking
+        setConfirmedPromoCode('')
+        setPromoFeedback({ tone: 'error', message: msg })
+        void requestQuote('', { preserveSubmitError: true })
+      } else {
+        void requestQuote(promoToSubmit ?? '', { preserveSubmitError: true })
+      }
     } finally {
       submittingRef.current = false
       setBusy(false)
@@ -1502,9 +1524,25 @@ export function CheckoutPanel({ address }: { address: string | null }) {
           }
         />
         {error && (
-          <Notice tone="error" className="my-4">
-            {error}
-          </Notice>
+          <div className="my-4 space-y-2">
+            <Notice tone="error">
+              {error}
+            </Notice>
+            {(confirmedPromoCode || trimmedDraft || error.toLowerCase().includes('mã') || error.toLowerCase().includes('khuyến mãi')) && (
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                className="w-full text-small"
+                onClick={() => {
+                  setError('')
+                  handleRemovePromo()
+                }}
+              >
+                Tiếp tục đặt xe không áp dụng mã ưu đãi
+              </Button>
+            )}
+          </div>
         )}
         <Button
           type="submit"

@@ -1,0 +1,22 @@
+[Unit]
+Description=Cloudflare Tunnel for NORI Vehicle Rental
+After=network.target nori.service
+
+[Service]
+Type=simple
+User=nori
+ExecStart=/usr/local/bin/cloudflared tunnel --config /opt/nori/app/deploy/cloudflare/config.yml run
+Restart=always
+RestartSec=5s
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=full
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=cloudflared-nori
+
+[Install]
+WantedBy=multi-user.target

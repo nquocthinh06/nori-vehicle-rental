@@ -37,6 +37,7 @@ import { VehicleTransfers } from './collections/VehicleTransfers'
 import { Warehouses } from './collections/Warehouses'
 import { NoriSite } from './globals/NoriSite'
 import { seedNoriIfEmpty } from './lib/seed-nori'
+import { resolveSqlitePath, toSqliteUri } from './lib/env'
 
 const filename = fileURLToPath(import.meta.url)
 const dirname = path.dirname(filename)
@@ -60,7 +61,10 @@ export default buildConfig({
     busyTimeout: 5000,
     transactionOptions: {},
     client: {
-      url: process.env.DATABASE_URI || 'file:./nori.db',
+      url:
+        process.env.DATABASE_URI ||
+        process.env.DATABASE_URL ||
+        toSqliteUri(resolveSqlitePath(path.resolve(dirname, '..'))),
     },
   }),
   editor: lexicalEditor(),

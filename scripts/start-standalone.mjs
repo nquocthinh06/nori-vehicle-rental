@@ -59,36 +59,74 @@ function resolveSqliteUriFromStandalone(rawUri, fallbackAbsPath) {
     const stripped = raw.startsWith('file:') ? raw.slice(5) : raw
     absPath = path.resolve(rootDir, stripped)
   }
+  // Check if same drive / root on Windows
+  const standaloneRoot = path.parse(standaloneDir).root.toLowerCase()
+  const targetRoot = path.parse(absPath).root.toLowerCase()
+  if (standaloneRoot !== targetRoot) {
+    return `file:${absPath.replace(/\\/g, '/')}`
+  }
+
   const relFromStandalone = path.relative(standaloneDir, absPath).replace(/\\/g, '/')
   return `file:${relFromStandalone.startsWith('.') ? relFromStandalone : `./${relFromStandalone}`}`
 }
 
+const explicitDbUri = process.env.DATABASE_URL?.trim() || process.env.DATABASE_URI?.trim()
+const explicitSqlitePath = process.env.NORI_SQLITE_PATH?.trim()
+const configuredDataDir = process.env.DATA_DIR?.trim() || process.env.NORI_DATA_DIR?.trim()
+
 const resolvedDbPath = path.resolve(
   rootDir,
-  process.env.NORI_SQLITE_PATH?.trim() ||
-    (process.env.DATABASE_URI?.startsWith('file:')
-      ? process.env.DATABASE_URI.slice(5)
-      : process.env.DATABASE_URI) ||
-    'nori.db',
+  explicitSqlitePath ||
+    (explicitDbUri?.startsWith('file:')
+      ? explicitDbUri.slice(5)
+      : explicitDbUri) ||
+    (configuredDataDir ? path.join(configuredDataDir, 'nori.db') : 'nori.db'),
 )
-const resolvedMediaDir = path.resolve(rootDir, process.env.NORI_MEDIA_DIR?.trim() || 'media')
+const resolvedMediaDir = path.resolve(
+  rootDir,
+  process.env.MEDIA_DIR?.trim() ||
+    process.env.NORI_MEDIA_DIR?.trim() ||
+    (configuredDataDir ? path.join(configuredDataDir, 'media') : 'media'),
+)
 const resolvedCacheDir = path.resolve(
   rootDir,
   process.env.NORI_IMAGE_CACHE_DIR?.trim() || path.join('.next', 'cache', 'nori-media-opt'),
 )
+const resolvedBackupDir = path.resolve(
+  rootDir,
+  process.env.BACKUP_DIR?.trim() ||
+    process.env.NORI_BACKUP_DIR?.trim() ||
+    (configuredDataDir ? path.join(configuredDataDir, 'backups') : 'backups'),
+)
+const resolvedLogDir = path.resolve(
+  rootDir,
+  process.env.LOG_DIR?.trim() ||
+    process.env.NORI_LOG_DIR?.trim() ||
+    (configuredDataDir ? path.join(configuredDataDir, 'logs') : 'logs'),
+)
+
+// Ensure storage directories exist
+for (const dir of [path.dirname(resolvedDbPath), resolvedMediaDir, resolvedCacheDir, resolvedBackupDir, resolvedLogDir]) {
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true })
+  }
+}
 
 const port = String(process.env.PORT || '3000')
-const hostname = String(process.env.HOSTNAME || '0.0.0.0')
+const hostname = String(process.env.HOST || process.env.HOSTNAME || '0.0.0.0')
 
 const childEnv = {
   ...process.env,
   NODE_ENV: 'production',
   PORT: port,
+  HOST: hostname,
   HOSTNAME: hostname,
-  DATABASE_URI: resolveSqliteUriFromStandalone(process.env.DATABASE_URI, resolvedDbPath),
+  DATABASE_URI: resolveSqliteUriFromStandalone(explicitDbUri, resolvedDbPath),
   NORI_SQLITE_PATH: resolvedDbPath,
   NORI_MEDIA_DIR: resolvedMediaDir,
   NORI_IMAGE_CACHE_DIR: resolvedCacheDir,
+  NORI_BACKUP_DIR: resolvedBackupDir,
+  NORI_LOG_DIR: resolvedLogDir,
 }
 
 // Preflight Database Compatibility Guard

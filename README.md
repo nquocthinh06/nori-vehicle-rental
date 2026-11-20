@@ -130,20 +130,13 @@ graph TD
    pnpm install
    ```
 
-3. **Thiết lập biến môi trường**:
-   Sao chép tệp mẫu `.env.example` thành `.env`:
-
+3. **Khởi tạo Cấu hình Tự động & Xác minh Môi trường**:
    ```bash
-   cp .env.example .env
-   ```
+   # Tự động sinh file .env bảo mật và tạo các thư mục data/, media/, backups/, logs/
+   pnpm setup
 
-   Chỉnh sửa tệp `.env` nếu cần thay đổi cổng hoặc secret:
-
-   ```env
-   DATABASE_URI=file:./nori.db
-   PAYLOAD_SECRET=your-secure-random-payload-secret-at-least-32-chars-long
-   NEXT_PUBLIC_SITE_URL=http://localhost:3000
-   PORT=3000
+   # Kiểm tra tính hợp lệ của toàn bộ biến môi trường
+   pnpm env:check
    ```
 
 4. **Khởi tạo Database, Đồng bộ Snapshot & Khởi chạy Dev Server**:
@@ -301,7 +294,30 @@ Quản trị viên cấp cao (`SUPER_ADMIN`) cũng có thể theo dõi trạng t
 
 ---
 
-## 11. Các giới hạn hiện tại
+## 11. Tự Lưu Trữ (Self-Hosting), Home Server & Cloudflare Tunnel
+
+Dự án đã được chuẩn hóa để triển khai trên một máy tính cá nhân (Windows 10/11 hoặc Ubuntu Linux) làm **Home Server** thay thế VPS, đưa website ra Internet qua **Cloudflare Tunnel** (No Port Forwarding, No Public Static IP, SSL tự động):
+
+```bash
+# 1. Khởi chạy Cloudflare Quick Tunnel (1-Click, dùng thử có ngay link HTTPS công khai)
+# Trên Windows:
+.\deploy\cloudflare\run-quick-tunnel.bat
+# Trên Linux:
+bash deploy/cloudflare/run-quick-tunnel.sh
+
+# 2. Cài đặt tự khởi chạy khi bật máy trên Windows Home Server (Task Scheduler)
+powershell -ExecutionPolicy Bypass -File .\deploy\windows\install-service.ps1
+
+# 3. Kịch bản cập nhật 1-click từ GitHub không mất dữ liệu (Backup -> Pull -> Migrate -> Build -> Restart)
+# Trên Windows:
+.\deploy\windows\update.ps1
+# Trên Linux:
+sudo bash deploy/linux/update.sh
+```
+
+---
+
+## 12. Các giới hạn hiện tại
 
 1. **Dữ liệu Xe Minh Họa & Chi Nhánh Thực Tế**: Toàn bộ 21 cá thể xe trong kho hiện được gắn nhãn `DEMO` (`isDemo: true`, `allocationStatus: 'UNALLOCATED'`) để phục vụ kiểm thử và không bịa đặt địa chỉ chi nhánh thật. Doanh nghiệp cần tạo chi nhánh/kho thực tế tại `/dashboard/branches` & `/dashboard/warehouses` và phân bổ phương tiện trước khi khai thác thương mại.
 2. **Cổng Thanh Toán Trực Tuyến (`SePay + VietQR`)**: Đã tích hợp hoàn chỉnh Payment Adapter Pattern, Webhook idempotency, đối soát và hoàn tiền trên môi trường `MOCK` (mặc định khóa `PRODUCTION`). Trước khi mở thanh toán tiền thật cần cấu hình credentials SePay Merchant thật, domain HTTPS công khai và bật `PAYMENT_PRODUCTION_APPROVED=true`.
@@ -310,10 +326,26 @@ Quản trị viên cấp cao (`SUPER_ADMIN`) cũng có thể theo dõi trạng t
 
 ---
 
-## 12. Danh mục tài liệu kỹ thuật liên quan
+## 13. Danh mục tài liệu kỹ thuật liên quan
 
 Hệ thống tài liệu đầy đủ của dự án được lưu trữ trong thư mục `docs/`:
 
+### Cẩm Nang Triển Khai Home Server & Production
+- [docs/PRODUCTION_READINESS_REPORT.md](docs/PRODUCTION_READINESS_REPORT.md) — **Báo cáo nghiệm thu sẵn sàng Production & Release Gates**.
+- [docs/SYSTEM_ARCHITECTURE.md](docs/SYSTEM_ARCHITECTURE.md) — Kiến trúc tổng thể, topo mạng, luồng xử lý qua Cloudflare Tunnel và SQLite WAL.
+- [docs/ENVIRONMENT_CONFIGURATION.md](docs/ENVIRONMENT_CONFIGURATION.md) — Từ điển biến môi trường chi tiết và hướng dẫn cấu hình các môi trường.
+- [docs/LOCAL_DEVELOPMENT.md](docs/LOCAL_DEVELOPMENT.md) — Hướng dẫn cài đặt & phát triển cho thành viên nhóm khi clone repo.
+- [docs/HOME_SERVER_WINDOWS.md](docs/HOME_SERVER_WINDOWS.md) — Cẩm nang triển khai Home Server trên Windows 10/11, chống ngủ, Task Scheduler.
+- [docs/HOME_SERVER_UBUNTU.md](docs/HOME_SERVER_UBUNTU.md) — Cẩm nang triển khai Home Server trên Ubuntu Linux, Systemd & UFW Firewall.
+- [docs/CLOUDFLARE_TUNNEL.md](docs/CLOUDFLARE_TUNNEL.md) — Hướng dẫn cấu hình Cloudflare Quick Tunnel & Named Tunnel với tên miền riêng.
+- [docs/PRODUCTION_DEPLOYMENT.md](docs/PRODUCTION_DEPLOYMENT.md) — Danh mục kiểm tra và quy trình nghiệm thu triển khai Production.
+- [docs/CI_CD_GUIDE.md](docs/CI_CD_GUIDE.md) — Quy trình CI trên GitHub Actions và kịch bản cập nhật CD 1-click.
+- [docs/BACKUP_RESTORE.md](docs/BACKUP_RESTORE.md) — Cẩm nang sao lưu nhất quán (VACUUM INTO) và quy trình khôi phục dữ liệu an toàn.
+- [docs/SERVER_MIGRATION.md](docs/SERVER_MIGRATION.md) — Hướng dẫn di chuyển hệ thống sang máy chủ khác hoặc lên VPS không mất dữ liệu.
+- [docs/SECURITY_CHECKLIST.md](docs/SECURITY_CHECKLIST.md) — Danh mục kiểm soát an ninh, WAF, rate limiting, bảo mật cookie và CSRF.
+- [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) — Sổ tay xử lý sự cố thường gặp (Database locks, Tunnel 502, Port conflicts).
+
+### Nghiệp Vụ Vận Hành, Đa Chi Nhánh & Kiểm Thử
 - [DESIGN.md](DESIGN.md) — Quy chuẩn Design System NORI, Semantic Tokens, Typography, Bảng màu và Components.
 - [SKILL.md](SKILL.md) — Kỹ năng triển khai & nguyên tắc xây dựng giao diện WCAG 2.2 AA.
 - [.agents/skills/nori-performance/SKILL.md](.agents/skills/nori-performance/SKILL.md) — Skill bắt buộc về hiệu năng, tối giản mã nguồn, tối ưu media và release gate.

@@ -153,7 +153,9 @@ export const Media: CollectionConfig = {
     createTagField({ relationTo: 'tags' }),
   ],
   upload: {
-    ...(process.env.NORI_MEDIA_DIR?.trim() ? { staticDir: process.env.NORI_MEDIA_DIR.trim() } : {}),
+    ...((process.env.MEDIA_DIR?.trim() || process.env.NORI_MEDIA_DIR?.trim())
+      ? { staticDir: (process.env.MEDIA_DIR || process.env.NORI_MEDIA_DIR)!.trim() }
+      : {}),
     handlers: [localMediaResizeHandler],
     modifyResponseHeaders: ({ headers }) => {
       headers.set(

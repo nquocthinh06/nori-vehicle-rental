@@ -1,0 +1,77 @@
+name: NORI CI Pipeline
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate-and-test:
+    name: Typecheck, Lint, Test & Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    env:
+      NODE_ENV: test
+      PAYLOAD_SECRET: ci-test-payload-secret-at-least-32-chars-long-for-testing
+      NORI_SESSION_SECRET: ci-test-session-secret-at-least-32-chars-long-for-testing
+      DATABASE_URI: file:./test-ci.db
+      PAYMENT_MODE: MOCK
+      PAYMENT_ENABLED: true
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+
+      - name: Get pnpm store directory
+        shell: bash
+        run: |
+          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
+
+      - name: Setup pnpm cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+
+      - name: Install Dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Validate Environment Config
+        run: pnpm env:check
+
+      - name: TypeScript Typecheck
+        run: pnpm typecheck
+
+      - name: Static Code Lint
+        run: pnpm lint
+
+      - name: Run Test Suite
+        run: pnpm test
+
+      - name: Verify Database Migrations Idempotency
+        run: pnpm db:check
+
+      - name: Production Build Check
+        run: pnpm build
+        env:
+          NODE_ENV: production

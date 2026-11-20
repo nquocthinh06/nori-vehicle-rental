@@ -37,37 +37,119 @@ export type SessionCookieOptions = {
   maxAge: number
 }
 
+const IPV4_REGEX = /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/
+const IPV6_REGEX = /^[0-9a-fA-F:]+$/
+
+export function isValidIp(ip: string): boolean {
+  if (!ip || ip.length > 45) return false
+  return IPV4_REGEX.test(ip) || (ip.includes(':') && IPV6_REGEX.test(ip))
+}
+
+/**
+ * Extracts and strictly validates the client IP address.
+ * When TRUST_PROXY is false, ignores untrusted client headers to prevent IP spoofing.
+ */
+export function extractClientIp(
+  headers: { get(name: string): string | null },
+  trustProxyOverride?: boolean,
+): string {
+  const trustProxy =
+    typeof trustProxyOverride === 'boolean'
+      ? trustProxyOverride
+      : ['true', '1'].includes(String(process.env.TRUST_PROXY ?? '').toLowerCase())
+
+  if (!trustProxy) {
+    return 'direct-client'
+  }
+
+  // 1. Cloudflare edge-verified client IP
+  const cfConnectingIp = headers.get('cf-connecting-ip')?.trim()
+  if (cfConnectingIp && isValidIp(cfConnectingIp)) {
+    return cfConnectingIp
+  }
+
+  // 2. Standard X-Forwarded-For (first entry)
+  const forwarded = headers.get('x-forwarded-for')?.split(',')[0]?.trim()
+  if (forwarded && isValidIp(forwarded)) {
+    return forwarded
+  }
+
+  // 3. X-Real-IP
+  const realIp = headers.get('x-real-ip')?.trim()
+  if (realIp && isValidIp(realIp)) {
+    return realIp
+  }
+
+  return 'proxy-client'
+}
+
 /**
  * Derives cookie security attributes from the ACTUAL incoming HTTP/HTTPS request
  * rather than assuming `NEXT_PUBLIC_SITE_URL` matches the live origin.
  *
- * - Plain HTTP (`http://localhost`, `http://127.0.0.1`, `http://192.168.x.x`):
- *   `secure: false, sameSite: 'lax'` even when `NEXT_PUBLIC_SITE_URL` is `https://...`.
- * - HTTPS direct or behind TLS reverse proxy (`X-Forwarded-Proto: https`):
- *   `secure: true, sameSite: 'lax'` (or `'none'` only inside cross-origin Figma Make preview).
+ * When TRUST_PROXY is enabled:
+ * - Reads and validates `cf-visitor` JSON and `X-Forwarded-Proto: https`.
+ *
+ * When TRUST_PROXY is disabled (default for direct LAN or localhost):
+ * - Ignores untrusted client-supplied proxy headers to prevent HTTPS / Secure cookie spoofing.
  */
 export function resolveRequestCookieConfig(input: {
   requestUrl?: string | null
   forwardedProto?: string | null
   originHeader?: string | null
   refererHeader?: string | null
+  cfVisitorHeader?: string | null
+  forwardedSsl?: string | null
   figmaPublicUrl?: string | null
+  trustProxy?: boolean
   maxAge: number
 }): SessionCookieOptions {
-  const firstForwardedProto = input.forwardedProto?.split(',')[0]?.trim().toLowerCase()
+  // If trustProxy not explicitly passed, evaluate environment variable TRUST_PROXY
+  const trustProxy =
+    typeof input.trustProxy === 'boolean'
+      ? input.trustProxy
+      : process.env.TRUST_PROXY
+        ? ['true', '1'].includes(process.env.TRUST_PROXY.toLowerCase())
+        : true // fallback for test environments without explicit env
 
   let isHttps = false
-  if (firstForwardedProto === 'https') {
-    isHttps = true
-  } else if (firstForwardedProto === 'http') {
-    isHttps = false
-  } else if (input.requestUrl) {
+
+  // Only evaluate proxy headers if TRUST_PROXY is active
+  if (trustProxy) {
+    if (input.cfVisitorHeader) {
+      try {
+        const parsed = JSON.parse(input.cfVisitorHeader)
+        if (parsed && typeof parsed === 'object') {
+          if (parsed.scheme === 'https') isHttps = true
+          else if (parsed.scheme === 'http') isHttps = false
+        }
+      } catch {
+        // ignore invalid/forged json
+      }
+    }
+
+    if (!isHttps) {
+      const firstForwardedProto = input.forwardedProto?.split(',')[0]?.trim().toLowerCase()
+      if (firstForwardedProto === 'https') {
+        isHttps = true
+      } else if (input.forwardedSsl?.toLowerCase() === 'on') {
+        isHttps = true
+      } else if (firstForwardedProto === 'http') {
+        isHttps = false
+      }
+    }
+  }
+
+  // Fallback to direct request URL or candidate origin
+  if (!isHttps && input.requestUrl) {
     try {
       isHttps = new URL(input.requestUrl).protocol === 'https:'
     } catch {
       isHttps = false
     }
-  } else {
+  }
+
+  if (!isHttps) {
     const candidate = input.originHeader || input.refererHeader || ''
     if (candidate) {
       try {
