@@ -91,19 +91,19 @@ graph TD
 
 ## 4. Công nghệ sử dụng
 
-| Lĩnh vực                | Công nghệ               | Phiên bản            | Vai trò                                                            |
-| :---------------------- | :---------------------- | :------------------- | :----------------------------------------------------------------- |
-| **Framework**           | Next.js                 | 16.4.6               | App Router, Turbopack, Standalone deployment                       |
-| **UI Library**          | React                   | 19.3.1               | Giao diện tương tác người dùng                                     |
-| **Styling**             | Tailwind CSS            | 4.0.0                | Hệ thống semantic tokens, CSS biến thể mới                         |
-| **Headless CMS**        | Payload CMS             | 4.0.0-beta.8         | Quản trị dữ liệu, phân quyền và API cốt lõi                        |
-| **Database**            | SQLite                  | 3.x                  | Lưu trữ dữ liệu quan hệ, transaction toàn vẹn                      |
-| **Database Adapter**    | `@payloadcms/db-sqlite` | 4.0.0-beta.8         | Kết nối SQLite & Drizzle ORM                                       |
-| **Runtime & Toolchain** | Node.js / pnpm          | >=24.22.1 / pnpm 10+ | Môi trường thực thi và quản lý gói phụ thuộc                       |
-| **Testing Engine**      | Node Test Runner        | Node.js built-in     | Thực thi 310 Unit, Integration, Payment, Multi-Branch & LAN tests  |
-| **E2E Testing**         | Playwright              | 1.65.1               | 106 kịch bản E2E cô lập DB + Media (Chromium, LAN & Mobile WebKit) |
-| **A11y Testing**        | Axe Core                | 4.14.0               | Kiểm tra chuẩn tiếp cận WCAG 2.2 AA                                |
-| **Linter & Formatter**  | oxfmt & Custom AST      | 0.73.0               | Chuẩn hóa định dạng và quét bảo mật tĩnh                           |
+| Lĩnh vực                | Công nghệ               | Phiên bản            | Vai trò                                                                      |
+| :---------------------- | :---------------------- | :------------------- | :--------------------------------------------------------------------------- |
+| **Framework**           | Next.js                 | 16.4.6               | App Router, Turbopack, Standalone deployment                                 |
+| **UI Library**          | React                   | 19.3.1               | Giao diện tương tác người dùng                                               |
+| **Styling**             | Tailwind CSS            | 4.0.0                | Hệ thống semantic tokens, CSS biến thể mới                                   |
+| **Headless CMS**        | Payload CMS             | 4.0.0-beta.8         | Quản trị dữ liệu, phân quyền và API cốt lõi                                  |
+| **Database**            | SQLite                  | 3.x                  | Lưu trữ dữ liệu quan hệ, transaction toàn vẹn                                |
+| **Database Adapter**    | `@payloadcms/db-sqlite` | 4.0.0-beta.8         | Kết nối SQLite & Drizzle ORM                                                 |
+| **Runtime & Toolchain** | Node.js / pnpm          | >=24.22.1 / pnpm 10+ | Môi trường thực thi và quản lý gói phụ thuộc                                 |
+| **Testing Engine**      | Node Test Runner        | Node.js built-in     | Thực thi 322 Unit, Integration, Payment, Multi-Branch, Migration & LAN tests |
+| **E2E Testing**         | Playwright              | 1.65.1               | 106 kịch bản E2E cô lập DB + Media (Chromium, LAN & Mobile WebKit)           |
+| **A11y Testing**        | Axe Core                | 4.14.0               | Kiểm tra chuẩn tiếp cận WCAG 2.2 AA                                          |
+| **Linter & Formatter**  | oxfmt & Custom AST      | 0.73.0               | Chuẩn hóa định dạng và quét bảo mật tĩnh                                     |
 
 ---
 
@@ -148,8 +148,11 @@ graph TD
 
 4. **Khởi tạo Database, Đồng bộ Snapshot & Khởi chạy Dev Server**:
    ```bash
+   # Kiểm tra trạng thái tương thích schema CSDL & pending migrations
+   pnpm db:check
+
    # Khởi tạo cấu trúc 109 bảng SQLite + composite indexes (lũy kế an toàn, không mất dữ liệu)
-   pnpm db:migrate
+   pnpm db:migrate:safe
 
    # Nhập bộ dữ liệu mẫu và hình ảnh mới nhất từ Snapshot
    pnpm data:import
@@ -157,7 +160,7 @@ graph TD
    # Khởi tạo tài khoản Admin cục bộ an toàn
    pnpm seed:admin -- --init-env
 
-   # Khởi chạy máy chủ phát triển (chỉ localhost)
+   # Khởi chạy máy chủ phát triển (chỉ localhost, tích hợp Preflight Guard)
    pnpm dev
 
    # Hoặc khởi chạy LAN Server cho phép điện thoại Android / iPhone / Laptop cùng Wi-Fi truy cập
@@ -204,7 +207,7 @@ pnpm seed:admin
 
 ## 8. Hướng dẫn kiểm thử (Testing Suite)
 
-Dự án thiết lập hệ thống kiểm thử tự động toàn diện với **417 Automated Tests** (**310** Unit, Integration, Payment Resilience, Multi-Branch & LAN Network + **1** Isolated Admin Test + **106** Playwright E2E trên DB & Media cô lập, **100% PASS**):
+Dự án thiết lập hệ thống kiểm thử tự động toàn diện với **429 Automated Tests** (**322** Unit, Integration, Payment Resilience, Multi-Branch, Migration Regression & LAN Network + **1** Isolated Admin Test + **106** Playwright E2E trên DB & Media cô lập, **100% PASS**):
 
 ```bash
 # 1. Kiểm tra định dạng mã nguồn
@@ -216,26 +219,29 @@ pnpm lint
 # 3. Kiểm tra kiểu dữ liệu TypeScript nghiêm ngặt
 pnpm typecheck
 
-# 4. Kiểm toán tính toàn vẹn Media & Snapshot
+# 4. Kiểm tra tương thích CSDL & Pending Migrations (Preflight Guard)
+pnpm db:check
+
+# 5. Kiểm toán tính toàn vẹn Media & Snapshot
 pnpm media:audit
 pnpm data:validate
 
-# 5. Chạy toàn bộ 310 Unit, Integration, Payment Resilience, Multi-Branch & LAN Network Tests
+# 6. Chạy toàn bộ 322 Unit, Integration, Payment Resilience, Multi-Branch, Migration & LAN Network Tests
 pnpm test
 
-# 6. Kiểm thử DB cô lập Admin
+# 7. Kiểm thử DB cô lập Admin
 pnpm test:admin
 
-# 7. Chạy toàn bộ 106 Playwright E2E Tests trên DB & Media cô lập (Bảo vệ 100% nori.db & media/)
+# 8. Chạy toàn bộ 106 Playwright E2E Tests trên DB & Media cô lập (Bảo vệ 100% nori.db & media/)
 pnpm test:e2e:isolated
 
-# 8. Chạy kiểm thử E2E qua địa chỉ LAN IPv4 thực tế trên DB & Media cô lập
+# 9. Chạy kiểm thử E2E qua địa chỉ LAN IPv4 thực tế trên DB & Media cô lập
 pnpm test:e2e:lan
 
-# 9. Chạy Load / Stress / SQLite WAL Write Concurrency Test (1–100 VUs, cô lập hoàn toàn)
+# 10. Chạy Load / Stress / SQLite WAL Write Concurrency Test (1–100 VUs, cô lập hoàn toàn)
 pnpm perf:load
 
-# 10. Chạy Benchmark Mở rộng Đa Chi Nhánh (10/50/100 CN, 100/1k/10k Xe, 10k/50k/100k Đơn — DB cô lập)
+# 11. Chạy Benchmark Mở rộng Đa Chi Nhánh (10/50/100 CN, 100/1k/10k Xe, 10k/50k/100k Đơn — DB cô lập)
 pnpm perf:multi-branch
 ```
 

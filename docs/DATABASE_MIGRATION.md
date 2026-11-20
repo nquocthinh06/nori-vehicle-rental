@@ -56,12 +56,44 @@ Migration `src/migrations/20261120_020000_multi_branch_management.ts` được t
 ## 3. Quy trình thực thi & Rollback an toàn
 
 ```bash
-# 1. Luôn sao lưu toàn bộ DB + media trước khi migrate
-pnpm db:backup
+# 1. Kiểm tra tính tương thích của SQLite Database và các migration đang chờ
+pnpm db:check
 
-# 2. Chạy migration additive-only (idempotent)
+# 2. Chạy migration an toàn (tự động tạo backup trước khi migrate)
+pnpm db:migrate:safe
+
+# 3. Hoặc chạy migration tiêu chuẩn qua data-sync
 pnpm db:migrate
 
-# 3. Nếu cần khôi phục về bản backup trước đó
+# 4. Nếu cần khôi phục về bản backup trước đó
 pnpm db:restore
 ```
+
+---
+
+## 4. Migration 20261120_030000: Kế hoạch thanh toán Bookings (`payment_option` & `reservation_deposit_snapshot`)
+
+### Ngữ cảnh & Nguyên nhân gốc (P0 Hotfix)
+
+Khi người dùng truy cập trang "Đơn thuê của tôi" (`/my-bookings`) hoặc gọi API `/nori-api/bookings` & `/nori-api/notifications` (truy vấn kèm depth liên kết đến booking), Payload CMS yêu cầu ánh xạ hai trường thuộc tính trong `src/collections/Bookings.ts`:
+
+- `paymentOption`: Kế hoạch thanh toán do khách hàng lựa chọn (`DEPOSIT` - Đặt cọc 30% giữ xe hoặc `FULL` - Thanh toán 100% tiền thuê).
+- `reservationDepositSnapshot`: Số tiền đặt cọc giữ xe 30% được đóng băng tại thời điểm tạo đơn.
+
+Nếu SQLite database chưa được nâng cấp, truy vấn ORM ném lỗi `SQLITE_ERROR: no such column: payment_option` và API trả về HTTP 503.
+
+### Cấu trúc thay đổi (Batch 4)
+
+- **File migration**: `src/migrations/20261120_030000_booking_payment_option_plans.ts`
+- **Tích hợp đồng bộ**: Hàm `applyAdditiveBookingPaymentOptionSchema()` trong `src/lib/data-sync.ts` và cập nhật `data/seed/schema.sql`.
+- **Cột bổ sung**:
+  - `bookings.payment_option`: Kiểu `text`, mặc định `'DEPOSIT'`, `NOT NULL`.
+  - `bookings.reservation_deposit_snapshot`: Kiểu `numeric`, mặc định `0`, `NOT NULL`.
+- **Index bổ sung**:
+  - `CREATE INDEX IF NOT EXISTS bookings_payment_option_idx ON bookings (payment_option);`
+- **Chiến lược Backfill an toàn & Bảo toàn nghiệp vụ**:
+  - Các đơn thuê cũ được backfill giá trị `payment_option = 'DEPOSIT'` và `reservation_deposit_snapshot = 0` (nếu null).
+  - Không thay đổi số tiền thực thu, không tự suy đoán thay đổi trạng thái thanh toán (`PAYMENT_STATUS`) của đơn cũ, không thay đổi số tiền ký quỹ tài sản.
+- **Tính lũy kế & Bất biến (Idempotent)**:
+  - Kiểm tra `PRAGMA table_info(bookings)` trước khi `ALTER TABLE ADD COLUMN`.
+  - Ghi nhận an toàn vào bảng `payload_migrations` với `batch = 4`. Rerun nhiều lần không gây lỗi trùng cột hay duplicate data.

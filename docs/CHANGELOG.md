@@ -1,5 +1,44 @@
 # NHẬT KÝ THAY ĐỔI VÀ NÂNG CẤP HỆ THỐNG NORI (CHANGELOG)
 
+## [Phiên bản 2.7.1] — 2026-11-20: Kiểm Toán Chuyên Sâu Nghiệp Vụ Thanh Toán, Nhất Quán Dữ Liệu User-Admin & Tối Ưu Hóa Responsive Đa Thiết Bị
+
+### 1. Chuẩn hóa Nghiệp vụ Thanh toán, Đặt cọc & Phân định Bản chất Dòng tiền
+
+- **Phân định rõ ràng bản chất 2 khoản tiền**: Tách bạch tuyệt đối **Doanh thu dịch vụ thuê xe** (Doanh thu kinh doanh) và **Ký quỹ bảo đảm tài sản xe** (Tài sản thế chấp giữ hộ, không phải doanh thu, hoàn trả 100% khi trả xe đạt chuẩn).
+- **Giải trình và khắc phục triệt để vụ việc bất thường Admin UI (13.010.000 ₫ vs 15.000.000 ₫)**: Dữ liệu thực tế đơn hàng xe VF 3 có tổng tiền thuê 13.010.000 ₫, khách đã thanh toán 100% tiền thuê qua 2 đợt (30% cọc giữ xe 3.903.000 ₫ + 70% còn lại 9.107.000 ₫). Khoản 15.000.000 ₫ là tiền ký quỹ bảo đảm tài sản được giữ khi nhận xe. Đã bổ sung khối "Phân định hạch toán tài chính chuẩn" trên Admin UI và phân định rõ ràng trên CSDL/Giao diện khách hàng.
+- **Kế hoạch thanh toán khách hàng linh hoạt (`paymentOption`)**: Bổ sung quyền lựa chọn tại Checkout giữa **A. Đặt cọc giữ xe 30%** (`DEPOSIT`) và **B. Thanh toán toàn bộ 100% tiền thuê** (`FULL`). Persist chuẩn hóa vào `bookings.paymentOption` và `bookings.reservationDepositSnapshot`.
+- **Chốt chặn kiểm soát tài chính (Gates)**:
+  - Pre-Handover Gate: Yêu cầu thu đủ tiền thuê theo kế hoạch và xác nhận ký quỹ trước khi giao xe (`ONGOING`).
+  - Post-Return Settlement Gate (`checkSettlementCompletionEligibility`): Bổ sung kiểm tra bắt buộc `totalRemainingRentalObligation === 0` ngăn hoàn tất đơn khi còn nợ tiền thuê gốc.
+- **Tự động xử lý bất thường dữ liệu lịch sử**: Hook `afterChange` tự động hủy (`CANCELLED`) các giao dịch thanh toán treo khi đơn bị từ chối (`REJECTED`) hoặc hủy (`CANCELLED`).
+
+### 2. Tối ưu hóa Giao diện Responsive & Trải nghiệm Đa Thiết Bị (Mobile-First)
+
+- **Hamburger Menu (Site Header)**: Tái thiết kế thành Drawer Container toàn màn hình độc lập (`fixed inset-0 z-50 flex flex-col bg-canvas`), bổ sung Top Bar riêng với Logo và nút Đóng (X) kích thước cảm ứng 44×44px, cuộn độc lập với đệm đáy Safe Area Inset `env(safe-area-inset-bottom)`, khóa cuộn nền (body scroll lock).
+- **Admin Account Dropdown (Dashboard Header)**: Triệt tiêu 100% lỗi tràn mép trái màn hình (Left-edge off-screen overflow) trên thiết bị di động (<640px) bằng việc chuyển đổi sang Bottom Sheet với backdrop làm mờ; touch targets cho đổi mật khẩu/về trang chủ/đăng xuất đạt chuẩn tối thiểu 44×44px.
+- **Ngăn chặn Safari Auto-Zoom**: Bổ sung CSS quy chuẩn `font-size: 16px !important` cho toàn bộ input/select/textarea trên màn hình di động (<640px).
+- **Triệt tiêu Layout Blowout**: Cấu hình `overflow-x: hidden` và `max-width: 100vw` trên `html, body`; kích hoạt cuộn mượt mà có quán tính `-webkit-overflow-scrolling: touch` cho toàn bộ bảng biểu dữ liệu.
+
+### 3. Kiểm thử Tự động Chuyên sâu & Bộ Tài liệu Quy chuẩn Mới
+
+- **Bổ sung test suite nghiệp vụ thanh toán**: `tests/payment-business-audit.test.mjs` kiểm tra 5 kịch bản trọng yếu (Case 13M vs 15M, Kế hoạch cọc 30% vs 100%, Phân định thế chấp, Bất biến máy trạng thái, Chốt chặn giao xe và nghiệm thu). Toàn bộ 5/5 test pass 100%.
+- **Biên soạn tài liệu mới**:
+  - `docs/PAYMENT_BUSINESS_RULES.md`: Quy chuẩn nghiệp vụ thanh toán, đặt cọc và quyết toán tài chính.
+  - `docs/PAYMENT_STATE_MACHINE.md`: Cập nhật 4 máy trạng thái trực giao và ma trận chốt chặn tài chính.
+  - `docs/RESPONSIVE_AUDIT.md`: Báo cáo kiểm toán và khắc phục responsive đa thiết bị.
+
+### 4. Khắc phục Triệt để Sự cố Schema Mismatch P0, Nâng cấp Migration Hợp nhất & Startup Preflight Guard
+
+- **Sự cố P0 Release Blocker**: Truy cập 'Đơn thuê của tôi' trên LAN/Mobile gặp lỗi `SQLITE_ERROR: no such column: payment_option` (503) do thuộc tính mới thêm vào schema `Bookings` chưa được áp dụng migration tương ứng trên SQLite `nori.db`.
+- **Database Migration 20261120_030000**: Tạo migration chính thức `src/migrations/20261120_030000_booking_payment_option_plans.ts` (Batch 4), bổ sung cột `payment_option` (VARCHAR(32), default 'DEPOSIT') và `reservation_deposit_snapshot` (NUMERIC, default 0), tạo index `bookings_payment_option_idx`.
+- **Chiến lược Backfill an toàn**: Gán `payment_option = 'DEPOSIT'` và `reservation_deposit_snapshot = 0` cho các đơn thuê cũ, không ghi đè hay thay đổi bất kỳ trạng thái thanh toán hoặc số tiền nào.
+- **Hệ thống Database Preflight & Startup Guard**: Tích hợp `checkDatabaseCompatibility()` vào `pnpm dev`, `pnpm dev:lan`, `pnpm start:standalone` và test runner `scripts/run-e2e-isolated.mjs`. Ngăn chặn tức thì việc khởi động server nếu CSDL thiếu bảng, thiếu cột hoặc còn pending migration.
+- **Gia cố API Health Readiness**: Nâng cấp `/nori-api/health` thực hiện truy vấn đồng thời cả `vehicles` và `bookings`. Trả về 503 `NOT_READY` nếu schema CSDL bị lỗi hoặc không khớp.
+- **Gia cố Error Handling & Logging**: Cập nhật `src/lib/api-utils.ts` phân định `DATABASE_ERROR` (503) kèm Request Trace ID (`req-<id>`), bảo vệ tuyệt đối không rò rỉ câu lệnh SQL hay schema nội bộ ra phía client.
+- **Bộ Kiểm thử Hồi quy Migration (`tests/db-migration-regression.test.mjs`)**: 7 nhóm kiểm thử chuyên sâu (Fresh DB, Existing Upgrade, Pending Migration, Schema Drift, Rerun Idempotency, Disaster Recovery, Data Preservation) - 7/7 PASS (100%).
+
+---
+
 ## [Phiên bản 2.7.0] — 2026-11-20: Module 3.7 — Quản Lý Đa Chi Nhánh, Kho Xe, Điểm Giao Nhận, Điều Chuyển Nguyên Tử, Giao Nhận Tận Nơi & Định Giá Địa Điểm
 
 ### 1. Kiến trúc Đa Chi Nhánh & Schema Additive-Only (`src/collections/*`, `src/migrations/20261120_020000_multi_branch_management.ts`)

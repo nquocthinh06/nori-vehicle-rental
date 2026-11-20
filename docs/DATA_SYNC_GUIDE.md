@@ -8,9 +8,14 @@ Dự án tiếp tục giữ nguyên cơ chế đồng bộ không commit `nori.d
 - **Schema & Migration đi theo mã nguồn Git**: Khi thành viên khác `git pull`, chỉ cần chạy:
   ```bash
   pnpm install
-  pnpm db:migrate
+  pnpm db:check     # Kiểm tra trạng thái schema & pending migrations
+  pnpm db:migrate:safe # Tự động sao lưu và chạy migration an toàn
   ```
-  `runDatabaseMigration()` trong `src/lib/data-sync.ts` tự động áp dụng cả migration thanh toán (`20261120_010000`) và migration đa chi nhánh (`20261120_020000`) lên DB cục bộ mà không mất bất kỳ bản ghi cũ nào.
+  `runDatabaseMigration()` trong `src/lib/data-sync.ts` và `src/migrations/index.ts` tự động áp dụng các migration:
+  - `20261120_010000_vietqr_sepay_payment` (Batch 2)
+  - `20261120_020000_multi_branch_management` (Batch 3)
+  - `20261120_030000_booking_payment_option_plans` (Batch 4)
+    lên DB cục bộ mà không làm mất hoặc ghi đè bất kỳ bản ghi cũ nào. Cơ chế Database Preflight Guard trong `scripts/start-dev.mjs`, `scripts/start-lan.mjs` và `scripts/start-standalone.mjs` sẽ chủ động chặn khởi động nếu phát hiện database còn thiếu migration hoặc thiếu cột bắt buộc.
 
 ---
 

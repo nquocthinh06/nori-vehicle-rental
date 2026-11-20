@@ -160,3 +160,47 @@ Cách giải quyết:
 - Cơ sở dữ liệu runtime (`nori.db`, `*.db`, `*.db-wal`, `*.db-shm`, `*.sqlite`).
 - Thư mục ảnh runtime chưa qua kiểm duyệt (`media/*` ngoài `media/seed/`).
 - Thư mục sao lưu (`backups/`, `data/backups/`, `data/runtime/`).
+
+---
+
+## 7. Quy trình Phát triển & Bổ sung Trường / Collection Mới (Chống lỗi Schema Mismatch P0)
+
+Khi phát triển tính năng mới yêu cầu thêm trường dữ liệu hoặc collection vào Payload CMS (như trường hợp `paymentOption` trong Bookings), các thành viên bắt buộc tuân thủ 6 bước chuẩn hóa sau:
+
+### Bước 1: Khai báo Field trong Collection
+
+Khai báo trường trong `src/collections/{Collection}.ts`. Chỉ định rõ `type`, `defaultValue`, `required` (nếu có).
+
+### Bước 2: Tạo Payload Migration File
+
+Tạo file migration trong thư mục `src/migrations/YYYYMMDD_HHMMSS_{tên_migration}.ts`:
+
+- Hàm `up`: Sử dụng `PRAGMA table_info` kiểm tra cột trước khi `ALTER TABLE ... ADD COLUMN ...`.
+- Có chiến lược **backfill an toàn**: Gán giá trị mặc định cho các bản ghi cũ mà không thay đổi nghiệp vụ, không thay đổi số tiền hoặc trạng thái giao dịch.
+- Tạo index tương ứng nếu cột được dùng cho mệnh đề `WHERE` hoặc `ORDER BY`.
+- Hàm `down`: Hỗ trợ rollback nếu cần.
+
+### Bước 3: Đăng ký Migration vào Index
+
+Khai báo và export migration trong `src/migrations/index.ts`.
+
+### Bước 4: Đồng bộ Khởi tạo Máy mới & Additive Helper
+
+- Cập nhật file `data/seed/schema.sql` để thành viên mới clone dự án khởi tạo DB có ngay cột mới.
+- Cập nhật hàm additive tương ứng trong `src/lib/data-sync.ts` và ghi nhận batch migration vào bảng `payload_migrations`.
+
+### Bước 5: Chạy Migration An Toàn & Kiểm Tra Preflight
+
+```bash
+pnpm db:check        # Kiểm tra tính tương thích và phát hiện pending migrations
+pnpm db:migrate:safe # Tự động tạo bản backup DB trước khi áp dụng migration
+```
+
+### Bước 6: Chạy Bộ Kiểm thử Hồi quy Migration
+
+```bash
+node --test tests/db-migration-regression.test.mjs
+pnpm test
+```
+
+> **Cơ chế Bảo vệ Startup (Preflight Guards)**: Mọi lệnh khởi động (`pnpm dev`, `pnpm dev:lan`, `pnpm start:standalone`, `scripts/run-e2e-isolated.mjs`) đều tích hợp `checkDatabaseCompatibility()`. Nếu mã nguồn yêu cầu cột mới nhưng database chưa chạy migration, máy chủ sẽ lập tức từ chối khởi động và hiển thị hướng dẫn khắc phục cụ thể, tuyệt đối không âm thầm nuốt lỗi để dẫn đến sự cố 503 trên máy người dùng.
