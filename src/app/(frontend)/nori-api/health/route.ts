@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import fs from 'node:fs'
+import { getCloudStorageConfig, isCloudStorageConfigured } from '@/lib/cloud-storage'
 import { getPayloadClient } from '@/lib/payload'
 import { resolveMediaDir } from '@/lib/env'
 
@@ -52,17 +53,25 @@ export async function GET(request: Request) {
       payload.find({ collection: 'bookings', overrideAccess: true, depth: 0, limit: 1 }),
     ])
 
-    // Check media storage availability
-    const mediaDir = resolveMediaDir()
+    // Check media storage availability (cloud storage on serverless vs writable local disk)
+    const cloudConfig = getCloudStorageConfig()
     let mediaStatus = 'accessible'
-    try {
-      if (!fs.existsSync(mediaDir)) {
-        fs.mkdirSync(mediaDir, { recursive: true })
-      }
-      fs.accessSync(mediaDir, fs.constants.R_OK | fs.constants.W_OK)
-    } catch {
+    if (isCloudStorageConfigured() && cloudConfig) {
+      mediaStatus = `cloud:${cloudConfig.provider.toLowerCase()}`
+    } else if (process.env.VERCEL === '1' || Boolean(process.env.VERCEL_ENV)) {
       mediaStatus = 'degraded'
+    } else {
+      const mediaDir = resolveMediaDir()
+      try {
+        if (!fs.existsSync(mediaDir)) {
+          fs.mkdirSync(mediaDir, { recursive: true })
+        }
+        fs.accessSync(mediaDir, fs.constants.R_OK | fs.constants.W_OK)
+      } catch {
+        mediaStatus = 'degraded'
+      }
     }
+    const isMediaReady = mediaStatus !== 'degraded'
 
     const mem = process.memoryUsage()
     const memUsageMb = {
@@ -77,7 +86,7 @@ export async function GET(request: Request) {
           status: 'ok',
           db: 'connected',
           mediaStorage: mediaStatus,
-          readiness: mediaStatus === 'accessible' ? 'READY' : 'DEGRADED_STORAGE',
+          readiness: isMediaReady ? 'READY' : 'DEGRADED_STORAGE',
           vehiclesCount: vehiclesCheck.totalDocs,
           bookingsCount: bookingsCheck.totalDocs,
           memoryMb: memUsageMb,
@@ -96,7 +105,7 @@ export async function GET(request: Request) {
       {
         status: 'ok',
         db: 'connected',
-        readiness: mediaStatus === 'accessible' ? 'READY' : 'DEGRADED_STORAGE',
+        readiness: isMediaReady ? 'READY' : 'DEGRADED_STORAGE',
         uptimeSeconds: Math.round(process.uptime()),
         timestamp: new Date().toISOString(),
       },

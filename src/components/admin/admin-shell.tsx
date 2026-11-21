@@ -1,6 +1,7 @@
 'use client'
 
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { usePathname, useRouter } from 'next/navigation'
 import {
   DEFAULT_OPERATOR_PERMISSIONS,
@@ -250,6 +251,19 @@ export function AdminShell({ children }: { children: ReactNode }) {
   const [pwdOpen, setPwdOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [notif, setNotif] = useState<NotificationSummary | null>(null)
+  const [notifLoading, setNotifLoading] = useState(false)
+  const [notifError, setNotifError] = useState('')
+  const [portalReady, setPortalReady] = useState(false)
+  const [isMobileViewport, setIsMobileViewport] = useState(false)
+  const [popoverCoords, setPopoverCoords] = useState<{
+    top: number
+    right: number
+    maxHeight: number
+  }>({
+    top: 68,
+    right: 16,
+    maxHeight: 420,
+  })
 
   const [currentPassword, setCurrentPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
@@ -258,7 +272,33 @@ export function AdminShell({ children }: { children: ReactNode }) {
   const [pwdBusy, setPwdBusy] = useState(false)
 
   const notifRef = useRef<HTMLDivElement>(null)
+  const notifBtnRef = useRef<HTMLButtonElement>(null)
+  const notifPanelRef = useRef<HTMLDivElement>(null)
+  const notifCloseBtnRef = useRef<HTMLButtonElement>(null)
   const accountRef = useRef<HTMLDivElement>(null)
+  const accountPanelRef = useRef<HTMLDivElement>(null)
+  const wasNotifOpenRef = useRef(false)
+
+  useEffect(() => {
+    setPortalReady(true)
+    const mq = window.matchMedia('(max-width: 767px)')
+    const syncViewport = () => setIsMobileViewport(mq.matches)
+    syncViewport()
+    mq.addEventListener('change', syncViewport)
+    return () => mq.removeEventListener('change', syncViewport)
+  }, [])
+
+  const updatePopoverCoords = useCallback(() => {
+    const btn = notifBtnRef.current
+    if (!btn) return
+    const rect = btn.getBoundingClientRect()
+    const vw = window.innerWidth
+    const vh = window.innerHeight
+    const top = Math.min(Math.max(12, rect.bottom + 8), Math.max(12, vh - 220))
+    const right = Math.min(Math.max(16, vw - rect.right), Math.max(16, vw - 300))
+    const maxHeight = Math.max(200, Math.min(440, vh - top - 16))
+    setPopoverCoords({ top, right, maxHeight })
+  }, [])
 
   useEffect(() => {
     setMobileOpen(false)
@@ -267,9 +307,66 @@ export function AdminShell({ children }: { children: ReactNode }) {
   }, [pathname])
 
   useEffect(() => {
+    if (!notifOpen) {
+      if (wasNotifOpenRef.current) {
+        wasNotifOpenRef.current = false
+        if (!accountOpen && !mobileOpen && !pwdOpen) {
+          notifBtnRef.current?.focus()
+        }
+      }
+      return
+    }
+
+    wasNotifOpenRef.current = true
+    if (!isMobileViewport) {
+      updatePopoverCoords()
+    }
+    const rafId = window.requestAnimationFrame(() => {
+      if (notifCloseBtnRef.current) {
+        notifCloseBtnRef.current.focus()
+      } else {
+        notifPanelRef.current?.focus()
+      }
+    })
+
+    const onViewportChange = () => {
+      if (!isMobileViewport) updatePopoverCoords()
+    }
+    window.addEventListener('resize', onViewportChange)
+    window.addEventListener('scroll', onViewportChange, true)
+    return () => {
+      window.cancelAnimationFrame(rafId)
+      window.removeEventListener('resize', onViewportChange)
+      window.removeEventListener('scroll', onViewportChange, true)
+    }
+  }, [notifOpen, isMobileViewport, updatePopoverCoords, accountOpen, mobileOpen, pwdOpen])
+
+  useEffect(() => {
+    if (!(mobileOpen || (isMobileViewport && (notifOpen || accountOpen)))) return
+    const prevOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.body.style.overflow = prevOverflow
+    }
+  }, [mobileOpen, isMobileViewport, notifOpen, accountOpen])
+
+  useEffect(() => {
     function onPointerDown(e: PointerEvent) {
-      if (!notifRef.current?.contains(e.target as Node)) setNotifOpen(false)
-      if (!accountRef.current?.contains(e.target as Node)) setAccountOpen(false)
+      const target = e.target as Node
+      if (
+        notifOpen &&
+        !notifRef.current?.contains(target) &&
+        !notifPanelRef.current?.contains(target)
+      ) {
+        setNotifOpen(false)
+      }
+      if (
+        accountOpen &&
+        !accountRef.current?.contains(target) &&
+        !accountPanelRef.current?.contains(target)
+      ) {
+        setAccountOpen(false)
+      }
     }
     function onKeyDown(e: KeyboardEvent) {
       if (e.key === 'Escape') {
@@ -284,34 +381,51 @@ export function AdminShell({ children }: { children: ReactNode }) {
       document.removeEventListener('pointerdown', onPointerDown)
       document.removeEventListener('keydown', onKeyDown)
     }
-  }, [])
+  }, [notifOpen, accountOpen])
+
+  const loadNotifications = useCallback(
+    (signal?: AbortSignal) => {
+      if (!user?.isAdmin) return
+      setNotifLoading(true)
+      setNotifError('')
+      api<{
+        statuses?: Record<string, number>
+        fleetStats?: { byOperationStatus?: Record<string, number>; expiredDepositCount?: number }
+        newInquiriesCount?: number
+        inquiries?: { status: string }[]
+      }>('/dashboard?summaryOnly=1', { signal, timeoutMs: 10_000 })
+        .then((res) => {
+          if (signal?.aborted) return
+          setNotif({
+            pendingBookings: res.statuses?.PENDING ?? 0,
+            expiredDeposits: res.fleetStats?.expiredDepositCount ?? 0,
+            newInquiries:
+              typeof res.newInquiriesCount === 'number'
+                ? res.newInquiriesCount
+                : (res.inquiries ?? []).filter((i) => i.status === 'NEW').length,
+            maintenanceVehicles: res.fleetStats?.byOperationStatus?.MAINTENANCE ?? 0,
+          })
+          setNotifError('')
+        })
+        .catch((err) => {
+          if (signal?.aborted) return
+          setNotifError((err as Error)?.message || 'Không thể tải danh sách thông báo vận hành.')
+        })
+        .finally(() => {
+          if (!signal?.aborted) setNotifLoading(false)
+        })
+    },
+    [user?.isAdmin],
+  )
 
   useEffect(() => {
     if (!user?.isAdmin) return
     const controller = new AbortController()
-    api<{
-      statuses?: Record<string, number>
-      fleetStats?: { byOperationStatus?: Record<string, number>; expiredDepositCount?: number }
-      newInquiriesCount?: number
-      inquiries?: { status: string }[]
-    }>('/dashboard?summaryOnly=1', { signal: controller.signal, timeoutMs: 10_000 })
-      .then((res) => {
-        if (controller.signal.aborted) return
-        setNotif({
-          pendingBookings: res.statuses?.PENDING ?? 0,
-          expiredDeposits: res.fleetStats?.expiredDepositCount ?? 0,
-          newInquiries:
-            typeof res.newInquiriesCount === 'number'
-              ? res.newInquiriesCount
-              : (res.inquiries ?? []).filter((i) => i.status === 'NEW').length,
-          maintenanceVehicles: res.fleetStats?.byOperationStatus?.MAINTENANCE ?? 0,
-        })
-      })
-      .catch(() => {})
+    loadNotifications(controller.signal)
     return () => {
       controller.abort()
     }
-  }, [user?.isAdmin, pathname])
+  }, [user?.isAdmin, pathname, loadNotifications])
 
   async function handleLogout() {
     await logout()
@@ -565,20 +679,24 @@ export function AdminShell({ children }: { children: ReactNode }) {
       {/* Main Column */}
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="sticky top-0 z-30 border-b border-line bg-canvas/95 backdrop-blur-sm">
-          <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 md:px-6">
-            <div className="flex min-w-0 items-center gap-3">
+          <div className="flex items-center justify-between gap-2 px-3 py-2.5 sm:gap-3 sm:px-4 sm:py-3 md:px-6">
+            <div className="flex min-w-0 flex-1 items-center gap-2.5 sm:gap-3">
               <button
                 type="button"
-                onClick={() => setMobileOpen(true)}
+                onClick={() => {
+                  setNotifOpen(false)
+                  setAccountOpen(false)
+                  setMobileOpen(true)
+                }}
                 aria-label="Mở menu quản trị"
-                className="inline-flex size-touch items-center justify-center rounded-control border border-line bg-canvas text-ink hover:border-brand lg:hidden"
+                className="inline-flex size-touch shrink-0 items-center justify-center rounded-control border border-line bg-canvas text-ink hover:border-brand lg:hidden"
               >
                 <Icon name="menu" className="size-5" />
               </button>
-              <div className="min-w-0">
+              <div className="min-w-0 flex-1">
                 <nav
                   aria-label="Breadcrumb"
-                  className="flex items-center gap-1.5 text-caption text-muted"
+                  className="hidden flex-wrap items-center gap-1.5 text-caption text-muted sm:flex"
                 >
                   <NoriLink href="/dashboard" className="hover:text-brand">
                     Quản trị hệ thống
@@ -588,11 +706,13 @@ export function AdminShell({ children }: { children: ReactNode }) {
                   <span aria-hidden="true">/</span>
                   <span className="font-medium text-ink">{activeNav.label}</span>
                 </nav>
-                <p className="truncate text-subtitle font-semibold text-ink">{activeNav.label}</p>
+                <p className="truncate text-body font-semibold text-ink sm:text-subtitle">
+                  {activeNav.label}
+                </p>
               </div>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2.5">
+            <div className="flex shrink-0 items-center gap-2 sm:gap-2.5">
               <form onSubmit={handleQuickSearch} className="hidden md:block">
                 <div className="relative">
                   <Icon
@@ -605,16 +725,23 @@ export function AdminShell({ children }: { children: ReactNode }) {
                     onChange={(e) => setSearchQuery(e.target.value)}
                     placeholder="Tìm mã đơn, mã xe..."
                     aria-label="Tìm nhanh mã đơn hoặc mã xe"
-                    className="h-10 w-56 rounded-control border border-line bg-subtle pl-9 pr-3 text-small text-ink placeholder:text-muted focus:border-brand focus:bg-canvas focus:outline-none"
+                    className="h-10 w-44 rounded-control border border-line bg-subtle pl-9 pr-3 text-small text-ink placeholder:text-muted focus:border-brand focus:bg-canvas focus:outline-none lg:w-56"
                   />
                 </div>
               </form>
 
               <div ref={notifRef} className="relative">
                 <button
+                  ref={notifBtnRef}
                   type="button"
-                  onClick={() => setNotifOpen((v) => !v)}
+                  onClick={() => {
+                    setAccountOpen(false)
+                    setMobileOpen(false)
+                    setNotifOpen((v) => !v)
+                  }}
                   aria-expanded={notifOpen}
+                  aria-haspopup="dialog"
+                  aria-controls="admin-notification-panel"
                   aria-label="Thông báo vận hành"
                   className="relative inline-flex size-touch items-center justify-center rounded-control border border-line bg-canvas text-ink hover:border-brand hover:text-brand"
                 >
@@ -625,213 +752,93 @@ export function AdminShell({ children }: { children: ReactNode }) {
                     </span>
                   )}
                 </button>
-                {notifOpen && (
-                  <div className="absolute right-0 mt-2 w-80 max-w-[calc(100vw-2rem)] rounded-card border border-line bg-canvas p-4 shadow-float z-40">
-                    <Text className="mb-3 text-small font-semibold text-ink">
-                      Việc cần xử lý ngay
-                    </Text>
-                    <div className="space-y-2 text-small">
-                      {canBookings && (
-                        <>
-                          <NoriLink
-                            href="/dashboard/bookings?status=PENDING"
-                            className="flex items-center justify-between rounded-control bg-subtle px-3 py-2 hover:bg-brand-soft"
-                          >
-                            <span>Đơn thuê chờ xác nhận</span>
-                            <Badge tone={notif?.pendingBookings ? 'warning' : 'muted'}>
-                              {notif?.pendingBookings ?? 0}
-                            </Badge>
-                          </NoriLink>
-                          <NoriLink
-                            href="/dashboard/bookings?status=DEPOSIT_PENDING"
-                            className="flex items-center justify-between rounded-control bg-subtle px-3 py-2 hover:bg-brand-soft"
-                          >
-                            <span>Đơn quá hạn đặt cọc (&gt;24h)</span>
-                            <Badge tone={notif?.expiredDeposits ? 'danger' : 'muted'}>
-                              {notif?.expiredDeposits ?? 0}
-                            </Badge>
-                          </NoriLink>
-                        </>
-                      )}
-                      {canInquiries && (
-                        <NoriLink
-                          href="/dashboard/inquiries?status=NEW"
-                          className="flex items-center justify-between rounded-control bg-subtle px-3 py-2 hover:bg-brand-soft"
-                        >
-                          <span>Yêu cầu mua xe mới</span>
-                          <Badge tone={notif?.newInquiries ? 'brand' : 'muted'}>
-                            {notif?.newInquiries ?? 0}
-                          </Badge>
-                        </NoriLink>
-                      )}
-                      {canVehicles && (
-                        <NoriLink
-                          href="/dashboard/vehicles?operationStatus=MAINTENANCE"
-                          className="flex items-center justify-between rounded-control bg-subtle px-3 py-2 hover:bg-brand-soft"
-                        >
-                          <span>Xe đang bảo dưỡng</span>
-                          <Badge tone="muted">{notif?.maintenanceVehicles ?? 0}</Badge>
-                        </NoriLink>
-                      )}
-                      {!canBookings && !canInquiries && !canVehicles && (
-                        <Text className="text-caption text-muted">
-                          Không có cảnh báo thuộc phạm vi quyền hiện tại.
-                        </Text>
-                      )}
-                    </div>
-                  </div>
-                )}
               </div>
 
               <div ref={accountRef} className="relative">
                 <button
                   type="button"
-                  onClick={() => setAccountOpen((v) => !v)}
+                  onClick={() => {
+                    setNotifOpen(false)
+                    setMobileOpen(false)
+                    setAccountOpen((v) => !v)
+                  }}
                   aria-expanded={accountOpen}
-                  className="flex min-h-touch items-center gap-2.5 rounded-control border border-line bg-canvas px-3 py-1.5 text-left hover:border-brand"
+                  aria-haspopup="dialog"
+                  aria-label="Menu tài khoản quản trị"
+                  className="flex min-h-touch items-center gap-2 rounded-control border border-line bg-canvas px-2.5 py-1.5 text-left hover:border-brand sm:gap-2.5 sm:px-3"
                 >
-                  <span className="flex size-8 items-center justify-center rounded-pill bg-brand text-caption font-bold text-inverse">
+                  <span className="flex size-8 shrink-0 items-center justify-center rounded-pill bg-brand text-caption font-bold text-inverse">
                     {initials}
                   </span>
-                  <span className="hidden sm:block">
+                  <span className="hidden md:block">
                     <span className="block text-small font-semibold leading-tight text-ink">
                       {user.fullName}
                     </span>
                     <span className="block text-micro text-muted">Quản trị: {user.email}</span>
                   </span>
-                  <Icon name="chevron-down" className="size-4 text-muted" />
+                  <Icon name="chevron-down" className="size-4 shrink-0 text-muted" />
                 </button>
-                {accountOpen && (
-                  <>
-                    {/* Mobile Bottom Sheet Backdrop & Sheet (<sm) */}
-                    <div
-                      className="fixed inset-0 z-50 bg-overlay/60 backdrop-blur-xs sm:hidden"
-                      onClick={() => setAccountOpen(false)}
-                      aria-hidden="true"
-                    />
-                    <div
-                      role="dialog"
-                      aria-modal="true"
-                      aria-label="Tài khoản quản trị"
-                      className="fixed inset-x-0 bottom-0 z-50 max-h-[85vh] overflow-y-auto rounded-t-panel border-t border-line bg-canvas p-5 pb-[calc(2rem+env(safe-area-inset-bottom,0px))] shadow-float sm:hidden animate-enter"
-                    >
-                      <div className="flex items-start justify-between border-b border-line pb-4">
-                        <div>
-                          <Text className="text-body font-semibold text-ink">{user.fullName}</Text>
-                          <Text className="break-all text-caption text-muted">{user.email}</Text>
-                          <div className="mt-2 flex flex-wrap gap-1.5">
-                            <Badge tone="brand">
-                              {user.staffTitle && user.staffTitle in STAFF_TITLE_LABELS
-                                ? STAFF_TITLE_LABELS[user.staffTitle as StaffTitle]
-                                : user.adminRole === 'SUPER_ADMIN'
-                                  ? 'Quản trị viên cấp cao'
-                                  : 'Nhân viên vận hành'}
-                            </Badge>
-                            <Badge tone={user.branchScopeMode === 'ASSIGNED' ? 'warning' : 'muted'}>
-                              {user.branchScopeMode === 'ASSIGNED'
-                                ? `${user.assignedBranchIds?.length ?? 0} chi nhánh`
-                                : 'Toàn hệ thống'}
-                            </Badge>
-                          </div>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => setAccountOpen(false)}
-                          aria-label="Đóng menu tài khoản"
-                          className="inline-flex size-11 items-center justify-center rounded-control text-muted hover:bg-subtle"
-                        >
-                          <Icon name="close" className="size-5" />
-                        </button>
-                      </div>
-
-                      <div className="mt-4 space-y-2 text-body">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setAccountOpen(false)
-                            setPwdOpen(true)
-                          }}
-                          className="flex min-h-touch w-full items-center gap-3 rounded-control px-3.5 py-3 text-left font-medium hover:bg-subtle"
-                        >
-                          <Icon name="lock" className="size-5 text-muted" />
-                          Đổi mật khẩu quản trị
-                        </button>
-                        <NoriLink
-                          href="/"
-                          onClick={() => setAccountOpen(false)}
-                          className="flex min-h-touch w-full items-center gap-3 rounded-control px-3.5 py-3 font-medium hover:bg-subtle"
-                        >
-                          <Icon name="home" className="size-5 text-muted" />
-                          Về website chính
-                        </NoriLink>
-                        <button
-                          type="button"
-                          onClick={() => void handleLogout()}
-                          className="flex min-h-touch w-full items-center gap-3 rounded-control px-3.5 py-3 text-left font-semibold text-danger hover:bg-danger-soft"
-                        >
-                          <Icon name="logout" className="size-5" />
-                          Đăng xuất quản trị
-                        </button>
+                {accountOpen && !isMobileViewport && (
+                  <div
+                    ref={accountPanelRef}
+                    role="dialog"
+                    aria-label="Menu tài khoản quản trị"
+                    className="absolute right-0 z-40 mt-2 w-72 max-w-[calc(100vw-2rem)] rounded-card border border-line bg-canvas p-3 shadow-float"
+                  >
+                    <div className="border-b border-line pb-3">
+                      <Text className="text-small font-semibold">{user.fullName}</Text>
+                      <Text className="break-all text-caption text-muted">{user.email}</Text>
+                      <div className="mt-1.5 flex flex-wrap gap-1.5">
+                        <Badge tone="brand">
+                          {user.staffTitle && user.staffTitle in STAFF_TITLE_LABELS
+                            ? STAFF_TITLE_LABELS[user.staffTitle as StaffTitle]
+                            : user.adminRole === 'SUPER_ADMIN'
+                              ? 'Quản trị viên cấp cao'
+                              : 'Nhân viên vận hành'}
+                        </Badge>
+                        <Badge tone={user.branchScopeMode === 'ASSIGNED' ? 'warning' : 'muted'}>
+                          {user.branchScopeMode === 'ASSIGNED'
+                            ? `${user.assignedBranchIds?.length ?? 0} chi nhánh`
+                            : 'Toàn hệ thống'}
+                        </Badge>
                       </div>
                     </div>
-
-                    {/* Desktop / Tablet Dropdown Menu (>=sm) */}
-                    <div className="hidden sm:block absolute right-0 mt-2 w-72 max-w-[calc(100vw-2rem)] rounded-card border border-line bg-canvas p-3 shadow-float z-40">
-                      <div className="border-b border-line pb-3">
-                        <Text className="text-small font-semibold">{user.fullName}</Text>
-                        <Text className="break-all text-caption text-muted">{user.email}</Text>
-                        <div className="mt-1.5 flex flex-wrap gap-1.5">
-                          <Badge tone="brand">
-                            {user.staffTitle && user.staffTitle in STAFF_TITLE_LABELS
-                              ? STAFF_TITLE_LABELS[user.staffTitle as StaffTitle]
-                              : user.adminRole === 'SUPER_ADMIN'
-                                ? 'Quản trị viên cấp cao'
-                                : 'Nhân viên vận hành'}
-                          </Badge>
-                          <Badge tone={user.branchScopeMode === 'ASSIGNED' ? 'warning' : 'muted'}>
-                            {user.branchScopeMode === 'ASSIGNED'
-                              ? `${user.assignedBranchIds?.length ?? 0} chi nhánh`
-                              : 'Toàn hệ thống'}
-                          </Badge>
-                        </div>
-                      </div>
-                      <div className="mt-2 space-y-1 text-small">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setAccountOpen(false)
-                            setPwdOpen(true)
-                          }}
-                          className="flex w-full items-center gap-2.5 rounded-control px-3 py-2 text-left hover:bg-subtle"
-                        >
-                          <Icon name="lock" className="size-4 text-muted" />
-                          Đổi mật khẩu
-                        </button>
-                        <NoriLink
-                          href="/"
-                          className="flex items-center gap-2.5 rounded-control px-3 py-2 hover:bg-subtle"
-                        >
-                          <Icon name="home" className="size-4 text-muted" />
-                          Về website chính
-                        </NoriLink>
-                        <button
-                          type="button"
-                          onClick={() => void handleLogout()}
-                          className="flex w-full items-center gap-2.5 rounded-control px-3 py-2 text-left text-danger hover:bg-danger-soft"
-                        >
-                          <Icon name="logout" className="size-4" />
-                          Đăng xuất quản trị
-                        </button>
-                      </div>
+                    <div className="mt-2 space-y-1 text-small">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAccountOpen(false)
+                          setPwdOpen(true)
+                        }}
+                        className="flex min-h-touch w-full items-center gap-2.5 rounded-control px-3 py-2 text-left hover:bg-subtle"
+                      >
+                        <Icon name="lock" className="size-4 text-muted" />
+                        Đổi mật khẩu
+                      </button>
+                      <NoriLink
+                        href="/"
+                        className="flex min-h-touch items-center gap-2.5 rounded-control px-3 py-2 hover:bg-subtle"
+                      >
+                        <Icon name="home" className="size-4 text-muted" />
+                        Về website chính
+                      </NoriLink>
+                      <button
+                        type="button"
+                        onClick={() => void handleLogout()}
+                        className="flex min-h-touch w-full items-center gap-2.5 rounded-control px-3 py-2 text-left text-danger hover:bg-danger-soft"
+                      >
+                        <Icon name="logout" className="size-4" />
+                        Đăng xuất quản trị
+                      </button>
                     </div>
-                  </>
+                  </div>
                 )}
               </div>
             </div>
           </div>
         </header>
 
-        <main id="main-content" className="flex-1 p-4 md:p-6 lg:p-8">
+        <main id="main-content" className="flex-1 p-3 sm:p-4 md:p-6 lg:p-8">
           <div className="mx-auto max-w-content">
             <Heading as="h1" size="title" className="mb-5 text-ink">
               {activeNav.label}
@@ -893,6 +900,329 @@ export function AdminShell({ children }: { children: ReactNode }) {
           </div>
         </form>
       </Dialog>
+
+      {portalReady &&
+        notifOpen &&
+        createPortal(
+          isMobileViewport ? (
+            <>
+              <div
+                className="fixed inset-0 z-50 bg-overlay/60 backdrop-blur-xs"
+                onClick={() => setNotifOpen(false)}
+                aria-hidden="true"
+              />
+              <div
+                id="admin-notification-panel"
+                ref={notifPanelRef}
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="admin-notif-title"
+                tabIndex={-1}
+                className="fixed inset-x-0 bottom-0 z-50 flex max-h-[85dvh] flex-col rounded-t-panel border-t border-line bg-canvas shadow-float pb-[env(safe-area-inset-bottom,0px)] animate-enter"
+              >
+                <div
+                  className="mx-auto mt-2.5 h-1 w-10 shrink-0 rounded-pill bg-line"
+                  aria-hidden="true"
+                />
+                <div className="flex items-center justify-between gap-3 border-b border-line px-4 py-3.5">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <Heading as="h2" size="subtitle" id="admin-notif-title" className="truncate">
+                      Việc cần xử lý ngay
+                    </Heading>
+                    {totalAlerts > 0 && <Badge tone="danger">{totalAlerts}</Badge>}
+                  </div>
+                  <button
+                    ref={notifCloseBtnRef}
+                    type="button"
+                    onClick={() => setNotifOpen(false)}
+                    aria-label="Đóng thông báo"
+                    className="inline-flex size-11 shrink-0 items-center justify-center rounded-control text-muted hover:bg-subtle hover:text-ink"
+                  >
+                    <Icon name="close" className="size-5" />
+                  </button>
+                </div>
+                <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 pb-6">
+                  {notifLoading && !notif ? (
+                    <div className="space-y-2.5" role="status" aria-label="Đang tải thông báo">
+                      <Skeleton className="h-12" />
+                      <Skeleton className="h-12" />
+                      <Skeleton className="h-12" />
+                    </div>
+                  ) : notifError && !notif ? (
+                    <div className="space-y-3">
+                      <Notice tone="error">{notifError}</Notice>
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => loadNotifications()}
+                        className="w-full"
+                      >
+                        Thử tải lại thông báo
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="space-y-2.5 text-body">
+                      {totalAlerts === 0 && (canBookings || canInquiries || canVehicles) && (
+                        <Notice tone="info">
+                          Chưa có cảnh báo tồn đọng. Bạn vẫn có thể mở nhanh các danh sách dưới đây.
+                        </Notice>
+                      )}
+                      {canBookings && (
+                        <>
+                          <NoriLink
+                            href="/dashboard/bookings?status=PENDING"
+                            onClick={() => setNotifOpen(false)}
+                            className="flex min-h-touch items-center justify-between gap-3 rounded-control bg-subtle px-3.5 py-3 hover:bg-brand-soft"
+                          >
+                            <span className="min-w-0 font-medium text-ink">
+                              Đơn thuê chờ xác nhận
+                            </span>
+                            <Badge tone={notif?.pendingBookings ? 'warning' : 'muted'}>
+                              {notif?.pendingBookings ?? 0}
+                            </Badge>
+                          </NoriLink>
+                          <NoriLink
+                            href="/dashboard/bookings?status=DEPOSIT_PENDING"
+                            onClick={() => setNotifOpen(false)}
+                            className="flex min-h-touch items-center justify-between gap-3 rounded-control bg-subtle px-3.5 py-3 hover:bg-brand-soft"
+                          >
+                            <span className="min-w-0 font-medium text-ink">
+                              Đơn quá hạn đặt cọc (&gt;24h)
+                            </span>
+                            <Badge tone={notif?.expiredDeposits ? 'danger' : 'muted'}>
+                              {notif?.expiredDeposits ?? 0}
+                            </Badge>
+                          </NoriLink>
+                        </>
+                      )}
+                      {canInquiries && (
+                        <NoriLink
+                          href="/dashboard/inquiries?status=NEW"
+                          onClick={() => setNotifOpen(false)}
+                          className="flex min-h-touch items-center justify-between gap-3 rounded-control bg-subtle px-3.5 py-3 hover:bg-brand-soft"
+                        >
+                          <span className="min-w-0 font-medium text-ink">Yêu cầu mua xe mới</span>
+                          <Badge tone={notif?.newInquiries ? 'brand' : 'muted'}>
+                            {notif?.newInquiries ?? 0}
+                          </Badge>
+                        </NoriLink>
+                      )}
+                      {canVehicles && (
+                        <NoriLink
+                          href="/dashboard/vehicles?operationStatus=MAINTENANCE"
+                          onClick={() => setNotifOpen(false)}
+                          className="flex min-h-touch items-center justify-between gap-3 rounded-control bg-subtle px-3.5 py-3 hover:bg-brand-soft"
+                        >
+                          <span className="min-w-0 font-medium text-ink">Xe đang bảo dưỡng</span>
+                          <Badge tone="muted">{notif?.maintenanceVehicles ?? 0}</Badge>
+                        </NoriLink>
+                      )}
+                      {!canBookings && !canInquiries && !canVehicles && (
+                        <EmptyState
+                          icon="bell"
+                          title="Không có thông báo mới"
+                          description="Không có cảnh báo thuộc phạm vi quyền hiện tại."
+                        />
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </>
+          ) : (
+            <div
+              id="admin-notification-panel"
+              ref={notifPanelRef}
+              role="dialog"
+              aria-modal="false"
+              aria-labelledby="admin-notif-title"
+              tabIndex={-1}
+              style={{
+                top: `${popoverCoords.top}px`,
+                right: `${popoverCoords.right}px`,
+                maxHeight: `${popoverCoords.maxHeight}px`,
+              }}
+              className="fixed z-50 flex w-88 max-w-[calc(100vw-2rem)] flex-col rounded-card border border-line bg-canvas shadow-float animate-enter sm:w-96"
+            >
+              <div className="flex items-center justify-between gap-2 border-b border-line px-4 py-3">
+                <div className="flex min-w-0 items-center gap-2">
+                  <Text id="admin-notif-title" className="text-small font-semibold text-ink">
+                    Việc cần xử lý ngay
+                  </Text>
+                  {totalAlerts > 0 && <Badge tone="danger">{totalAlerts}</Badge>}
+                </div>
+                <button
+                  ref={notifCloseBtnRef}
+                  type="button"
+                  onClick={() => setNotifOpen(false)}
+                  aria-label="Đóng thông báo"
+                  className="inline-flex size-8 items-center justify-center rounded-control text-muted hover:bg-subtle hover:text-ink"
+                >
+                  <Icon name="close" className="size-4" />
+                </button>
+              </div>
+              <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4">
+                {notifLoading && !notif ? (
+                  <div className="space-y-2" role="status" aria-label="Đang tải thông báo">
+                    <Skeleton className="h-10" />
+                    <Skeleton className="h-10" />
+                    <Skeleton className="h-10" />
+                  </div>
+                ) : notifError && !notif ? (
+                  <div className="space-y-3">
+                    <Notice tone="error">{notifError}</Notice>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => loadNotifications()}
+                      className="w-full"
+                    >
+                      Thử tải lại thông báo
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="space-y-2 text-small">
+                    {totalAlerts === 0 && (canBookings || canInquiries || canVehicles) && (
+                      <Notice tone="info">Chưa có cảnh báo tồn đọng.</Notice>
+                    )}
+                    {canBookings && (
+                      <>
+                        <NoriLink
+                          href="/dashboard/bookings?status=PENDING"
+                          onClick={() => setNotifOpen(false)}
+                          className="flex min-h-touch items-center justify-between gap-2 rounded-control bg-subtle px-3 py-2 hover:bg-brand-soft"
+                        >
+                          <span>Đơn thuê chờ xác nhận</span>
+                          <Badge tone={notif?.pendingBookings ? 'warning' : 'muted'}>
+                            {notif?.pendingBookings ?? 0}
+                          </Badge>
+                        </NoriLink>
+                        <NoriLink
+                          href="/dashboard/bookings?status=DEPOSIT_PENDING"
+                          onClick={() => setNotifOpen(false)}
+                          className="flex min-h-touch items-center justify-between gap-2 rounded-control bg-subtle px-3 py-2 hover:bg-brand-soft"
+                        >
+                          <span>Đơn quá hạn đặt cọc (&gt;24h)</span>
+                          <Badge tone={notif?.expiredDeposits ? 'danger' : 'muted'}>
+                            {notif?.expiredDeposits ?? 0}
+                          </Badge>
+                        </NoriLink>
+                      </>
+                    )}
+                    {canInquiries && (
+                      <NoriLink
+                        href="/dashboard/inquiries?status=NEW"
+                        onClick={() => setNotifOpen(false)}
+                        className="flex min-h-touch items-center justify-between gap-2 rounded-control bg-subtle px-3 py-2 hover:bg-brand-soft"
+                      >
+                        <span>Yêu cầu mua xe mới</span>
+                        <Badge tone={notif?.newInquiries ? 'brand' : 'muted'}>
+                          {notif?.newInquiries ?? 0}
+                        </Badge>
+                      </NoriLink>
+                    )}
+                    {canVehicles && (
+                      <NoriLink
+                        href="/dashboard/vehicles?operationStatus=MAINTENANCE"
+                        onClick={() => setNotifOpen(false)}
+                        className="flex min-h-touch items-center justify-between gap-2 rounded-control bg-subtle px-3 py-2 hover:bg-brand-soft"
+                      >
+                        <span>Xe đang bảo dưỡng</span>
+                        <Badge tone="muted">{notif?.maintenanceVehicles ?? 0}</Badge>
+                      </NoriLink>
+                    )}
+                    {!canBookings && !canInquiries && !canVehicles && (
+                      <Text className="text-caption text-muted">
+                        Không có cảnh báo thuộc phạm vi quyền hiện tại.
+                      </Text>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          ),
+          document.body,
+        )}
+
+      {portalReady &&
+        accountOpen &&
+        isMobileViewport &&
+        createPortal(
+          <>
+            <div
+              className="fixed inset-0 z-50 bg-overlay/60 backdrop-blur-xs"
+              onClick={() => setAccountOpen(false)}
+              aria-hidden="true"
+            />
+            <div
+              ref={accountPanelRef}
+              role="dialog"
+              aria-modal="true"
+              aria-label="Tài khoản quản trị"
+              className="fixed inset-x-0 bottom-0 z-50 max-h-[85dvh] overflow-y-auto rounded-t-panel border-t border-line bg-canvas p-5 pb-[calc(2rem+env(safe-area-inset-bottom,0px))] shadow-float animate-enter"
+            >
+              <div className="flex items-start justify-between border-b border-line pb-4">
+                <div>
+                  <Text className="text-body font-semibold text-ink">{user.fullName}</Text>
+                  <Text className="break-all text-caption text-muted">{user.email}</Text>
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    <Badge tone="brand">
+                      {user.staffTitle && user.staffTitle in STAFF_TITLE_LABELS
+                        ? STAFF_TITLE_LABELS[user.staffTitle as StaffTitle]
+                        : user.adminRole === 'SUPER_ADMIN'
+                          ? 'Quản trị viên cấp cao'
+                          : 'Nhân viên vận hành'}
+                    </Badge>
+                    <Badge tone={user.branchScopeMode === 'ASSIGNED' ? 'warning' : 'muted'}>
+                      {user.branchScopeMode === 'ASSIGNED'
+                        ? `${user.assignedBranchIds?.length ?? 0} chi nhánh`
+                        : 'Toàn hệ thống'}
+                    </Badge>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setAccountOpen(false)}
+                  aria-label="Đóng menu tài khoản"
+                  className="inline-flex size-11 items-center justify-center rounded-control text-muted hover:bg-subtle"
+                >
+                  <Icon name="close" className="size-5" />
+                </button>
+              </div>
+
+              <div className="mt-4 space-y-2 text-body">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAccountOpen(false)
+                    setPwdOpen(true)
+                  }}
+                  className="flex min-h-touch w-full items-center gap-3 rounded-control px-3.5 py-3 text-left font-medium hover:bg-subtle"
+                >
+                  <Icon name="lock" className="size-5 text-muted" />
+                  Đổi mật khẩu quản trị
+                </button>
+                <NoriLink
+                  href="/"
+                  onClick={() => setAccountOpen(false)}
+                  className="flex min-h-touch w-full items-center gap-3 rounded-control px-3.5 py-3 font-medium hover:bg-subtle"
+                >
+                  <Icon name="home" className="size-5 text-muted" />
+                  Về website chính
+                </NoriLink>
+                <button
+                  type="button"
+                  onClick={() => void handleLogout()}
+                  className="flex min-h-touch w-full items-center gap-3 rounded-control px-3.5 py-3 text-left font-semibold text-danger hover:bg-danger-soft"
+                >
+                  <Icon name="logout" className="size-5" />
+                  Đăng xuất quản trị
+                </button>
+              </div>
+            </div>
+          </>,
+          document.body,
+        )}
     </div>
   )
 }

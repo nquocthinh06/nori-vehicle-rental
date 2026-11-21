@@ -256,7 +256,7 @@ export function HeroCarouselEditor({
               onChange={(e) =>
                 onAutoplayChange(Math.min(20, Math.max(3, Number(e.target.value) || 6)))
               }
-              wrapperClassName="w-48"
+              wrapperClassName="w-full sm:w-48"
             />
             <Button size="sm" onClick={onAddSlide} disabled={slides.length >= 12}>
               <Icon name="plus" className="size-4" />

@@ -1,6 +1,7 @@
 import { DatabaseSync } from 'node:sqlite'
 import { Client } from 'pg'
 import fs from 'node:fs'
+import { normalizePostgresUrl } from '../src/lib/postgres-url.ts'
 
 // Load .env variables
 if (!process.env.DATABASE_URL && fs.existsSync('.env')) {
@@ -156,14 +157,9 @@ async function migrate() {
 
   const sqlite = new DatabaseSync('nori.db')
   const rawPgUrl = process.env.DATABASE_URL || ''
-  const pgUrl =
-    rawPgUrl.includes('sslmode=require') && !rawPgUrl.includes('uselibpqcompat=true')
-      ? rawPgUrl.replace('sslmode=require', 'sslmode=verify-full')
-      : rawPgUrl
-  const isNeon = pgUrl.includes('neon.tech') || pgUrl.includes('sslmode=')
+  const pgUrl = normalizePostgresUrl(rawPgUrl)
   const client = new Client({
     connectionString: pgUrl,
-    ...(isNeon ? {} : { ssl: { rejectUnauthorized: false } }),
   })
 
   await client.connect()

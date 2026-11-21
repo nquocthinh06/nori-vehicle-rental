@@ -6,9 +6,9 @@ import pg from 'pg'
 import {
   checkFileExistsInCloud,
   getCloudStorageConfig,
-  isCloudStorageConfigured,
   uploadToCloudStorage,
 } from '../src/lib/cloud-storage.ts'
+import { createPostgresPoolConfig } from '../src/lib/postgres-url.ts'
 
 const __filename = fileURLToPath(import.meta.url)
 const dirname = path.dirname(__filename)
@@ -23,17 +23,11 @@ async function getAllMediaRecords() {
 
   if (isPostgres) {
     console.log('[MIGRATE-CLOUD] Connecting to PostgreSQL to retrieve media records...')
-    const pgUrl =
-      rawDbUrl.includes('sslmode=require') && !rawDbUrl.includes('uselibpqcompat=true')
-        ? rawDbUrl.replace('sslmode=require', 'sslmode=verify-full')
-        : rawDbUrl
-    const isNeon = pgUrl.includes('neon.tech') || pgUrl.includes('sslmode=')
-    const pool = new pg.Pool({
-      connectionString: pgUrl,
-      ...(isNeon ? {} : { ssl: { rejectUnauthorized: false } }),
-    })
+    const pool = new pg.Pool(createPostgresPoolConfig(rawDbUrl))
     try {
-      const res = await pool.query('SELECT id, filename, mime_type, filesize FROM media ORDER BY filename ASC')
+      const res = await pool.query(
+        'SELECT id, filename, mime_type, filesize FROM media ORDER BY filename ASC',
+      )
       return res.rows
     } finally {
       await pool.end()
@@ -45,7 +39,9 @@ async function getAllMediaRecords() {
     console.log('[MIGRATE-CLOUD] Connecting to SQLite dev snapshot to retrieve media records...')
     const db = new DatabaseSync(sqlitePath, { readOnly: true })
     try {
-      return db.prepare('SELECT id, filename, mime_type, filesize FROM media ORDER BY filename ASC').all()
+      return db
+        .prepare('SELECT id, filename, mime_type, filesize FROM media ORDER BY filename ASC')
+        .all()
     } finally {
       db.close()
     }
@@ -164,14 +160,18 @@ async function main() {
     }
 
     if (isDryRun) {
-      console.log(`[${i + 1}/${records.length}] WOULD UPLOAD: ${filename} (${(local.sizeBytes / 1024).toFixed(1)} KB)`)
+      console.log(
+        `[${i + 1}/${records.length}] WOULD UPLOAD: ${filename} (${(local.sizeBytes / 1024).toFixed(1)} KB)`,
+      )
       uploaded++
       continue
     }
 
     const res = await uploadToCloudStorage(filename, local.buffer, mimeType)
     if (res.success) {
-      console.log(`[${i + 1}/${records.length}] UPLOADED: ${filename} (${(local.sizeBytes / 1024).toFixed(1)} KB) -> ${res.url || 'OK'}`)
+      console.log(
+        `[${i + 1}/${records.length}] UPLOADED: ${filename} (${(local.sizeBytes / 1024).toFixed(1)} KB) -> ${res.url || 'OK'}`,
+      )
       uploaded++
     } else {
       console.error(`[${i + 1}/${records.length}] FAILED: ${filename} - ${res.error}`)

@@ -51,6 +51,8 @@ CREATE TABLE IF NOT EXISTS `_media_v` (
 	`version_original_prefix` text,
 	`version_original__objectkey` text,
 	`version_original__stored` integer,
+	`version_prefix` text,
+	`version__objectkey` text,
 	`version_focal_x` numeric,
 	`version_focal_y` numeric,
 	`created_at` text DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')) NOT NULL,
@@ -547,6 +549,8 @@ CREATE TABLE IF NOT EXISTS `media` (
 	`original_prefix` text,
 	`original__objectkey` text,
 	`original__stored` integer,
+	`prefix` text,
+	`_objectkey` text,
 	`focal_x` numeric,
 	`focal_y` numeric, `source_url` text, `source_name` text, `license` text, `model_year` text, `variant_name` text, `color_name` text, `media_category` text DEFAULT 'CATALOGUE_REFERENCE', `verified` integer DEFAULT true,
 	FOREIGN KEY (`_h_folders_id`) REFERENCES `folders`(`id`) ON UPDATE no action ON DELETE set null

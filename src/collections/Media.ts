@@ -4,7 +4,7 @@ import { createFolderField, createTagField } from 'payload'
 import { adminMediaDeleteAccess, adminMediaWriteAccess } from '@/access/nori'
 import { auditCollection } from '@/hooks/audit-nori'
 import { revalidateMedia, revalidateDeletedMedia } from '@/hooks/revalidate-nori'
-import { isCloudStorageConfigured, uploadToCloudStorage } from '@/lib/cloud-storage'
+import { isS3Configured, isVercelBlobConfigured, uploadToCloudStorage } from '@/lib/cloud-storage'
 import { resolveMediaDir } from '@/lib/env'
 import { localMediaResizeHandler, resolveValidMediaSource } from '@/lib/media-optimizer'
 
@@ -22,7 +22,8 @@ const mediaAudit = auditCollection({
 })
 
 const syncMediaToCloudAfterChange: CollectionAfterChangeHook = async ({ doc }) => {
-  if (!isCloudStorageConfigured()) return doc
+  // When Vercel Blob storage adapter is active, Payload handles cloud upload/delete natively.
+  if (isVercelBlobConfigured() || !isS3Configured()) return doc
   if (!doc?.filename || typeof doc.filename !== 'string') return doc
 
   try {

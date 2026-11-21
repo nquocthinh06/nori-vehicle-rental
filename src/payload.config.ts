@@ -38,8 +38,15 @@ import { Vehicles } from './collections/Vehicles'
 import { VehicleTransfers } from './collections/VehicleTransfers'
 import { Warehouses } from './collections/Warehouses'
 import { NoriSite } from './globals/NoriSite'
-import { seedNoriIfEmpty } from './lib/seed-nori'
+import {
+  assertVercelBlobStorageReady,
+  getVercelBlobPrefix,
+  isVercelBlobConfigured,
+} from './lib/cloud-storage'
 import { resolveSqlitePath, toSqliteUri } from './lib/env'
+import { createPostgresPoolConfig } from './lib/postgres-url'
+import { seedNoriIfEmpty } from './lib/seed-nori'
+import { migrations as postgresMigrations } from './migrations-postgres'
 
 const filename = fileURLToPath(import.meta.url)
 const dirname = path.dirname(filename)
@@ -49,23 +56,19 @@ if (process.env.NODE_ENV === 'production' && !payloadSecret) {
   throw new Error('PAYLOAD_SECRET environment variable is required in production.')
 }
 
+assertVercelBlobStorageReady()
+
 const rawDbUrl = (process.env.DATABASE_URL || process.env.DATABASE_URI || '').trim()
 const isPostgres = rawDbUrl.startsWith('postgresql:') || rawDbUrl.startsWith('postgres:')
 
-// Normalize Postgres TLS connection string to eliminate pg-connection-string security warning
-const dbUrl =
-  isPostgres && rawDbUrl.includes('sslmode=require') && !rawDbUrl.includes('uselibpqcompat=true')
-    ? rawDbUrl.replace('sslmode=require', 'sslmode=verify-full')
-    : rawDbUrl
-
 const dbAdapter = isPostgres
   ? postgresAdapter({
-      pool: {
-        connectionString: dbUrl,
-      },
+      pool: createPostgresPoolConfig(rawDbUrl),
       idType: 'uuid',
-      push: true,
+      // Never allow uncontrolled runtime schema push in Production; use explicit migrations.
+      push: process.env.NODE_ENV !== 'production' && process.env.NORI_PG_PUSH === '1',
       migrationDir: path.resolve(dirname, 'migrations-postgres'),
+      prodMigrations: postgresMigrations,
     })
   : sqliteAdapter({
       idType: 'uuid',
@@ -79,7 +82,7 @@ const dbAdapter = isPostgres
       busyTimeout: 5000,
       transactionOptions: {},
       client: {
-        url: dbUrl || toSqliteUri(resolveSqlitePath(path.resolve(dirname, '..'))),
+        url: rawDbUrl || toSqliteUri(resolveSqlitePath(path.resolve(dirname, '..'))),
       },
     })
 
@@ -148,11 +151,11 @@ export default buildConfig({
   },
   storage: [
     vercelBlobStorage({
-      enabled: Boolean(process.env.BLOB_READ_WRITE_TOKEN),
+      enabled: isVercelBlobConfigured(),
       collections: {
-        media: true,
+        media: getVercelBlobPrefix() ? { prefix: getVercelBlobPrefix() } : true,
       },
-      token: process.env.BLOB_READ_WRITE_TOKEN || '',
+      token: process.env.BLOB_READ_WRITE_TOKEN?.trim() || '',
     }),
   ],
   plugins: [mcpPlugin({})],

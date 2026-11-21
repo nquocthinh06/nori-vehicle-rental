@@ -6,14 +6,16 @@ import path from 'node:path'
 import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import {
+  assertVercelBlobStorageReady,
   getCloudStorageConfig,
+  getVercelBlobObjectKey,
+  getVercelBlobPrefix,
   isCloudStorageConfigured,
+  isValidVercelBlobToken,
   isVercelBlobConfigured,
 } from '../src/lib/cloud-storage.ts'
-import {
-  localMediaResizeHandler,
-  resolveValidMediaSource,
-} from '../src/lib/media-optimizer.ts'
+import { createPostgresPoolConfig, normalizePostgresUrl } from '../src/lib/postgres-url.ts'
+import { localMediaResizeHandler, resolveValidMediaSource } from '../src/lib/media-optimizer.ts'
 
 const __filename = fileURLToPath(import.meta.url)
 const dirname = path.dirname(__filename)
@@ -33,7 +35,10 @@ test('Media Resolution — Verifies all sample image categories exist and have v
   for (const [category, filename] of Object.entries(SAMPLE_IMAGES)) {
     const source = await resolveValidMediaSource(filename)
     assert.ok(source, `Failed to resolve source for ${category} (${filename})`)
-    assert.ok(source.sizeBytes > 1000, `${filename} size should be > 1000 bytes, got ${source.sizeBytes}`)
+    assert.ok(
+      source.sizeBytes > 1000,
+      `${filename} size should be > 1000 bytes, got ${source.sizeBytes}`,
+    )
     assert.ok(source.buffer.byteLength > 0, `${filename} buffer must not be empty`)
 
     // Verify it is NOT a Git LFS pointer text file
@@ -60,7 +65,10 @@ test('localMediaResizeHandler — Serves unresized images with HTTP 200, Content
     assert.equal(res.status, 200, `Expected HTTP 200 for ${filename}`)
     assert.ok(res.headers.get('Content-Type'), `Missing Content-Type for ${filename}`)
     assert.ok(res.headers.get('ETag'), `Missing ETag for ${filename}`)
-    assert.ok(Number(res.headers.get('Content-Length')) > 0, `Content-Length must be > 0 for ${filename}`)
+    assert.ok(
+      Number(res.headers.get('Content-Length')) > 0,
+      `Content-Length must be > 0 for ${filename}`,
+    )
 
     // Test 304 Not Modified
     const etag = res.headers.get('ETag')
@@ -120,7 +128,11 @@ test('localMediaResizeHandler — Handles non-existent media gracefully with und
     params: { collection: 'media', filename: 'completely-nonexistent-image-12345.png' },
   })
 
-  assert.equal(res, undefined, 'Should return undefined for missing media so Payload can handle 404')
+  assert.equal(
+    res,
+    undefined,
+    'Should return undefined for missing media so Payload can handle 404',
+  )
 })
 
 test('localMediaResizeHandler — Gracefully handles directory traversal attempts', async () => {
@@ -141,7 +153,8 @@ test('Git LFS Pointer Protection — resolveValidMediaSource skips LFS pointers 
   fs.mkdirSync(tempDir, { recursive: true })
 
   const fakeLfsFile = path.join(tempDir, 'test-lfs-image.png')
-  const lfsPointerContent = 'version https://git-lfs.github.com/spec/v1\noid sha256:1234567890abcdef\nsize 123456\n'
+  const lfsPointerContent =
+    'version https://git-lfs.github.com/spec/v1\noid sha256:1234567890abcdef\nsize 123456\n'
   fs.writeFileSync(fakeLfsFile, lfsPointerContent, 'utf8')
 
   const origDir = process.env.NORI_MEDIA_DIR
@@ -191,4 +204,111 @@ test('Vercel Blob & Cloud Storage Integration — detects Vercel Blob and locks 
       delete process.env.BLOB_READ_WRITE_TOKEN
     }
   }
+})
+
+test('Postgres SSL Normalization — converts weak/alias sslmodes to verify-full without rejectUnauthorized=false', () => {
+  assert.equal(
+    normalizePostgresUrl(
+      'postgresql://user:pass@ep-test.neon.tech/neondb?sslmode=require&channel_binding=require',
+    ),
+    'postgresql://user:pass@ep-test.neon.tech/neondb?sslmode=verify-full&channel_binding=require',
+  )
+  assert.equal(
+    normalizePostgresUrl('postgres://user:pass@ep-test.neon.tech/neondb?sslmode=prefer'),
+    'postgres://user:pass@ep-test.neon.tech/neondb?sslmode=verify-full',
+  )
+  assert.equal(
+    normalizePostgresUrl('postgresql://user:pass@ep-test.neon.tech/neondb?sslmode=verify-ca'),
+    'postgresql://user:pass@ep-test.neon.tech/neondb?sslmode=verify-full',
+  )
+  assert.equal(
+    normalizePostgresUrl('postgresql://user:pass@ep-test.neon.tech/neondb'),
+    'postgresql://user:pass@ep-test.neon.tech/neondb?sslmode=verify-full',
+  )
+  assert.equal(
+    normalizePostgresUrl(
+      'postgresql://user:pass@ep-test.neon.tech/neondb?uselibpqcompat=true&sslmode=require',
+    ),
+    'postgresql://user:pass@ep-test.neon.tech/neondb?uselibpqcompat=true&sslmode=require',
+  )
+  assert.equal(
+    normalizePostgresUrl('postgresql://user:pass@localhost:5432/nori'),
+    'postgresql://user:pass@localhost:5432/nori',
+  )
+
+  const poolCfg = createPostgresPoolConfig(
+    'postgresql://user:pass@ep-test.neon.tech/neondb?sslmode=require',
+  )
+  assert.ok(poolCfg.connectionString.includes('sslmode=verify-full'))
+  assert.equal(
+    'ssl' in poolCfg,
+    false,
+    'Must never inject insecure ssl: { rejectUnauthorized: false }',
+  )
+  assert.ok(poolCfg.connectionTimeoutMillis >= 5000)
+})
+
+test('Vercel Blob Storage Guard — blocks silent local fallback on Vercel and supports env prefixing', () => {
+  const origVercel = process.env.VERCEL
+  const origVercelEnv = process.env.VERCEL_ENV
+  const origToken = process.env.BLOB_READ_WRITE_TOKEN
+  const origPrefix = process.env.BLOB_STORAGE_PREFIX
+
+  try {
+    // Non-Vercel local dev allows missing token
+    delete process.env.VERCEL
+    delete process.env.VERCEL_ENV
+    delete process.env.BLOB_READ_WRITE_TOKEN
+    assert.doesNotThrow(() => assertVercelBlobStorageReady())
+
+    // Vercel runtime without token MUST throw explicit config error
+    process.env.VERCEL = '1'
+    process.env.VERCEL_ENV = 'production'
+    assert.throws(() => assertVercelBlobStorageReady(), /BLOB_READ_WRITE_TOKEN is required/)
+
+    // Invalid token format MUST throw
+    process.env.BLOB_READ_WRITE_TOKEN = 'invalid_token_format'
+    assert.equal(isValidVercelBlobToken('invalid_token_format'), false)
+    assert.throws(() => assertVercelBlobStorageReady(), /invalid format/i)
+
+    // Valid token succeeds
+    process.env.BLOB_READ_WRITE_TOKEN = 'vercel_blob_rw_TestStore01_SecretKey999'
+    assert.equal(isValidVercelBlobToken(process.env.BLOB_READ_WRITE_TOKEN), true)
+    assert.doesNotThrow(() => assertVercelBlobStorageReady())
+
+    // Environment-separated prefix support
+    delete process.env.BLOB_STORAGE_PREFIX
+    assert.equal(getVercelBlobPrefix(), '')
+    assert.equal(getVercelBlobObjectKey('toyota-fortuner-ext-1.jpg'), 'toyota-fortuner-ext-1.jpg')
+
+    process.env.BLOB_STORAGE_PREFIX = '/staging/'
+    assert.equal(getVercelBlobPrefix(), 'staging')
+    assert.equal(
+      getVercelBlobObjectKey('toyota-fortuner-ext-1.jpg'),
+      'staging/toyota-fortuner-ext-1.jpg',
+    )
+  } finally {
+    if (origVercel !== undefined) process.env.VERCEL = origVercel
+    else delete process.env.VERCEL
+    if (origVercelEnv !== undefined) process.env.VERCEL_ENV = origVercelEnv
+    else delete process.env.VERCEL_ENV
+    if (origToken !== undefined) process.env.BLOB_READ_WRITE_TOKEN = origToken
+    else delete process.env.BLOB_READ_WRITE_TOKEN
+    if (origPrefix !== undefined) process.env.BLOB_STORAGE_PREFIX = origPrefix
+    else delete process.env.BLOB_STORAGE_PREFIX
+  }
+})
+
+test('Payload Config Safety — Postgres push is disabled in production and no rejectUnauthorized=false exists', () => {
+  const payloadConfigSrc = fs.readFileSync(path.resolve(rootDir, 'src/payload.config.ts'), 'utf8')
+  assert.equal(
+    /push:\s*true\b/.test(payloadConfigSrc),
+    false,
+    'src/payload.config.ts must never hardcode push: true',
+  )
+  assert.equal(
+    payloadConfigSrc.includes('rejectUnauthorized: false'),
+    false,
+    'src/payload.config.ts must not use rejectUnauthorized: false',
+  )
 })
