@@ -69,7 +69,7 @@ export function VehicleCard({
           layout === 'list' && 'sm:col-span-1 sm:aspect-auto sm:min-h-56',
         )}
       >
-        <NoriLink href={href} aria-label={`Xem ${model.name}`} className="block size-full">
+        <NoriLink href={href} aria-label={`Xem ${model.name}`} className="relative block size-full">
           {model.cover ? (
             <Image
               src={model.cover.url}
