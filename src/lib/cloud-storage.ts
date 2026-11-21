@@ -1,9 +1,4 @@
-import {
-  GetObjectCommand,
-  HeadObjectCommand,
-  PutObjectCommand,
-  S3Client,
-} from '@aws-sdk/client-s3'
+import { GetObjectCommand, HeadObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3'
 import { head as vercelBlobHead, put as vercelBlobPut } from '@vercel/blob'
 import path from 'node:path'
 
@@ -39,11 +34,69 @@ export function isVercelBlobConfigured(): boolean {
   return Boolean(process.env.BLOB_READ_WRITE_TOKEN?.trim())
 }
 
+export function isValidVercelBlobToken(token: string): boolean {
+  return /^vercel_blob_rw_[a-z\d]+_[a-z\d]+$/i.test(token.trim())
+}
+
+export function getVercelBlobPrefix(): string {
+  const raw = (process.env.BLOB_STORAGE_PREFIX || process.env.NORI_BLOB_PREFIX || '').trim()
+  return raw.replace(/^\/+|\/+$/g, '')
+}
+
+export function getVercelBlobObjectKey(filename: string, explicitPrefix?: string): string {
+  const cleanFilename = path.basename(filename)
+  const prefix = (explicitPrefix !== undefined ? explicitPrefix : getVercelBlobPrefix()).replace(
+    /^\/+|\/+$/g,
+    '',
+  )
+  return prefix ? `${prefix}/${cleanFilename}` : cleanFilename
+}
+
+function getVercelBlobCandidatePaths(filename: string): string[] {
+  const cleanFilename = path.basename(filename)
+  const prefix = getVercelBlobPrefix()
+  const candidates = [
+    ...(prefix ? [`${prefix}/${cleanFilename}`] : []),
+    cleanFilename,
+    `media/${cleanFilename}`,
+  ]
+  return [...new Set(candidates)]
+}
+
+/**
+ * Ensures Vercel deployments fail fast with a clear configuration error when
+ * BLOB_READ_WRITE_TOKEN is absent or malformed instead of silently falling back
+ * to ephemeral local storage.
+ */
+export function assertVercelBlobStorageReady(): void {
+  const isVercelRuntime = process.env.VERCEL === '1' || Boolean(process.env.VERCEL_ENV?.trim())
+  const token = process.env.BLOB_READ_WRITE_TOKEN?.trim() || ''
+
+  if (token && !isValidVercelBlobToken(token)) {
+    throw new Error(
+      '[NORI STORAGE CONFIG ERROR] BLOB_READ_WRITE_TOKEN has an invalid format. Expected vercel_blob_rw_<store_id>_<secret>.',
+    )
+  }
+
+  if (isVercelRuntime && !token && !isS3Configured()) {
+    const envLabel = process.env.VERCEL_ENV || 'vercel'
+    throw new Error(
+      `[NORI STORAGE CONFIG ERROR] BLOB_READ_WRITE_TOKEN is required for Vercel environment "${envLabel}" (both Build and Runtime). Configure distinct Vercel Blob stores for Preview/Staging and Production instead of falling back to local storage.`,
+    )
+  }
+}
+
 export function isS3Configured(): boolean {
   const bucket = (process.env.S3_BUCKET || process.env.NORI_S3_BUCKET || '').trim()
-  const accessKeyId = (process.env.S3_ACCESS_KEY_ID || process.env.NORI_S3_ACCESS_KEY_ID || '').trim()
+  const accessKeyId = (
+    process.env.S3_ACCESS_KEY_ID ||
+    process.env.NORI_S3_ACCESS_KEY_ID ||
+    ''
+  ).trim()
   const secretAccessKey = (
-    process.env.S3_SECRET_ACCESS_KEY || process.env.NORI_S3_SECRET_ACCESS_KEY || ''
+    process.env.S3_SECRET_ACCESS_KEY ||
+    process.env.NORI_S3_SECRET_ACCESS_KEY ||
+    ''
   ).trim()
   return Boolean(bucket && accessKeyId && secretAccessKey)
 }
@@ -54,18 +107,18 @@ export function isCloudStorageConfigured(): boolean {
 
 export function getCloudStorageConfig(): CloudStorageConfig | null {
   if (isVercelBlobConfigured()) {
+    const blobPrefix = getVercelBlobPrefix()
     return {
       provider: 'VERCEL_BLOB',
-      prefix: 'media/',
+      prefix: blobPrefix ? `${blobPrefix}/` : '',
     }
   }
 
   if (isS3Configured()) {
     const bucket = (process.env.S3_BUCKET || process.env.NORI_S3_BUCKET)!.trim()
     const accessKeyId = (process.env.S3_ACCESS_KEY_ID || process.env.NORI_S3_ACCESS_KEY_ID)!.trim()
-    const secretAccessKey = (
-      process.env.S3_SECRET_ACCESS_KEY || process.env.NORI_S3_SECRET_ACCESS_KEY
-    )!.trim()
+    const secretAccessKey = (process.env.S3_SECRET_ACCESS_KEY ||
+      process.env.NORI_S3_SECRET_ACCESS_KEY)!.trim()
     const endpoint = (
       process.env.S3_ENDPOINT ||
       process.env.NORI_S3_ENDPOINT ||
@@ -125,15 +178,16 @@ export async function checkFileExistsInCloud(filename: string): Promise<boolean>
   const cleanFilename = path.basename(filename)
 
   if (isVercelBlobConfigured()) {
-    try {
-      const blobPath = `media/${cleanFilename}`
-      const info = await vercelBlobHead(blobPath, {
-        token: process.env.BLOB_READ_WRITE_TOKEN,
-      })
-      return Boolean(info && info.url)
-    } catch {
-      return false
+    const token = process.env.BLOB_READ_WRITE_TOKEN?.trim()
+    for (const blobPath of getVercelBlobCandidatePaths(cleanFilename)) {
+      try {
+        const info = await vercelBlobHead(blobPath, { token })
+        if (info && info.url) return true
+      } catch {
+        // try next candidate path
+      }
     }
+    return false
   }
 
   const client = getCloudStorageClient()
@@ -163,12 +217,13 @@ export async function uploadToCloudStorage(
 
   if (isVercelBlobConfigured()) {
     try {
-      const blobPath = `media/${cleanFilename}`
+      const blobPath = getVercelBlobObjectKey(cleanFilename)
       const blob = await vercelBlobPut(blobPath, buffer, {
         access: 'public',
         addRandomSuffix: false,
+        allowOverwrite: true,
         contentType: mimeType,
-        token: process.env.BLOB_READ_WRITE_TOKEN,
+        token: process.env.BLOB_READ_WRITE_TOKEN?.trim(),
       })
       return { success: true, url: blob.url }
     } catch (err: unknown) {
@@ -215,19 +270,20 @@ export async function getFromCloudStorage(filename: string): Promise<Buffer | nu
   const cleanFilename = path.basename(filename)
 
   if (isVercelBlobConfigured()) {
-    try {
-      const blobPath = `media/${cleanFilename}`
-      const info = await vercelBlobHead(blobPath, {
-        token: process.env.BLOB_READ_WRITE_TOKEN,
-      })
-      if (!info || !info.url) return null
-      const res = await fetch(info.url)
-      if (!res.ok) return null
-      const arrayBuf = await res.arrayBuffer()
-      return Buffer.from(arrayBuf)
-    } catch {
-      return null
+    const token = process.env.BLOB_READ_WRITE_TOKEN?.trim()
+    for (const blobPath of getVercelBlobCandidatePaths(cleanFilename)) {
+      try {
+        const info = await vercelBlobHead(blobPath, { token })
+        if (!info || !info.url) continue
+        const res = await fetch(info.url)
+        if (!res.ok) continue
+        const arrayBuf = await res.arrayBuffer()
+        return Buffer.from(arrayBuf)
+      } catch {
+        // try next candidate path
+      }
     }
+    return null
   }
 
   const client = getCloudStorageClient()

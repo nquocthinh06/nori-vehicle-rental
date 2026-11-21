@@ -42,15 +42,15 @@ export function Dialog({
         if (e.target === ref.current) onClose()
       }}
       aria-label={title}
-      className={`max-h-dialog-viewport w-full rounded-panel border border-line bg-canvas p-0 text-ink shadow-float backdrop:backdrop-blur-sm ${wide ? 'max-w-content' : 'max-w-dialog'}`}
+      className={`max-h-dialog-viewport w-[calc(100vw-1.5rem)] rounded-panel border border-line bg-canvas p-0 text-ink shadow-float backdrop:backdrop-blur-sm sm:w-full ${wide ? 'max-w-content' : 'max-w-dialog'}`}
     >
-      <div className="sticky top-0 z-10 flex items-center justify-between gap-4 border-b border-line bg-canvas px-6 py-4">
-        <Heading as="h2" size="subtitle">
+      <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-line bg-canvas px-4 py-3 sm:gap-4 sm:px-6 sm:py-4">
+        <Heading as="h2" size="subtitle" className="min-w-0 truncate">
           {title}
         </Heading>
         <IconButton icon="close" label="Đóng hộp thoại" onClick={onClose} />
       </div>
-      <div className="p-6">{children}</div>
+      <div className="p-4 sm:p-6">{children}</div>
     </dialog>
   )
 }

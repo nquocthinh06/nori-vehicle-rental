@@ -63,12 +63,14 @@ export const REQUIRED_SCHEMA_CONTRACT = {
   location_pricing_rules: ['id', 'code', 'scope_type', 'active'],
   one_way_rental_rules: ['id', 'route_key', 'from_branch_id', 'to_branch_id', 'active'],
   nori_site: ['id', 'online_payment_enabled', 'allow_sepay_qr'],
+  media: ['id', 'filename', 'url', 'prefix', '_objectkey'],
 }
 
 export const REGISTERED_MIGRATIONS = [
   '20261120_010000_online_payment_integration',
   '20261120_020000_multi_branch_management',
   '20261120_030000_booking_payment_option_plans',
+  '20261121_040000_media_cloud_storage_columns',
 ]
 
 export function checkDatabaseCompatibility(options = {}) {

@@ -1,5 +1,6 @@
 import path from 'node:path'
 import fs from 'node:fs'
+import { isS3Configured, isValidVercelBlobToken, isVercelBlobConfigured } from './cloud-storage.ts'
 
 export type EnvironmentMode = 'development' | 'production' | 'test'
 
@@ -282,6 +283,26 @@ export function validateEnvironment(options?: {
   if (isProduction && allowedOrigins.length === 0) {
     warnings.push(
       'Chưa cấu hình ALLOWED_ORIGINS hoặc APP_URL cho Production. Khuyến nghị thiết lập để tăng cường bảo vệ CSRF/CORS.',
+    )
+  }
+
+  const nodeMajor = Number(process.versions.node.split('.')[0] || 0)
+  if (nodeMajor !== 24) {
+    warnings.push(
+      `Phiên bản Node.js hiện tại (${process.version}) khác Node.js 24 LTS được ghim trong package.json ("engines.node": ">=24.22.1 <25.0.0").`,
+    )
+  }
+
+  const isVercelRuntime = process.env.VERCEL === '1' || Boolean(process.env.VERCEL_ENV?.trim())
+  const blobToken = process.env.BLOB_READ_WRITE_TOKEN?.trim() || ''
+  if (blobToken && !isValidVercelBlobToken(blobToken)) {
+    errors.push(
+      'BLOB_READ_WRITE_TOKEN không đúng định dạng (cần dạng vercel_blob_rw_<store_id>_<secret>).',
+    )
+  }
+  if (isVercelRuntime && !isVercelBlobConfigured() && !isS3Configured()) {
+    errors.push(
+      `Thiếu BLOB_READ_WRITE_TOKEN cho môi trường Vercel (${process.env.VERCEL_ENV || 'unknown'}). Bắt buộc cấu hình Vercel Blob Storage cho Build & Runtime để tránh mất file upload.`,
     )
   }
 

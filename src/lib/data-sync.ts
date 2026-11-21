@@ -17,6 +17,7 @@ import {
   BOOKING_PAYMENT_OPTION_COLUMN_ADDITIONS,
   BOOKING_PAYMENT_OPTION_INDEXES_SQL,
 } from '../migrations/20261120_030000_booking_payment_option_plans.ts'
+import { MEDIA_CLOUD_STORAGE_COLUMN_ADDITIONS } from '../migrations/20261121_040000_media_cloud_storage_columns.ts'
 
 export const CURRENT_SCHEMA_VERSION = 'nori-payload-sqlite-v2.5'
 export const SNAPSHOT_FORMAT_VERSION = '1.0.0'
@@ -416,6 +417,34 @@ export function applyAdditiveBookingPaymentOptionSchema(db: DatabaseSync): void 
   }
 }
 
+export function applyAdditiveMediaCloudStorageSchema(db: DatabaseSync): void {
+  const existingTables = new Set(
+    (
+      db
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('media', '_media_v')",
+        )
+        .all() as { name?: string }[]
+    )
+      .map((r) => String(r.name ?? ''))
+      .filter(Boolean),
+  )
+  const colsCache = new Map<string, Set<string>>()
+  for (const [tableName, columnName, colDef] of MEDIA_CLOUD_STORAGE_COLUMN_ADDITIONS) {
+    if (!existingTables.has(tableName)) continue
+    let colSet = colsCache.get(tableName)
+    if (!colSet) {
+      const rows = db.prepare(`PRAGMA table_info('${tableName}')`).all() as { name?: string }[]
+      colSet = new Set(rows.map((r) => String(r.name ?? '')))
+      colsCache.set(tableName, colSet)
+    }
+    if (!colSet.has(columnName)) {
+      db.exec(`ALTER TABLE \`${tableName}\` ADD COLUMN \`${columnName}\` ${colDef};`)
+      colSet.add(columnName)
+    }
+  }
+}
+
 export function runDatabaseMigration(options?: { rootDir?: string; dbPath?: string }) {
   const paths = resolvePaths(options)
   const schemaSqlPath = path.join(paths.seedDir, 'schema.sql')
@@ -434,6 +463,7 @@ export function runDatabaseMigration(options?: { rootDir?: string; dbPath?: stri
       applyAdditivePaymentSchema(db)
       applyAdditiveMultiBranchSchema(db)
       applyAdditiveBookingPaymentOptionSchema(db)
+      applyAdditiveMediaCloudStorageSchema(db)
       const now = new Date().toISOString()
       const existingDev = db
         .prepare("SELECT id FROM payload_migrations WHERE name = 'dev' LIMIT 1")
@@ -477,6 +507,15 @@ export function runDatabaseMigration(options?: { rootDir?: string; dbPath?: stri
         db.prepare(
           'INSERT INTO payload_migrations (id, name, batch, updated_at, created_at) VALUES (?, ?, ?, ?, ?)',
         ).run(crypto.randomUUID(), bookingPaymentOptionMigName, 4, now, now)
+      }
+      const mediaCloudMigName = '20261121_040000_media_cloud_storage_columns'
+      const existingMediaCloudMig = db
+        .prepare('SELECT id FROM payload_migrations WHERE name = ? LIMIT 1')
+        .get(mediaCloudMigName) as { id?: string } | undefined
+      if (!existingMediaCloudMig) {
+        db.prepare(
+          'INSERT INTO payload_migrations (id, name, batch, updated_at, created_at) VALUES (?, ?, ?, ?, ?)',
+        ).run(crypto.randomUUID(), mediaCloudMigName, 5, now, now)
       }
       db.exec('COMMIT')
     } catch (err) {

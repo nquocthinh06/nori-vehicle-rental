@@ -6,6 +6,7 @@ import * as migration_20261118_185500_posts_promotion_link from './20261118_1855
 import * as migration_20261120_010000_online_payment_integration from './20261120_010000_online_payment_integration'
 import * as migration_20261120_020000_multi_branch_management from './20261120_020000_multi_branch_management'
 import * as migration_20261120_030000_booking_payment_option_plans from './20261120_030000_booking_payment_option_plans'
+import * as migration_20261121_040000_media_cloud_storage_columns from './20261121_040000_media_cloud_storage_columns'
 
 export const migrations = [
   {
@@ -47,5 +48,10 @@ export const migrations = [
     up: migration_20261120_030000_booking_payment_option_plans.up,
     down: migration_20261120_030000_booking_payment_option_plans.down,
     name: '20261120_030000_booking_payment_option_plans',
+  },
+  {
+    up: migration_20261121_040000_media_cloud_storage_columns.up,
+    down: migration_20261121_040000_media_cloud_storage_columns.down,
+    name: '20261121_040000_media_cloud_storage_columns',
   },
 ]
