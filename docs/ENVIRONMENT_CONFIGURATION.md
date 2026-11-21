@@ -17,28 +17,29 @@ Tài liệu quy định và chuẩn hóa toàn bộ các biến môi trường c
 
 ## 2. Bảng Danh Mục Biến Môi Trường Chi Tiết
 
-| Tên biến | Kiểu giá trị | Bắt buộc (Prod) | Giá trị mặc định | Phạm vi | Mô tả & Hướng dẫn sử dụng |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| `NODE_ENV` | String | Không | `development` | Server | Chế độ chạy: `development`, `test`, hoặc `production`. |
-| `HOST` | String | Không | `0.0.0.0` (Prod) / `127.0.0.1` (Dev) | Server | Địa chỉ IP máy chủ lắng nghe. Trong production / standalone, sử dụng `0.0.0.0` để nhận traffic từ localhost và tunnel daemon. |
-| `PORT` | Number | Không | `3000` | Server | Cổng HTTP lắng nghe của ứng dụng Next.js. |
-| `APP_URL` | URL String | **Có** | `http://localhost:3000` | Server | URL gốc chính thức của ứng dụng. Ví dụ: `https://nori.yourdomain.com` hoặc `https://abc-xyz.trycloudflare.com`. Dùng để kiểm tra Origin, cấu hình Server Actions và gửi link trong email/thông báo. |
-| `NEXT_PUBLIC_SITE_URL` | URL String | Không | Giá trị của `APP_URL` | Client & Server | URL công khai của trang web, cung cấp cho Next.js Metadata, OpenGraph và Sitemap. |
-| `NEXT_PUBLIC_APP_URL` | URL String | Không | Giá trị của `APP_URL` | Client & Server | Alias tương thích cho các Client Component khi gọi API qua URL tuyệt đối. |
-| `PAYLOAD_SECRET` | String (>=32 chars) | **Có** | Tự động cảnh báo nếu dùng default | Server | Khóa bảo mật mật mã dùng cho Payload CMS để băm mật khẩu, mã hóa token session. Bắt buộc phải là chuỗi ngẫu nhiên bảo mật cao trong Production. |
-| `DATABASE_URL` / `DATABASE_URI` | SQLite URI String | Không | `file:./data/nori.db` | Server | Chuỗi kết nối SQLite. Hỗ trợ đường dẫn tương đối (`file:./data/nori.db`) hoặc đường dẫn tuyệt đối đa nền tảng (`file:C:/NORI/data/nori.db` hoặc `file:/var/lib/nori/nori.db`). |
-| `DATA_DIR` | Path String | Không | `./data` | Server | Thư mục chứa dữ liệu runtime chung. |
-| `MEDIA_DIR` | Path String | Không | `./data/media` | Server | Thư mục lưu trữ hình ảnh tải lên của phương tiện, tài liệu, banner. |
-| `BACKUP_DIR` | Path String | Không | `./backups` | Server | Thư mục lưu trữ các bản sao lưu SQLite (`.db`) và backup bundle (`media/`, manifest). |
-| `LOG_DIR` | Path String | Không | `./logs` | Server | Thư mục lưu trữ tệp nhật ký vận hành hàng ngày của hệ thống. |
-| `ALLOWED_ORIGINS` | Comma-separated URLs | Không | Tự động suy ra từ `APP_URL` | Server | Danh sách các Origin được phép gửi request API và Server Actions (phân cách bằng dấu phẩy). Ví dụ: `https://nori.yourdomain.com,http://192.168.1.100:3000`. |
-| `TRUST_PROXY` | Boolean String | Không | `true` | Server | Bật chế độ tin cậy Reverse Proxy / Cloudflare để đọc chính xác IP từ `cf-connecting-ip` và `x-forwarded-for`. Giá trị: `true` hoặc `false`. |
+| Tên biến                        | Kiểu giá trị         | Bắt buộc (Prod) | Giá trị mặc định                     | Phạm vi         | Mô tả & Hướng dẫn sử dụng                                                                                                                                                                           |
+| :------------------------------ | :------------------- | :-------------- | :----------------------------------- | :-------------- | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `NODE_ENV`                      | String               | Không           | `development`                        | Server          | Chế độ chạy: `development`, `test`, hoặc `production`.                                                                                                                                              |
+| `HOST`                          | String               | Không           | `0.0.0.0` (Prod) / `127.0.0.1` (Dev) | Server          | Địa chỉ IP máy chủ lắng nghe. Trong production / standalone, sử dụng `0.0.0.0` để nhận traffic từ localhost và tunnel daemon.                                                                       |
+| `PORT`                          | Number               | Không           | `3000`                               | Server          | Cổng HTTP lắng nghe của ứng dụng Next.js.                                                                                                                                                           |
+| `APP_URL`                       | URL String           | **Có**          | `http://localhost:3000`              | Server          | URL gốc chính thức của ứng dụng. Ví dụ: `https://nori.yourdomain.com` hoặc `https://abc-xyz.trycloudflare.com`. Dùng để kiểm tra Origin, cấu hình Server Actions và gửi link trong email/thông báo. |
+| `NEXT_PUBLIC_SITE_URL`          | URL String           | Không           | Giá trị của `APP_URL`                | Client & Server | URL công khai của trang web, cung cấp cho Next.js Metadata, OpenGraph và Sitemap.                                                                                                                   |
+| `NEXT_PUBLIC_APP_URL`           | URL String           | Không           | Giá trị của `APP_URL`                | Client & Server | Alias tương thích cho các Client Component khi gọi API qua URL tuyệt đối.                                                                                                                           |
+| `PAYLOAD_SECRET`                | String (>=32 chars)  | **Có**          | Tự động cảnh báo nếu dùng default    | Server          | Khóa bảo mật mật mã dùng cho Payload CMS để băm mật khẩu, mã hóa token session. Bắt buộc phải là chuỗi ngẫu nhiên bảo mật cao trong Production.                                                     |
+| `DATABASE_URL` / `DATABASE_URI` | SQLite URI String    | Không           | `file:./data/nori.db`                | Server          | Chuỗi kết nối SQLite. Hỗ trợ đường dẫn tương đối (`file:./data/nori.db`) hoặc đường dẫn tuyệt đối đa nền tảng (`file:C:/NORI/data/nori.db` hoặc `file:/var/lib/nori/nori.db`).                      |
+| `DATA_DIR`                      | Path String          | Không           | `./data`                             | Server          | Thư mục chứa dữ liệu runtime chung.                                                                                                                                                                 |
+| `MEDIA_DIR`                     | Path String          | Không           | `./data/media`                       | Server          | Thư mục lưu trữ hình ảnh tải lên của phương tiện, tài liệu, banner.                                                                                                                                 |
+| `BACKUP_DIR`                    | Path String          | Không           | `./backups`                          | Server          | Thư mục lưu trữ các bản sao lưu SQLite (`.db`) và backup bundle (`media/`, manifest).                                                                                                               |
+| `LOG_DIR`                       | Path String          | Không           | `./logs`                             | Server          | Thư mục lưu trữ tệp nhật ký vận hành hàng ngày của hệ thống.                                                                                                                                        |
+| `ALLOWED_ORIGINS`               | Comma-separated URLs | Không           | Tự động suy ra từ `APP_URL`          | Server          | Danh sách các Origin được phép gửi request API và Server Actions (phân cách bằng dấu phẩy). Ví dụ: `https://nori.yourdomain.com,http://192.168.1.100:3000`.                                         |
+| `TRUST_PROXY`                   | Boolean String       | Không           | `true`                               | Server          | Bật chế độ tin cậy Reverse Proxy / Cloudflare để đọc chính xác IP từ `cf-connecting-ip` và `x-forwarded-for`. Giá trị: `true` hoặc `false`.                                                         |
 
 ---
 
 ## 3. Mẫu Cấu Hình Theo Từng Môi Trường
 
 ### 3.1. Local Development (`.env.local` hoặc `.env`)
+
 ```env
 NODE_ENV=development
 HOST=127.0.0.1
@@ -54,6 +55,7 @@ TRUST_PROXY=false
 ```
 
 ### 3.2. Mạng Nội Bộ LAN (`.env.production` trên Home Server LAN)
+
 ```env
 NODE_ENV=production
 HOST=0.0.0.0
@@ -70,6 +72,7 @@ TRUST_PROXY=false
 ```
 
 ### 3.3. Cloudflare Quick Tunnel (Môi trường Demo / Staging)
+
 ```env
 NODE_ENV=production
 HOST=0.0.0.0
@@ -87,6 +90,7 @@ TRUST_PROXY=true
 ```
 
 ### 3.4. Cloudflare Named Tunnel (Home Server Production Chính thức)
+
 ```env
 NODE_ENV=production
 HOST=0.0.0.0

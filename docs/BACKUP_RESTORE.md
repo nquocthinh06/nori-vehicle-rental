@@ -24,6 +24,7 @@ Khác với việc sao chép file thông thường có thể gây hỏng cơ s�
 ## 2. Các Lệnh Sao Lưu (Backup Commands)
 
 ### 2.1. Sao Lưu Qua Dòng Lệnh pnpm
+
 ```bash
 # Tạo bản sao lưu đầy đủ (mặc định giữ lại 14 bản gần nhất)
 pnpm backup
@@ -33,6 +34,7 @@ pnpm backup --keep 30
 ```
 
 ### 2.2. Sao Lưu Tự Động Theo Lịch Trình (Scheduled Backup)
+
 - **Trên Windows Home Server**:
   Sử dụng Windows Task Scheduler để chạy script `deploy\windows\backup.ps1` hàng ngày lúc 02:00 sáng.
 - **Trên Linux Ubuntu**:
@@ -42,6 +44,7 @@ pnpm backup --keep 30
   ```
 
 ### 2.3. Sao Lưu Qua Giao Diện Quản Trị
+
 1. Đăng nhập tài khoản `SUPER_ADMIN`.
 2. Truy cập **Hệ thống** → **Đồng bộ & Sao lưu dữ liệu** (`/dashboard/system`).
 3. Nhấn nút **Tạo Backup ngay**. Tiến trình sẽ tự động tạo gói sao lưu và ghi nhật ký vào `audit_logs`.
@@ -51,11 +54,13 @@ pnpm backup --keep 30
 ## 3. Quy Trình Khôi Phục Dữ Liệu (Restore Playbook)
 
 ### Khi nào cần khôi phục?
+
 - Có sự cố thao tác nhầm từ người dùng quản trị.
 - Cần khôi phục lại trạng thái cũ sau khi thử nghiệm.
 - Di chuyển sang máy tính hoặc máy chủ mới.
 
 ### Quy Trình Khôi Phục An Toàn 5 Bước:
+
 ```bash
 # Khôi phục từ bản sao lưu gần nhất trong thư mục backups/
 pnpm restore
@@ -65,6 +70,7 @@ pnpm restore --source backups/nori-backup-2026-11-20T12-00-00-000Z
 ```
 
 **Các bước an toàn tự động được thực hiện**:
+
 1. Xác minh mã băm SHA-256 và `PRAGMA integrity_check` của bản sao lưu nguồn. Nếu file sao lưu bị hỏng, lệnh dừng ngay lập tức.
 2. Tự động tạo một bản sao lưu dự phòng khẩn cấp (`preRestoreBackupId`) của database hiện tại trước khi thực hiện ghi đè.
 3. Đóng các kết nối đang mở và dọn dẹp các tệp tạm (`-wal`, `-shm`).
@@ -76,6 +82,7 @@ pnpm restore --source backups/nori-backup-2026-11-20T12-00-00-000Z
 ## 4. Kiểm Thử Khôi Phục Định Kỳ (Disaster Recovery Drill)
 
 Khuyến nghị thực hiện diễn tập khôi phục ít nhất 1 lần mỗi tháng trên môi trường test:
+
 1. Sao chép file backup sang máy tính cá nhân.
 2. Chạy lệnh:
    ```bash

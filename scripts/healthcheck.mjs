@@ -16,7 +16,9 @@ async function checkHealth() {
       process.exit(1)
     }
     const data = await res.json()
-    console.log(`[HEALTHCHECK OK] Status=${data.status}, DB=${data.db}, Media=${data.mediaStorage}, Uptime=${data.uptimeSeconds}s`)
+    console.log(
+      `[HEALTHCHECK OK] Status=${data.status}, DB=${data.db}, Media=${data.mediaStorage}, Uptime=${data.uptimeSeconds}s`,
+    )
     process.exit(0)
   } catch (err) {
     console.error(`[HEALTHCHECK FAILED] Unable to reach ${targetUrl}: ${err.message}`)

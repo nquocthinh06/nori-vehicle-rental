@@ -56,7 +56,11 @@ export function resolveStoragePath(targetPath: string, baseDir = process.cwd()):
  */
 export function toSqliteUri(filePath: string): string {
   if (!filePath) return 'file:./nori.db'
-  if (filePath.startsWith('libsql:') || filePath.startsWith('http:') || filePath.startsWith('https:')) {
+  if (
+    filePath.startsWith('libsql:') ||
+    filePath.startsWith('http:') ||
+    filePath.startsWith('https:')
+  ) {
     return filePath
   }
   const cleanPath = filePath.startsWith('file:') ? filePath.slice(5) : filePath
@@ -72,7 +76,12 @@ export function resolveSqlitePath(rootDir = process.cwd()): string {
   if (explicitPath) return resolveStoragePath(explicitPath, rootDir)
 
   const dbUrl = (process.env.DATABASE_URL || process.env.DATABASE_URI)?.trim()
-  if (dbUrl && !dbUrl.startsWith('libsql:') && !dbUrl.startsWith('http:') && !dbUrl.startsWith('https:')) {
+  if (
+    dbUrl &&
+    !dbUrl.startsWith('libsql:') &&
+    !dbUrl.startsWith('http:') &&
+    !dbUrl.startsWith('https:')
+  ) {
     const stripped = dbUrl.startsWith('file:') ? dbUrl.slice(5) : dbUrl
     return resolveStoragePath(stripped, rootDir)
   }
@@ -159,7 +168,10 @@ export function parseAllowedOrigins(): string[] {
 /**
  * Comprehensive environment validation with structured diagnostic reporting.
  */
-export function validateEnvironment(options?: { rootDir?: string; checkStorageWritable?: boolean }): {
+export function validateEnvironment(options?: {
+  rootDir?: string
+  checkStorageWritable?: boolean
+}): {
   ok: boolean
   errors: string[]
   warnings: string[]
@@ -183,21 +195,34 @@ export function validateEnvironment(options?: { rootDir?: string; checkStorageWr
 
   const rawAppUrl =
     process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_SITE_URL
-  const appUrl = normalizeUrl(rawAppUrl) || `http://${host === '0.0.0.0' ? 'localhost' : host}:${port}`
+  const appUrl =
+    normalizeUrl(rawAppUrl) || `http://${host === '0.0.0.0' ? 'localhost' : host}:${port}`
 
   const payloadSecret = process.env.PAYLOAD_SECRET?.trim() || ''
   const defaultDevSecret = 'nori-local-dev-secret-9b4df14a-91bb-4c9b-b923-b2dfa62da7e4'
 
   if (isProduction) {
     if (!payloadSecret) {
-      errors.push('PAYLOAD_SECRET là bắt buộc trong môi trường Production. Vui lòng tạo chuỗi ngẫu nhiên từ 32 ký tự trở lên.')
+      errors.push(
+        'PAYLOAD_SECRET là bắt buộc trong môi trường Production. Vui lòng tạo chuỗi ngẫu nhiên từ 32 ký tự trở lên.',
+      )
     } else if (payloadSecret.length < 32) {
-      errors.push(`PAYLOAD_SECRET quá ngắn (${payloadSecret.length} ký tự). Cần tối thiểu 32 ký tự bảo mật.`)
-    } else if (payloadSecret === defaultDevSecret || payloadSecret.includes('CHANGE_ME') || payloadSecret.includes('your-secure-random')) {
-      errors.push('PAYLOAD_SECRET đang dùng giá trị mặc định/placeholder. Phải đổi sang chuỗi ngẫu nhiên an toàn trước khi public.')
+      errors.push(
+        `PAYLOAD_SECRET quá ngắn (${payloadSecret.length} ký tự). Cần tối thiểu 32 ký tự bảo mật.`,
+      )
+    } else if (
+      payloadSecret === defaultDevSecret ||
+      payloadSecret.includes('CHANGE_ME') ||
+      payloadSecret.includes('your-secure-random')
+    ) {
+      errors.push(
+        'PAYLOAD_SECRET đang dùng giá trị mặc định/placeholder. Phải đổi sang chuỗi ngẫu nhiên an toàn trước khi public.',
+      )
     }
   } else if (!payloadSecret) {
-    warnings.push('PAYLOAD_SECRET chưa thiết lập; đang dùng giá trị dev mặc định (chỉ phù hợp local development).')
+    warnings.push(
+      'PAYLOAD_SECRET chưa thiết lập; đang dùng giá trị dev mặc định (chỉ phù hợp local development).',
+    )
   }
 
   // Security check: ensure sensitive secrets are NEVER exposed in NEXT_PUBLIC_*
@@ -210,14 +235,17 @@ export function validateEnvironment(options?: { rootDir?: string; checkStorageWr
         lower.includes('api_key') ||
         lower.includes('token')
       ) {
-        errors.push(`Biến bảo mật "${key}" không được đặt tiền tố NEXT_PUBLIC_ vì sẽ bị lộ ra trình duyệt client.`)
+        errors.push(
+          `Biến bảo mật "${key}" không được đặt tiền tố NEXT_PUBLIC_ vì sẽ bị lộ ra trình duyệt client.`,
+        )
       }
     }
   }
 
   const sqlitePath = resolveSqlitePath(rootDir)
   const databaseUri = toSqliteUri(sqlitePath)
-  const dataDir = process.env.DATA_DIR?.trim() || process.env.NORI_DATA_DIR?.trim() || path.dirname(sqlitePath)
+  const dataDir =
+    process.env.DATA_DIR?.trim() || process.env.NORI_DATA_DIR?.trim() || path.dirname(sqlitePath)
   const mediaDir = resolveMediaDir(rootDir)
   const backupDir = resolveBackupDir(rootDir)
   const logDir = resolveLogDir(rootDir)
@@ -246,18 +274,27 @@ export function validateEnvironment(options?: { rootDir?: string; checkStorageWr
 
   const allowedOrigins = parseAllowedOrigins()
   if (isProduction && allowedOrigins.length === 0) {
-    warnings.push('Chưa cấu hình ALLOWED_ORIGINS hoặc APP_URL cho Production. Khuyến nghị thiết lập để tăng cường bảo vệ CSRF/CORS.')
+    warnings.push(
+      'Chưa cấu hình ALLOWED_ORIGINS hoặc APP_URL cho Production. Khuyến nghị thiết lập để tăng cường bảo vệ CSRF/CORS.',
+    )
   }
 
   const sessionSecret = process.env.NORI_SESSION_SECRET?.trim() || payloadSecret || defaultDevSecret
   const adminEmail = (process.env.NORI_ADMIN_EMAIL?.trim() || 'admin@nori.vn').toLowerCase()
   const disableDemoSeed = process.env.NORI_DISABLE_DEMO_SEED === '1'
 
-  const paymentEnabled = ['true', '1'].includes(String(process.env.PAYMENT_ENABLED ?? 'true').toLowerCase())
+  const paymentEnabled = ['true', '1'].includes(
+    String(process.env.PAYMENT_ENABLED ?? 'true').toLowerCase(),
+  )
   const rawProvider = String(process.env.PAYMENT_PROVIDER ?? 'MOCK').toUpperCase()
-  const paymentProvider = (['SEPAY', 'MOCK', 'MANUAL'].includes(rawProvider) ? rawProvider : 'MOCK') as 'SEPAY' | 'MOCK' | 'MANUAL'
+  const paymentProvider = (
+    ['SEPAY', 'MOCK', 'MANUAL'].includes(rawProvider) ? rawProvider : 'MOCK'
+  ) as 'SEPAY' | 'MOCK' | 'MANUAL'
   const rawMode = String(process.env.PAYMENT_MODE ?? 'MOCK').toUpperCase()
-  const paymentMode = (['MOCK', 'SANDBOX', 'PRODUCTION'].includes(rawMode) ? rawMode : 'MOCK') as 'MOCK' | 'SANDBOX' | 'PRODUCTION'
+  const paymentMode = (['MOCK', 'SANDBOX', 'PRODUCTION'].includes(rawMode) ? rawMode : 'MOCK') as
+    | 'MOCK'
+    | 'SANDBOX'
+    | 'PRODUCTION'
 
   return {
     ok: errors.length === 0,

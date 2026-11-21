@@ -19,18 +19,22 @@ Trước khi bắt đầu, hãy đảm bảo máy tính của bạn đã cài đ
 ## 2. Quy trình Cài đặt Dự án (Step-by-Step Setup)
 
 ### Bước 1: Clone Repository
+
 ```bash
 git clone https://github.com/nquocthinh06/nori-vehicle-rental.git
 cd nori-vehicle-rental
 ```
 
 ### Bước 2: Cài đặt Dependencies
+
 ```bash
 pnpm install
 ```
 
 ### Bước 3: Khởi tạo Cấu hình & Dữ liệu Tự động
+
 Dự án cung cấp lệnh thiết lập 1-click giúp tự động:
+
 - Kiểm tra phiên bản Node.js.
 - Tạo file `.env` từ `.env.example` với `PAYLOAD_SECRET` bảo mật 32-byte ngẫu nhiên.
 - Tạo sẵn các thư mục dữ liệu cần thiết (`data/`, `data/media/`, `backups/`, `logs/`).
@@ -41,9 +45,11 @@ pnpm setup
 ```
 
 ### Bước 4: Kiểm tra Cấu hình Môi trường
+
 ```bash
 pnpm env:check
 ```
+
 Nếu màn hình hiển thị `[OK] Environment configuration is valid!`, hệ thống đã sẵn sàng.
 
 ---

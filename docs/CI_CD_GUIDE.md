@@ -41,20 +41,25 @@ flowchart LR
 Khi có code mới được merge vào nhánh `main` trên GitHub, bạn không cần cài đặt các công cụ CD phức tạp hay mở cổng SSH ra Internet. Sử dụng trực tiếp script cập nhật 1-click đã tích hợp sẵn:
 
 ### Trên Windows Home Server:
+
 Chạy script `update.ps1`:
+
 ```powershell
 cd C:\NORI\app
 .\deploy\windows\update.ps1
 ```
 
 ### Trên Linux Home Server:
+
 Chạy script `update.sh`:
+
 ```bash
 cd /opt/nori/app
 sudo bash deploy/linux/update.sh
 ```
 
 ### Cơ Chế An Toàn 6 Bước Của Script Update:
+
 1. **Tạo Hot Backup Tự Động**: Chạy `pnpm backup` trước khi chạm vào mã nguồn để bảo vệ 100% dữ liệu nếu có sự cố.
 2. **Kéo Mã Nguồn Mới**: `git pull origin main`.
 3. **Cập Nhật Dependencies**: `pnpm install --frozen-lockfile`.

@@ -27,10 +27,15 @@ export async function GET(request: Request) {
 
   // Deep readiness probe
   // Determine if caller is authorized to view sensitive internal diagnostic metrics
-  const authHeader = request.headers.get('authorization')?.replace(/^Bearer\s+/i, '').trim()
+  const authHeader = request.headers
+    .get('authorization')
+    ?.replace(/^Bearer\s+/i, '')
+    .trim()
   const healthToken = request.headers.get('x-health-token')?.trim()
   const payloadSecret = process.env.PAYLOAD_SECRET?.trim()
-  const isAuthorizedSecret = Boolean(payloadSecret && (authHeader === payloadSecret || healthToken === payloadSecret))
+  const isAuthorizedSecret = Boolean(
+    payloadSecret && (authHeader === payloadSecret || healthToken === payloadSecret),
+  )
 
   const hostHeader = request.headers.get('host') || ''
   const isLoopback =

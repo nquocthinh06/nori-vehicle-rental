@@ -10,13 +10,17 @@ build/
 .env*
 !.env.example
 
-# Local SQLite databases & journals
+# Local SQLite databases & journals (Track canonical dev snapshot in dev-data/database/)
 *.db
 *.db-*
 *.sqlite
 *.sqlite-*
 *.sqlite3
 *.sqlite3-*
+!dev-data/database/*.db
+!dev-data/database/nori-dev.db
+dev-data/database/*.db-*
+dev-data/**/*.tmp*
 
 # Runtime media uploads (keep version-controlled media/seed/ tracked in Git)
 /media/*

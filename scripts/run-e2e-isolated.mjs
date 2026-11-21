@@ -144,6 +144,7 @@ async function main() {
     ...process.env,
     NODE_ENV: 'production',
     PORT: port,
+    DATABASE_URL: '',
     DATABASE_URI: `file:./nori-e2e-isolated.db`,
     NORI_SQLITE_PATH: isolatedDb,
     NORI_MEDIA_DIR: isolatedMediaDir,

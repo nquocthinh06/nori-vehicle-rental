@@ -131,6 +131,7 @@ graph TD
    ```
 
 3. **Khởi tạo Cấu hình Tự động & Xác minh Môi trường**:
+
    ```bash
    # Tự động sinh file .env bảo mật và tạo các thư mục data/, media/, backups/, logs/
    pnpm setup
@@ -264,29 +265,44 @@ Sau khi biên dịch thành công (`v2.7.0`):
 
 ---
 
-## 10. Hướng dẫn Đồng bộ Dữ liệu Nhóm, Sao lưu và Phục hồi (Data Sync, Backup & Restore)
+## 10. Hướng dẫn Đồng bộ Toàn Bộ Dữ Liệu Phát Triển Qua GitHub (Multi-Machine Dev Sync)
 
-Dự án trang bị bộ công cụ đồng bộ dữ liệu nhóm (`data/snapshots/`, `media/seed/`) và sao lưu nhất quán (`backups/`):
+Dự án trang bị hệ thống đồng bộ toàn diện trạng thái phát triển qua thư mục version-controlled `dev-data/` (`database/nori-dev.db`, `media/`, `manifest.json`), cho phép các thành viên trên các máy tính khác nhau (Windows, macOS, Home Server) chia sẻ đầy đủ tài khoản thử nghiệm, phương tiện, đơn thuê, media và cấu hình website mà không phải nhập tay.
+
+### Các lệnh đồng bộ chính
 
 ```bash
-# Kiểm tra trạng thái đồng bộ giữa Database cục bộ và Git Snapshot
+# 1. Kiểm tra trạng thái đồng bộ giữa DB máy bạn và GitHub snapshot
+pnpm dev:sync:verify
+
+# 2. Máy A: Xuất toàn bộ database phát triển và ảnh media vào dev-data/ để commit lên Git
+pnpm dev:sync:export
+git add dev-data/
+git commit -m "chore(sync): update dev database and media snapshot"
+git push origin main
+
+# 3. Máy B: Kéo dữ liệu mới nhất từ GitHub và nạp vào môi trường phát triển
+git pull origin main
+pnpm dev:sync:import
+
+# 4. Khi có xung đột (cả 2 máy đều sửa dữ liệu cục bộ):
+# Mặc định thao tác an toàn sẽ DỪNG LẠI và thông báo, không ghi đè mất dữ liệu.
+# Nếu muốn ghi đè bằng snapshot từ GitHub (hệ thống sẽ tự động tạo bản backup an toàn trước):
+pnpm dev:sync:import -- --force
+```
+
+### Bộ công cụ đồng bộ chuyên sâu & Sao lưu (Legacy Catalog Sync & Backups)
+
+```bash
+# Kiểm tra trạng thái catalog snapshot
 pnpm data:status
 
-# Xuất dữ liệu công khai & hình ảnh mới từ Admin ra Snapshot để chia sẻ qua GitHub
-pnpm data:export
-
-# Kiểm tra tính toàn vẹn JSON, khóa ngoại, checksum ảnh và quét chặn dữ liệu nhạy cảm
-pnpm data:validate
-pnpm media:audit
-
-# Xem trước thay đổi (Dry Run) và nhập dữ liệu từ Snapshot sau khi git pull
-pnpm data:import -- --dry-run
-pnpm data:sync
-
 # Sao lưu nhất quán (SQLite VACUUM INTO + Media files + SHA-256 Manifest)
+pnpm backup
 pnpm data:backup
 
 # Khôi phục Database & Media từ bản sao lưu
+pnpm restore
 pnpm data:restore
 ```
 
@@ -331,6 +347,7 @@ sudo bash deploy/linux/update.sh
 Hệ thống tài liệu đầy đủ của dự án được lưu trữ trong thư mục `docs/`:
 
 ### Cẩm Nang Triển Khai Home Server & Production
+
 - [docs/PRODUCTION_READINESS_REPORT.md](docs/PRODUCTION_READINESS_REPORT.md) — **Báo cáo nghiệm thu sẵn sàng Production & Release Gates**.
 - [docs/SYSTEM_ARCHITECTURE.md](docs/SYSTEM_ARCHITECTURE.md) — Kiến trúc tổng thể, topo mạng, luồng xử lý qua Cloudflare Tunnel và SQLite WAL.
 - [docs/ENVIRONMENT_CONFIGURATION.md](docs/ENVIRONMENT_CONFIGURATION.md) — Từ điển biến môi trường chi tiết và hướng dẫn cấu hình các môi trường.
@@ -346,6 +363,7 @@ Hệ thống tài liệu đầy đủ của dự án được lưu trữ trong t
 - [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) — Sổ tay xử lý sự cố thường gặp (Database locks, Tunnel 502, Port conflicts).
 
 ### Nghiệp Vụ Vận Hành, Đa Chi Nhánh & Kiểm Thử
+
 - [DESIGN.md](DESIGN.md) — Quy chuẩn Design System NORI, Semantic Tokens, Typography, Bảng màu và Components.
 - [SKILL.md](SKILL.md) — Kỹ năng triển khai & nguyên tắc xây dựng giao diện WCAG 2.2 AA.
 - [.agents/skills/nori-performance/SKILL.md](.agents/skills/nori-performance/SKILL.md) — Skill bắt buộc về hiệu năng, tối giản mã nguồn, tối ưu media và release gate.

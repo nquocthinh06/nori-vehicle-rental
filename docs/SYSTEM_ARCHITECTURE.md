@@ -89,16 +89,19 @@ graph TD
 SQLite là công nghệ lưu trữ quan hệ không cần cài đặt daemon server độc lập, mang lại hiệu năng đọc/ghi vượt trội khi được tối ưu đúng:
 
 ### 3.1. Chế độ WAL (Write-Ahead Logging)
+
 - Khi khởi động server, `src/payload.config.ts` thiết lập `PRAGMA journal_mode = WAL;`.
 - WAL cho phép các truy vấn **Đọc (Readers)** không bao giờ chặn các truy vấn **Ghi (Writers)**, và ngược lại.
 - Tránh triệt để tình trạng khóa bảng kéo dài (`database is locked`).
 
 ### 3.2. PRAGMA & Busy Timeout
+
 - `PRAGMA busy_timeout = 10000;`: Chờ tối đa 10 giây nếu có giao dịch khác đang ghi, thay vì lập tức quăng lỗi `SQLITE_BUSY`.
 - `PRAGMA foreign_keys = ON;`: Bắt buộc ràng buộc toàn vẹn khóa ngoại trên toàn bộ 109 bảng.
 - `PRAGMA synchronous = NORMAL;`: Tối ưu hiệu năng I/O trên ổ cứng SSD/NVMe mà vẫn an toàn trước sự cố sập nguồn.
 
 ### 3.3. Cơ chế Khóa Giao dịch & Idempotency Key
+
 - Mọi đơn đặt xe mới đều có `idempotencyKey` ngẫu nhiên được sinh từ Client và đối chiếu tại Server để chặn double-submit do người dùng nhấn nút nhiều lần.
 - Đặt xe và điều chuyển xe sử dụng bảng khóa ngày toàn cục `rental_days`:
   - `lock_type`: `BOOKING` hoặc `TRANSFER`.
@@ -110,12 +113,12 @@ SQLite là công nghệ lưu trữ quan hệ không cần cài đặt daemon ser
 
 Để việc cập nhật source code thông qua `git pull` không bao giờ ảnh hưởng hoặc ghi đè lên dữ liệu vận hành thực tế, kiến trúc NORI phân tách hoàn toàn mã nguồn và dữ liệu:
 
-| Thành phần | Đường dẫn mặc định (Project Root) | Đường dẫn khuyến nghị (Home Server Độc lập) | Biến môi trường điều khiển |
-| :--- | :--- | :--- | :--- |
-| **Cơ sở dữ liệu** | `./data/nori.db` | `C:\NORI\data\nori.db` (Win) hoặc `/var/lib/nori/nori.db` (Linux) | `DATABASE_URL` hoặc `DATABASE_URI` |
-| **Tệp tải lên** | `./data/media` | `C:\NORI\data\media` (Win) hoặc `/var/lib/nori/media` (Linux) | `MEDIA_DIR` |
-| **Bản sao lưu** | `./backups` | `C:\NORI\backups` (Win) hoặc `/var/backups/nori` (Linux) | `BACKUP_DIR` |
-| **Nhật ký logs** | `./logs` | `C:\NORI\logs` (Win) hoặc `/var/log/nori` (Linux) | `LOG_DIR` |
+| Thành phần        | Đường dẫn mặc định (Project Root) | Đường dẫn khuyến nghị (Home Server Độc lập)                       | Biến môi trường điều khiển         |
+| :---------------- | :-------------------------------- | :---------------------------------------------------------------- | :--------------------------------- |
+| **Cơ sở dữ liệu** | `./data/nori.db`                  | `C:\NORI\data\nori.db` (Win) hoặc `/var/lib/nori/nori.db` (Linux) | `DATABASE_URL` hoặc `DATABASE_URI` |
+| **Tệp tải lên**   | `./data/media`                    | `C:\NORI\data\media` (Win) hoặc `/var/lib/nori/media` (Linux)     | `MEDIA_DIR`                        |
+| **Bản sao lưu**   | `./backups`                       | `C:\NORI\backups` (Win) hoặc `/var/backups/nori` (Linux)          | `BACKUP_DIR`                       |
+| **Nhật ký logs**  | `./logs`                          | `C:\NORI\logs` (Win) hoặc `/var/log/nori` (Linux)                 | `LOG_DIR`                          |
 
 Module trung tâm `src/lib/env.ts` tự động phát hiện đường dẫn tương đối hoặc tuyệt đối, tự động tạo thư mục nếu chưa tồn tại và kiểm tra quyền ghi trước khi tiến trình khởi động.
 

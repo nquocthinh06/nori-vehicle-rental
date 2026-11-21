@@ -16,23 +16,29 @@ Tài liệu cung cấp cẩm nang chi tiết từng bước để di chuyển to
 ## 2. Quy Trình Di Chuyển Chi Tiết 5 Bước
 
 ### Bước 1: Tạo Bản Sao Lưu Hoàn Chỉnh Tại Máy Chủ Cũ
+
 Tại máy chủ nguồn (Home Server hiện tại):
+
 ```bash
 # Tạo backup bundle đầy đủ với cơ chế VACUUM an toàn
 pnpm backup
 ```
+
 Bản sao lưu sẽ được tạo tại thư mục `backups/nori-backup-<timestamp>/`:
+
 - `nori.db`: Cơ sở dữ liệu SQLite đã được nén và nhất quán giao dịch.
 - `media/`: Toàn bộ tệp ảnh xe, hợp đồng, tài liệu.
 - `backup-manifest.json`: Chứa mã kiểm tra tính toàn vẹn SHA-256.
 
 Nén gói sao lưu thành file zip:
+
 - **Windows**: `Compress-Archive -Path backups\nori-backup-* -DestinationPath C:\NORI-transfer-bundle.zip`
 - **Linux**: `tar -czvf nori-transfer-bundle.tar.gz backups/nori-backup-*/`
 
 ---
 
 ### Bước 2: Chuẩn Bị Máy Chủ Đích (Target Machine / VPS)
+
 1. Cài đặt Node.js LTS (v20+), pnpm và Git trên máy chủ mới.
 2. Clone repository mã nguồn:
    ```bash
@@ -50,13 +56,16 @@ Nén gói sao lưu thành file zip:
 ---
 
 ### Bước 3: Chuyển Dữ Liệu Sang Máy Chủ Mới
+
 Chuyển file nén sang máy chủ mới bằng `scp`, `rsync`, USB hoặc công cụ truyền file an toàn:
+
 ```bash
 # Ví dụ sử dụng scp từ máy tính sang VPS
 scp nori-transfer-bundle.tar.gz user@target-server:/tmp/
 ```
 
 Giải nén và khôi phục vào máy chủ mới:
+
 ```bash
 cd /opt/nori/app
 # Khôi phục cơ sở dữ liệu và media tự động
@@ -66,7 +75,9 @@ pnpm restore --source /tmp/nori-backup-<timestamp>
 ---
 
 ### Bước 4: Cấu Hình Môi Trường & Build Trên Máy Chủ Mới
+
 Tạo file `.env.production` trên máy chủ mới:
+
 ```env
 NODE_ENV=production
 HOST=127.0.0.1
@@ -84,6 +95,7 @@ TRUST_PROXY=true
 > **Cực kỳ quan trọng**: Giữ nguyên giá trị `PAYLOAD_SECRET` từ máy chủ cũ để đảm bảo tất cả mật khẩu và token người dùng hiện có vẫn giải mã và xác thực được bình thường.
 
 Build và chạy thử:
+
 ```bash
 pnpm build
 pnpm healthcheck

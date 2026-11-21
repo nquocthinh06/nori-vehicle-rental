@@ -37,12 +37,18 @@ test('ENV-02: validateEnvironment enforces 32+ character non-placeholder PAYLOAD
     process.env.PAYLOAD_SECRET = 'short-secret'
     const shortRes = validateEnvironment()
     assert.equal(shortRes.ok, false)
-    assert.equal(shortRes.errors.some((e) => e.includes('quá ngắn')), true)
+    assert.equal(
+      shortRes.errors.some((e) => e.includes('quá ngắn')),
+      true,
+    )
 
     process.env.PAYLOAD_SECRET = 'your-secure-random-payload-secret-at-least-32-chars-long'
     const placeholderRes = validateEnvironment()
     assert.equal(placeholderRes.ok, false)
-    assert.equal(placeholderRes.errors.some((e) => e.includes('giá trị mặc định/placeholder')), true)
+    assert.equal(
+      placeholderRes.errors.some((e) => e.includes('giá trị mặc định/placeholder')),
+      true,
+    )
 
     process.env.PAYLOAD_SECRET = 'a'.repeat(32)
     const validRes = validateEnvironment()
@@ -58,7 +64,10 @@ test('ENV-03: validateEnvironment flags sensitive secrets leaked into NEXT_PUBLI
   try {
     const res = validateEnvironment()
     assert.equal(res.ok, false)
-    assert.equal(res.errors.some((e) => e.includes('NEXT_PUBLIC_ADMIN_SECRET')), true)
+    assert.equal(
+      res.errors.some((e) => e.includes('NEXT_PUBLIC_ADMIN_SECRET')),
+      true,
+    )
   } finally {
     delete process.env.NEXT_PUBLIC_ADMIN_SECRET
   }
@@ -179,8 +188,6 @@ test('TUNNEL-07: extractClientIp validates IPv4 and IPv6 format and rejects malf
   const sanitizedIp = extractClientIp(maliciousHeaders, true)
   assert.equal(sanitizedIp, 'proxy-client')
 
-  const validCfHeaders = new Map([
-    ['cf-connecting-ip', '14.161.42.18'],
-  ])
+  const validCfHeaders = new Map([['cf-connecting-ip', '14.161.42.18']])
   assert.equal(extractClientIp(validCfHeaders, true), '14.161.42.18')
 })

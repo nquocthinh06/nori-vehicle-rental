@@ -1,4 +1,5 @@
 import path from 'path'
+import { postgresAdapter } from '@payloadcms/db-postgres'
 import { sqliteAdapter } from '@payloadcms/db-sqlite'
 import { mcpPlugin } from '@payloadcms/plugin-mcp'
 import { lexicalEditor } from '@payloadcms/richtext-lexical'
@@ -47,26 +48,38 @@ if (process.env.NODE_ENV === 'production' && !payloadSecret) {
   throw new Error('PAYLOAD_SECRET environment variable is required in production.')
 }
 
+const dbUrl = (process.env.DATABASE_URL || process.env.DATABASE_URI || '').trim()
+const isPostgres = dbUrl.startsWith('postgresql:') || dbUrl.startsWith('postgres:')
+
+const dbAdapter = isPostgres
+  ? postgresAdapter({
+      pool: {
+        connectionString: dbUrl,
+        ssl: { rejectUnauthorized: false },
+      },
+      idType: 'uuid',
+      push: true,
+      migrationDir: path.resolve(dirname, 'migrations-postgres'),
+    })
+  : sqliteAdapter({
+      idType: 'uuid',
+      // Schema evolution is managed explicitly via additive migrations (`pnpm db:migrate`).
+      // Keeping `push: false` prevents Drizzle's interactive dev STDIN prompt from deadlocking
+      // `getPayload()` in `pnpm dev` whenever legacy/drifted columns exist in SQLite.
+      push: false,
+      wal: {
+        synchronous: 'NORMAL',
+      },
+      busyTimeout: 5000,
+      transactionOptions: {},
+      client: {
+        url: dbUrl || toSqliteUri(resolveSqlitePath(path.resolve(dirname, '..'))),
+      },
+    })
+
 export default buildConfig({
   secret: payloadSecret || 'nori-local-dev-secret-9b4df14a-91bb-4c9b-b923-b2dfa62da7e4',
-  db: sqliteAdapter({
-    idType: 'uuid',
-    // Schema evolution is managed explicitly via additive migrations (`pnpm db:migrate`).
-    // Keeping `push: false` prevents Drizzle's interactive dev STDIN prompt from deadlocking
-    // `getPayload()` in `pnpm dev` whenever legacy/drifted columns exist in SQLite.
-    push: false,
-    wal: {
-      synchronous: 'NORMAL',
-    },
-    busyTimeout: 5000,
-    transactionOptions: {},
-    client: {
-      url:
-        process.env.DATABASE_URI ||
-        process.env.DATABASE_URL ||
-        toSqliteUri(resolveSqlitePath(path.resolve(dirname, '..'))),
-    },
-  }),
+  db: dbAdapter,
   editor: lexicalEditor(),
   admin: {
     user: Admins.slug,

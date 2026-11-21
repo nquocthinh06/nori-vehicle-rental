@@ -33,6 +33,7 @@ Trước khi kích hoạt trạng thái phục vụ công khai, quản trị vi�
 ## 2. Quy Trình Triển Khai Lần Đầu Tiên (First-Time Deployment)
 
 ### Bước 1: Chuẩn bị Thư mục & Clone Source Code
+
 ```bash
 git clone https://github.com/nquocthinh06/nori-vehicle-rental.git nori-app
 cd nori-app
@@ -40,7 +41,9 @@ pnpm install
 ```
 
 ### Bước 2: Thiết lập File Môi trường
+
 Tạo file `.env.production` và điền thông số chính xác:
+
 ```bash
 cp .env.example .env.production
 # Sử dụng công cụ soạn thảo để điền PAYLOAD_SECRET, APP_URL, DATABASE_URL...
@@ -48,17 +51,20 @@ pnpm env:check
 ```
 
 ### Bước 3: Di chuyển & Xác minh Schema Cơ sở Dữ liệu
+
 ```bash
 pnpm db:check
 pnpm db:migrate:safe
 ```
 
 ### Bước 4: Tạo Bản Build Production Tối Ưu
+
 ```bash
 pnpm build
 ```
 
 ### Bước 5: Khởi Chạy Dịch Vụ
+
 - **Trên Windows**:
   ```powershell
   powershell -ExecutionPolicy Bypass -File .\deploy\windows\install-service.ps1
@@ -71,6 +77,7 @@ pnpm build
   ```
 
 ### Bước 6: Khởi Chạy Cloudflare Tunnel
+
 - Kết nối Named Tunnel trỏ về `http://127.0.0.1:3000` (xem chi tiết tại [CLOUDFLARE_TUNNEL.md](file:///f:/1.%20University/2.%20%C4%90%E1%BB%93%20%C3%A1n/3.%20B%C3%A0i%20t%E1%BA%ADp/nori-vehicle-rental/nori-vehicle-rental/nori-vehicle-rental/docs/CLOUDFLARE_TUNNEL.md)).
 
 ---

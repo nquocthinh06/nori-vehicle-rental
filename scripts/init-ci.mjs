@@ -26,7 +26,9 @@ if (!migRes.ok) {
   console.error('[CI-INIT] Schema migration failed:', migRes)
   process.exit(1)
 }
-console.log(`[CI-INIT] Schema OK: ${migRes.tablesCount} tables, version=${migRes.schemaVersion}, integrity=${migRes.integrity}`)
+console.log(
+  `[CI-INIT] Schema OK: ${migRes.tablesCount} tables, version=${migRes.schemaVersion}, integrity=${migRes.integrity}`,
+)
 
 // 2. Import Snapshot Data (vehicles, brands, models, promotions, etc.)
 console.log('[CI-INIT] 2. Importing canonical snapshot datasets...')
@@ -40,7 +42,9 @@ if (!impRes.ok) {
   console.error('[CI-INIT] Snapshot import failed:', impRes.status, impRes.errors)
   process.exit(1)
 }
-console.log(`[CI-INIT] Snapshot Import OK: status=${impRes.status}, created=${impRes.summary.toCreate}, unchanged=${impRes.summary.unchanged}`)
+console.log(
+  `[CI-INIT] Snapshot Import OK: status=${impRes.status}, created=${impRes.summary.toCreate}, unchanged=${impRes.summary.unchanged}`,
+)
 
 // 3. Ensure test admin and test customer user exist for integration test suites
 console.log('[CI-INIT] 3. Verifying baseline test accounts...')

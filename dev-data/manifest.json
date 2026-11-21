@@ -1,0 +1,442 @@
+{
+  "snapshotVersion": "nori-dev-snapshot-1795257110120",
+  "schemaVersion": "nori-payload-sqlite-v2.5",
+  "exportedAt": "2026-11-21T10:31:50.119Z",
+  "dbSha256": "ab6b55e6e2655d2de740a1bacbb6497ca91c93a8a0f662aed9efe48bde9a6e8c",
+  "dbSizeBytes": 4255744,
+  "counts": {
+    "admins": 2,
+    "users": 17,
+    "branches": 0,
+    "warehouses": 0,
+    "service_locations": 0,
+    "branch_staff": 0,
+    "vehicle_models": 21,
+    "vehicles": 21,
+    "delivery_zones": 0,
+    "location_pricing_rules": 0,
+    "maintenance_schedules": 0,
+    "rental_days": 19,
+    "bookings": 12,
+    "consultations": 3,
+    "notifications": 8,
+    "sales_inquiries": 10,
+    "promotions": 1,
+    "payments": 6,
+    "payment_events": 4,
+    "refunds": 0,
+    "reviews": 0,
+    "posts": 0,
+    "media": 81,
+    "nori_site": 1,
+    "audit_logs": 517
+  },
+  "mediaCount": 81,
+  "mediaFiles": [
+    {
+      "filename": "nori-hero-3.png",
+      "size": 185108,
+      "sha256": "da0601fbb20d8cf5e4c84e96b8ba73e7ee46b263b14eac1a2d6c901118f0d462"
+    },
+    {
+      "filename": "nori-hero-2.png",
+      "size": 200730,
+      "sha256": "3e2a20e825d27c1b7197efd6f07f2acde86afff12d924177e5072a95ff66d7b8"
+    },
+    {
+      "filename": "nori-hero-1.png",
+      "size": 179995,
+      "sha256": "d054e8c8798c59953e1cf2fd11929cc854040eab9b01f0b28c83581cf36c9f27"
+    },
+    {
+      "filename": "nori-story.png",
+      "size": 220089,
+      "sha256": "232c22a40a3fc8be52454505f996f03b1d48b76d8c4b0a39588a0a0ae270a6bb"
+    },
+    {
+      "filename": "toyota-fortuner-catalogue.png",
+      "size": 203271,
+      "sha256": "25d2d6c0247bdf19b447044b15f771b035311cf6398c330aebad54553819d8c3"
+    },
+    {
+      "filename": "honda-pcx-catalogue.png",
+      "size": 215512,
+      "sha256": "f97a757db55e7671d9b72e35eefc45406dd8fb5a3bd650332e450c0eb2262ab6"
+    },
+    {
+      "filename": "ford-ranger-raptor-catalogue.png",
+      "size": 203864,
+      "sha256": "5ab1d97d280f99941b163a5a31eb1cacde8772bdbd0d3552cd8a5bb72c803483"
+    },
+    {
+      "filename": "nori-hero-10.jpg",
+      "size": 332055,
+      "sha256": "1250d9e65426e6078099ea2adc75e138fee41f12f988cc74ab281f159223c3ad"
+    },
+    {
+      "filename": "nori-hero-11.jpg",
+      "size": 238304,
+      "sha256": "6497e55b9fbee7ea2a4d202878add48e348f034c2687fa17d1300ecaa61df35e"
+    },
+    {
+      "filename": "nori-hero-12.jpg",
+      "size": 328159,
+      "sha256": "995baba1cdd2e4be31052647a5bef3043eafcca84c3c1594cd7d1a7c597c38cc"
+    },
+    {
+      "filename": "nori-story-3.jpg",
+      "size": 217910,
+      "sha256": "ab9551d414e9936f3823a01763d77def72013134935d818449b309ab36368e01"
+    },
+    {
+      "filename": "toyota-fortuner-ext-10.jpg",
+      "size": 164622,
+      "sha256": "5f65b43b44d77a03d8630751c13b6ce2a1eb6d400c2ca04f5cc65fc995c7958a"
+    },
+    {
+      "filename": "toyota-fortuner-ext-11.jpg",
+      "size": 182267,
+      "sha256": "10871746a05aadfed003f11496e429ae94fe28d19436702a3ca484ad364ee911"
+    },
+    {
+      "filename": "toyota-fortuner-ext-12.jpg",
+      "size": 329703,
+      "sha256": "ebe0b53b4199deb9a2fb9dfa27bdc8b58604d3f1a923f199cdb0297be717f765"
+    },
+    {
+      "filename": "toyota-fortuner-int-4.jpg",
+      "size": 152420,
+      "sha256": "102aa0437ed928343d8a32b30bdac7afef02d59bf057d6ef22133a57b403d379"
+    },
+    {
+      "filename": "toyota-fortuner-eng-4.jpg",
+      "size": 245978,
+      "sha256": "730662c6b4ce755ad5d52afde9b8e319a16f0bf4e5107f62b0f6d4fd151f2f5f"
+    },
+    {
+      "filename": "honda-pcx-ext-10.jpg",
+      "size": 302178,
+      "sha256": "dee3f32e75f087fd9b72f1049cc2cdf70ff0bfddb94e168026691cae2f5995fd"
+    },
+    {
+      "filename": "honda-pcx-ext-11.jpg",
+      "size": 331588,
+      "sha256": "91f2b07d1ea9657faca483a20dbc64505e35f4f5bd948023a2004fd2bcba3e5b"
+    },
+    {
+      "filename": "honda-pcx-ext-12.jpg",
+      "size": 340519,
+      "sha256": "f79f69d108c8fd7a186bd620b659766f751a45b1aad0eaa92b4d05e4d7af17fe"
+    },
+    {
+      "filename": "ford-ranger-raptor-ext-10.jpg",
+      "size": 254460,
+      "sha256": "bbd69c54ec3bb3d95482c81cb2dcffb9bd4b157d53fbb1ff47d7d66da0efcf33"
+    },
+    {
+      "filename": "ford-ranger-raptor-ext-11.jpg",
+      "size": 242291,
+      "sha256": "e83bd2787c1bde72926f5dca35307758291eb6dcb56c91a1d9abce72cbbad411"
+    },
+    {
+      "filename": "ford-ranger-raptor-ext-12.jpg",
+      "size": 271160,
+      "sha256": "a61f822709d042c36451bd291def71539642ff32a4dfe3770dac927a29626d23"
+    },
+    {
+      "filename": "ford-ranger-raptor-int-4.jpg",
+      "size": 244294,
+      "sha256": "a7775926a69640310762da65c8e787021908dfe1e5ffd4de9a2654dc458175ee"
+    },
+    {
+      "filename": "honda-wave-alpha-ext-7.jpg",
+      "size": 242508,
+      "sha256": "1348069bec8a6236ee77210b2dd6a01ce8fddd8e97c631875df23267d753b9f3"
+    },
+    {
+      "filename": "honda-wave-alpha-ext-8.jpg",
+      "size": 203477,
+      "sha256": "e9277d71ed70631adde1e70eb6609ea4c36c63051cc2200f77f3f846fa6c3395"
+    },
+    {
+      "filename": "honda-vision-ext-7.jpg",
+      "size": 398722,
+      "sha256": "149e0f9ae65d58b995f90b9d3038cd2e9cab025258f58fe4a09f1c48ffd91c0b"
+    },
+    {
+      "filename": "honda-vision-ext-8.jpg",
+      "size": 362964,
+      "sha256": "213fcd0ee4424c76d9b5f2824cbaabf1c2191b5e1f3d23ae942a62c3f87a8c36"
+    },
+    {
+      "filename": "honda-sh160i-ext-7.jpg",
+      "size": 262527,
+      "sha256": "8a29b7ac4f025c7f3939419f20deda7c998c2b170d5d6403e7a82a881feb7eec"
+    },
+    {
+      "filename": "honda-sh160i-ext-8.jpg",
+      "size": 258152,
+      "sha256": "651899af72a5da30b613de93eb37644dbd07551713c2e5e2e78624a289ca7009"
+    },
+    {
+      "filename": "honda-sh350i-ext-10.jpg",
+      "size": 243230,
+      "sha256": "544bed927a7d2716174c8ec5faa83f0e050d15a3b40d30b5c073e7e28c2c1981"
+    },
+    {
+      "filename": "honda-sh350i-ext-11.jpg",
+      "size": 225338,
+      "sha256": "e5f897a1a6cda01d93ba3452cce89a0fa99b5c2f517b744437a6bd80f3d56c66"
+    },
+    {
+      "filename": "honda-sh350i-ext-12.jpg",
+      "size": 260805,
+      "sha256": "01b45d46a5d2d7a2a75c153f8967beed45521e000c3196b8c396ea8467c4fd41"
+    },
+    {
+      "filename": "yamaha-exciter-ext-7.jpg",
+      "size": 230217,
+      "sha256": "1f810a581a8674b29409e5c98a283b8a54b05beb1e7ee667f9fefc2d7d2df707"
+    },
+    {
+      "filename": "yamaha-exciter-ext-8.jpg",
+      "size": 213260,
+      "sha256": "b23a900178716795dcd83337d7a339ae375e03e1767a165871f5232a9aa3a5e7"
+    },
+    {
+      "filename": "yamaha-exciter-feat-4.jpg",
+      "size": 160816,
+      "sha256": "2cf8b31f1eb13327daba04f93fddca46d1ac653b02d900e540abd4f3fbc15dce"
+    },
+    {
+      "filename": "vinfast-evo200-ext-7.jpg",
+      "size": 308608,
+      "sha256": "2470f21c8d60031fb19f6b2297c4be76e2532435604022ea55d539b08af2f526"
+    },
+    {
+      "filename": "vinfast-evo200-ext-8.jpg",
+      "size": 320325,
+      "sha256": "4c9c3e0b8aee90a91b2255cb1bac82ad8dff066a052c2ca5f4e083e8540b5fe6"
+    },
+    {
+      "filename": "kawasaki-z650-ext-7.jpg",
+      "size": 375995,
+      "sha256": "6953f246579cbecd576143be84c5356b322b51dff1e66de0b5803030f9333de5"
+    },
+    {
+      "filename": "kawasaki-z650-ext-8.jpg",
+      "size": 253782,
+      "sha256": "0268cf85459846c7ea8c17b62c94eff92a085b3a7ee94447482cd2d6edb21e9c"
+    },
+    {
+      "filename": "toyota-vios-ext-7.jpg",
+      "size": 155223,
+      "sha256": "b23f3f1a0f1e3255fb1a152989fdd88111e2487cbf1a5bd9c6b6eee523525ea9"
+    },
+    {
+      "filename": "toyota-vios-ext-8.jpg",
+      "size": 180154,
+      "sha256": "026a2a311035440d90e1e7912ed9de143cbaba043d6841814ddae568e7f77d00"
+    },
+    {
+      "filename": "toyota-vios-int-4.jpg",
+      "size": 259566,
+      "sha256": "cb947669e17f7f6adab1d60bff9b5085485e504d42cf9258f378239300a6dfa4"
+    },
+    {
+      "filename": "mazda-cx5-ext-7.jpg",
+      "size": 334676,
+      "sha256": "48b277873cab753bfa0e08646a7e05b330ea0f8399b8460fc572603b9a91deed"
+    },
+    {
+      "filename": "mazda-cx5-ext-8.jpg",
+      "size": 314661,
+      "sha256": "86afcf5339aba6956df10d0d4054187106de272edf39004a2e7fe3ac44c157ad"
+    },
+    {
+      "filename": "mazda-cx5-int-4.jpg",
+      "size": 164014,
+      "sha256": "28b6d8b0dcd9795ad1a8321585e4b4d0de082e84322a4ee42e5131523303a3b4"
+    },
+    {
+      "filename": "mazda-cx5-eng-4.jpg",
+      "size": 327735,
+      "sha256": "0833f8495a1f20456cc58d98f542447f7743094ab278fb06d97e38882711e8a0"
+    },
+    {
+      "filename": "mitsubishi-xpander-ext-7.jpg",
+      "size": 212783,
+      "sha256": "bf24925c4cd0251cca384ec2489e43c5485e362a70d19b2c5bf5e9d21a7b0400"
+    },
+    {
+      "filename": "mitsubishi-xpander-ext-8.jpg",
+      "size": 221404,
+      "sha256": "cdbea773bdbf5488be4db9719a7b7f05cf3206afce41ecd4c2faef358e123a40"
+    },
+    {
+      "filename": "mitsubishi-xpander-int-4.jpg",
+      "size": 116525,
+      "sha256": "ae240c9e91457ecaccc8b4dfe53fb8b3d43746843a00241b3d1d8e6f74fdc991"
+    },
+    {
+      "filename": "honda-crv-ext-7.jpg",
+      "size": 269888,
+      "sha256": "10a30d9c9a0fb352b85d60f1a99c232dbfd00be516c6dfbbf6124466a8dde9f8"
+    },
+    {
+      "filename": "honda-crv-ext-8.jpg",
+      "size": 334924,
+      "sha256": "b137b4b984ac3afac7570a1d612c1c199d4e23444efb62109dc6c052c5495aaa"
+    },
+    {
+      "filename": "honda-crv-int-4.jpg",
+      "size": 380846,
+      "sha256": "1239c37be202504ac3cccbef09e229acab0f689b5af99d0c6beb99ad470276e2"
+    },
+    {
+      "filename": "hyundai-accent-ext-7.jpg",
+      "size": 278200,
+      "sha256": "e4619eea77b7c4ab5caaf46b2c5cadd000dcf2e0610424e721afe6c74e4c43d8"
+    },
+    {
+      "filename": "hyundai-accent-ext-8.jpg",
+      "size": 189732,
+      "sha256": "3f0527d4dfe23350cbb7fa79f0746352b7527f1dc9c98b9cbf110d9bbaf321a7"
+    },
+    {
+      "filename": "hyundai-accent-int-4.jpg",
+      "size": 108487,
+      "sha256": "40953e34b64bdd7b88de42cc88c291799e69d9d7468c0fd74a1d81375a6157e3"
+    },
+    {
+      "filename": "vinfast-vf8-ext-10.jpg",
+      "size": 216531,
+      "sha256": "c2344a07b3e656ec506bcbf1491a7301a01deaa9688166d0939bf703d3596c22"
+    },
+    {
+      "filename": "vinfast-vf8-ext-11.jpg",
+      "size": 340493,
+      "sha256": "ec487e792ad50e11cd3ab9ff859ef32746d077db4183f98764d1f2a726cfa17b"
+    },
+    {
+      "filename": "vinfast-vf8-ext-12.jpg",
+      "size": 300132,
+      "sha256": "bbb14e8c758710acb202fbefdb6ed99bc3f55abc253bc1434017033cfd372115"
+    },
+    {
+      "filename": "vinfast-vf8-int-4.jpg",
+      "size": 238495,
+      "sha256": "64e4abace2a4f8a1f9ead970ae88267a46d9ac3fc49cc7647dae22a65c14d1cb"
+    },
+    {
+      "filename": "mercedes-c300-ext-7.jpg",
+      "size": 218948,
+      "sha256": "e449c75d0d46220e4e2ceddb5513ba6a06817254c1f0a70b9911398b3edbd7ba"
+    },
+    {
+      "filename": "mercedes-c300-ext-8.jpg",
+      "size": 275766,
+      "sha256": "cf5e03f985c0c33de210a40c1a0776fefb61a84cddad23c3a50810cab5b18031"
+    },
+    {
+      "filename": "mercedes-c300-int-4.jpg",
+      "size": 238383,
+      "sha256": "0e93af3a8da76e27cebe7bb59b1a51b7b889307c4f0667a301bf4c62c322780c"
+    },
+    {
+      "filename": "ford-ranger-wildtrak-ext-7.jpg",
+      "size": 236575,
+      "sha256": "9df3d424c0c4d861fe2ae64d8d375c4478977dbb29abd56049af96514c5793b5"
+    },
+    {
+      "filename": "ford-ranger-wildtrak-ext-8.jpg",
+      "size": 235286,
+      "sha256": "e0a85513853110058dddae3a1702ed07bab088cb055265f9fc1d52f41c1e548d"
+    },
+    {
+      "filename": "toyota-hilux-ext-7.jpg",
+      "size": 234185,
+      "sha256": "837084d98b5e9463c88add3b84ad9d69ddc0da992c16436a5e672778e7bcd20c"
+    },
+    {
+      "filename": "toyota-hilux-ext-8.jpg",
+      "size": 188284,
+      "sha256": "3c0ae0852d7da3bd63a398eb6323f5b12afaca929801cc6de987a9ab5cfa5605"
+    },
+    {
+      "filename": "toyota-hilux-int-4.jpg",
+      "size": 267664,
+      "sha256": "854375af1d617501c71ad34fc96d2d78e28fe955b4cbc26484df3da0624a50bc"
+    },
+    {
+      "filename": "toyota-hilux-eng-4.jpg",
+      "size": 236187,
+      "sha256": "c496c499098dcb677acecd568f92bc84d2bea144a20a5ff91277731bf57e112d"
+    },
+    {
+      "filename": "mitsubishi-triton-ext-7.jpg",
+      "size": 270214,
+      "sha256": "c72f2e249d9853d7eba0177283b8f1a9c463497676ebf91deafb11f46fd5c41b"
+    },
+    {
+      "filename": "mitsubishi-triton-ext-8.jpg",
+      "size": 243520,
+      "sha256": "69c4296854c7ce0c92d7c819b566341970696087bdf99f7b49f7a5a4b9f0a09e"
+    },
+    {
+      "filename": "xe-dien-vinfast-evo-max.jpg",
+      "size": 78985,
+      "sha256": "117f5e4b16d1822bfd8dbb0615bdd76d2305832a5dcb5f991edf3b02958d57b5"
+    },
+    {
+      "filename": "ERD.png",
+      "size": 755491,
+      "sha256": "6af655a191248cb489891f773c8d5c4554ef15c5aceaea62bfd61adb664ad89b"
+    },
+    {
+      "filename": "xe-dien-vinfast-evo-max-1.jpg",
+      "size": 78985,
+      "sha256": "117f5e4b16d1822bfd8dbb0615bdd76d2305832a5dcb5f991edf3b02958d57b5"
+    },
+    {
+      "filename": "vinfast-vf-8-250207-g99-1200x675-jpg-1794998589430-0-ngfl.webp",
+      "size": 89902,
+      "sha256": "e31063814242163025f5c1521853084d9c13386f8d75686c06b35bed3b2db525"
+    },
+    {
+      "filename": "vinfast-vf-8-250207-g99-1200x675-jpg-1794999137387-0-aq0e.webp",
+      "size": 89902,
+      "sha256": "e31063814242163025f5c1521853084d9c13386f8d75686c06b35bed3b2db525"
+    },
+    {
+      "filename": "vinfast-vf-8-250207-g99-1200x675-jpg-1795003329326-0-w7v0.webp",
+      "size": 89902,
+      "sha256": "e31063814242163025f5c1521853084d9c13386f8d75686c06b35bed3b2db525"
+    },
+    {
+      "filename": "vinfast-vf-8-250207-g99-1200x675-jpg-1795003379449-0-d5i8.webp",
+      "size": 89902,
+      "sha256": "e31063814242163025f5c1521853084d9c13386f8d75686c06b35bed3b2db525"
+    },
+    {
+      "filename": "vinfast-vf-8-250207-g99-1200x675-jpg-1795003541304-0-c7n8.webp",
+      "size": 89902,
+      "sha256": "e31063814242163025f5c1521853084d9c13386f8d75686c06b35bed3b2db525"
+    },
+    {
+      "filename": "vinfast-vf-8-250207-g99-1200x675-jpg-1795014575900-0-v62m.webp",
+      "size": 89902,
+      "sha256": "e31063814242163025f5c1521853084d9c13386f8d75686c06b35bed3b2db525"
+    },
+    {
+      "filename": "4mynwj2nq3n3n18chvle-1795014708844-0-iny1.webp",
+      "size": 178752,
+      "sha256": "962c857166673932930283090d41e1c73cba99c37411f8107c15506e7b6244b2"
+    },
+    {
+      "filename": "raptor-model-1795014842860-0-5kpe.webp",
+      "size": 55758,
+      "sha256": "0154a3fb0b99ea69c2a13db5a6d1c055331040cb381bc6d0625913f553c0318d"
+    }
+  ]
+}

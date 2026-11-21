@@ -25,7 +25,9 @@ console.log('========================================================')
 console.log(`Target Database: ${dbPath}`)
 
 if (!fs.existsSync(dbPath)) {
-  console.log(`[SAFE-MIGRATE] Database does not exist yet. Initializing fresh database at ${dbPath}...`)
+  console.log(
+    `[SAFE-MIGRATE] Database does not exist yet. Initializing fresh database at ${dbPath}...`,
+  )
   try {
     const initRes = runDatabaseMigration({ dbPath })
     console.log(

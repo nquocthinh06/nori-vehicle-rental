@@ -10,6 +10,7 @@ import {
   runDatabaseMigration,
   sha256File,
 } from '../src/lib/data-sync.ts'
+import { prepareTestDatabaseBaseline } from '../src/lib/dev-sync.ts'
 import {
   checkDatabaseCompatibility,
   REQUIRED_SCHEMA_CONTRACT,
@@ -66,16 +67,17 @@ describe('NORI Database Migration & Schema Compatibility Regression Suite', () =
   it('Group B: Upgrading pre-migration database safely adds payment_option and preserves business data', () => {
     const tmpDir = createTempDir('nori-upgrade-db-')
     const upgradeDbPath = path.join(tmpDir, 'legacy-nori.db')
-    const liveDbPath = path.resolve('nori.db')
 
     try {
-      // Create a pre-migration snapshot by copying live nori.db
-      fs.copyFileSync(liveDbPath, upgradeDbPath)
+      // Create a pre-migration snapshot by copying baseline dev/test db
+      prepareTestDatabaseBaseline(upgradeDbPath, process.cwd())
 
       // Ensure the test DB simulates legacy state by removing payment_option migration & columns
       const dbSim = new DatabaseSync(upgradeDbPath)
       try {
-        dbSim.exec("DELETE FROM payload_migrations WHERE name = '20261120_030000_booking_payment_option_plans'")
+        dbSim.exec(
+          "DELETE FROM payload_migrations WHERE name = '20261120_030000_booking_payment_option_plans'",
+        )
         dbSim.exec('DROP INDEX IF EXISTS bookings_payment_option_idx')
         dbSim.exec('ALTER TABLE bookings DROP COLUMN payment_option')
         dbSim.exec('ALTER TABLE bookings DROP COLUMN reservation_deposit_snapshot')
@@ -170,7 +172,9 @@ describe('NORI Database Migration & Schema Compatibility Regression Suite', () =
       // Simulate un-migrated state by removing the pending migration record and columns
       const dbPrep = new DatabaseSync(testDbPath)
       try {
-        dbPrep.exec("DELETE FROM payload_migrations WHERE name = '20261120_030000_booking_payment_option_plans'")
+        dbPrep.exec(
+          "DELETE FROM payload_migrations WHERE name = '20261120_030000_booking_payment_option_plans'",
+        )
       } catch {}
       try {
         dbPrep.exec('ALTER TABLE bookings DROP COLUMN payment_option')
@@ -289,10 +293,9 @@ describe('NORI Database Migration & Schema Compatibility Regression Suite', () =
   it('Group G: Upgrading database preserves all accounts, password hashes, bookings and payments byte-for-byte where untouched', () => {
     const tmpDir = createTempDir('nori-preservation-')
     const testDbPath = path.join(tmpDir, 'preservation-nori.db')
-    const liveDbPath = path.resolve('nori.db')
 
     try {
-      fs.copyFileSync(liveDbPath, testDbPath)
+      prepareTestDatabaseBaseline(testDbPath, process.cwd())
 
       const dbPre = new DatabaseSync(testDbPath, { readOnly: true })
       const usersPre = dbPre

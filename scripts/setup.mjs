@@ -12,7 +12,9 @@ console.log('========================================================')
 // 1. Check Node.js version
 const nodeMajor = parseInt(process.versions.node.split('.')[0], 10)
 if (nodeMajor < 20) {
-  console.error(`[ERROR] Node.js version ${process.version} is too old. NORI requires Node.js >= 20.x (Recommended: Node 24 LTS).`)
+  console.error(
+    `[ERROR] Node.js version ${process.version} is too old. NORI requires Node.js >= 20.x (Recommended: Node 24 LTS).`,
+  )
   process.exit(1)
 }
 console.log(`[OK] Node.js version: ${process.version}`)
@@ -54,7 +56,19 @@ for (const dir of requiredDirs) {
   }
 }
 
-// 4. Run database migration
+// 4. Synchronize development database and media if dev-data snapshot exists
+const devSnapshotDb = path.join(rootDir, 'dev-data', 'database', 'nori-dev.db')
+if (fs.existsSync(devSnapshotDb)) {
+  console.log('[SETUP] Phát hiện bản snapshot phát triển trong dev-data/. Đang đồng bộ...')
+  try {
+    execSync('node scripts/dev-sync-import.ts', { stdio: 'inherit', cwd: rootDir })
+    console.log('[OK] Đồng bộ snapshot phát triển thành công!')
+  } catch (syncErr) {
+    console.warn(`[WARN] Tự động nạp snapshot dev-data: ${syncErr.message}`)
+  }
+}
+
+// 5. Run database migration
 console.log('[SETUP] Checking and applying database schema migrations...')
 try {
   execSync('node scripts/check-db-schema.mjs', { stdio: 'inherit', cwd: rootDir })

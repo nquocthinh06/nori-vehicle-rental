@@ -1525,10 +1525,11 @@ export function CheckoutPanel({ address }: { address: string | null }) {
         />
         {error && (
           <div className="my-4 space-y-2">
-            <Notice tone="error">
-              {error}
-            </Notice>
-            {(confirmedPromoCode || trimmedDraft || error.toLowerCase().includes('mã') || error.toLowerCase().includes('khuyến mãi')) && (
+            <Notice tone="error">{error}</Notice>
+            {(confirmedPromoCode ||
+              trimmedDraft ||
+              error.toLowerCase().includes('mã') ||
+              error.toLowerCase().includes('khuyến mãi')) && (
               <Button
                 type="button"
                 variant="secondary"

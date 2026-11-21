@@ -7,6 +7,7 @@ Tài liệu tập hợp các vấn đề thường gặp trong quá trình vận
 ## 1. Sự Cố Cơ Sở Dữ Liệu SQLite
 
 ### Vấn đề 1: Lỗi `SQLITE_BUSY: database is locked`
+
 - **Nguyên nhân**:
   1. Cơ sở dữ liệu đang bị khóa bởi một tiến trình khác (ví dụ: đang mở bằng công cụ DB Browser for SQLite hoặc một script chạy ngầm).
   2. Chưa kích hoạt chế độ WAL hoặc `busy_timeout` quá thấp.
@@ -16,6 +17,7 @@ Tài liệu tập hợp các vấn đề thường gặp trong quá trình vận
   3. Kiểm tra xem có file `-shm` hoặc `-wal` bị treo không. Nếu server đã tắt hoàn toàn, bạn có thể xóa các file `-shm` và `-wal` rồi khởi động lại server.
 
 ### Vấn đề 2: Lỗi `SQLITE_ERROR: no such column` sau khi cập nhật code
+
 - **Nguyên nhân**: Mã nguồn mới có thêm các trường mới trong Payload Schema nhưng chưa áp dụng database migrations.
 - **Cách khắc phục**:
   Chạy lệnh cập nhật an toàn:
@@ -28,6 +30,7 @@ Tài liệu tập hợp các vấn đề thường gặp trong quá trình vận
 ## 2. Sự Cố Kết Nối Cloudflare Tunnel
 
 ### Vấn đề 1: Trình duyệt báo lỗi `502 Bad Gateway` hoặc `504 Gateway Timeout`
+
 - **Nguyên nhân**:
   1. Ứng dụng Next.js trên Home Server chưa được khởi động hoặc đã bị crash.
   2. Tunnel đang trỏ sai cổng nội bộ (ví dụ cấu hình trỏ vào port 8080 trong khi Next.js chạy port 3000).
@@ -42,6 +45,7 @@ Tài liệu tập hợp các vấn đề thường gặp trong quá trình vận
   3. Kiểm tra lại cấu hình cổng trong tệp `config.yml` hoặc trên Cloudflare Dashboard (phải là `http://127.0.0.1:3000`).
 
 ### Vấn đề 2: Đăng nhập Admin hoặc gọi Server Action bị lỗi `Invalid Server Actions request` / 403 Forbidden
+
 - **Nguyên nhân**: Next.js chặn request do Host header từ Cloudflare Tunnel không nằm trong danh sách `allowedOrigins`.
 - **Cách khắc phục**:
   1. Mở file `.env.production`.
@@ -49,6 +53,7 @@ Tài liệu tập hợp các vấn đề thường gặp trong quá trình vận
   3. Khởi động lại server để Next.js nạp cấu hình mới.
 
 ### Vấn đề 3: Khách hàng hoặc Admin bị văng đăng nhập liên tục khi truy cập qua Tunnel
+
 - **Nguyên nhân**: Cookie phiên bị từ chối do trình duyệt yêu cầu kênh HTTPS nhưng server lại phát cookie dạng không an toàn (`Secure=false`), hoặc ngược lại.
 - **Cách khắc phục**:
   1. Kiểm tra header chuyển tiếp từ Cloudflare: Đảm bảo SSL trên Cloudflare Dashboard đặt ở chế độ **Full** hoặc **Flexible**.
@@ -60,6 +65,7 @@ Tài liệu tập hợp các vấn đề thường gặp trong quá trình vận
 ## 3. Sự Cố Tiến Trình & Môi Trường
 
 ### Vấn đề 1: Lỗi `Port 3000 is already in use` (EADDRINUSE)
+
 - **Nguyên nhân**: Có một phiên bản Node.js cũ đang chạy ngầm và chiếm cổng 3000.
 - **Cách khắc phục**:
   - **Trên Windows**:
@@ -75,6 +81,7 @@ Tài liệu tập hợp các vấn đề thường gặp trong quá trình vận
     ```
 
 ### Vấn đề 2: Lệnh `pnpm env:check` báo đỏ `Missing required environment variable: PAYLOAD_SECRET`
+
 - **Nguyên nhân**: File `.env` chưa được tạo hoặc chưa có khóa bảo mật.
 - **Cách khắc phục**:
   Chạy lệnh khởi tạo tự động:

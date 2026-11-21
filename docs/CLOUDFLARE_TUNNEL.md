@@ -6,12 +6,12 @@ Tài liệu hướng dẫn chi tiết cách đưa website NORI trên Home Server
 
 ## 1. So sánh: Quick Tunnel vs Named Tunnel
 
-| Tiêu chí | Quick Tunnel (Dùng thử / Demo) | Named Tunnel (Chính thức / Production) |
-| :--- | :--- | :--- |
-| **Mục đích** | Kiểm thử nhanh, demo cho nhóm hoặc khách xem trước | Vận hành chính thức, production lâu dài |
-| **Tên miền** | Ngẫu nhiên: `https://*.trycloudflare.com` | Tên miền riêng: `https://nori.yourdomain.com` |
-| **Cấu hình** | 1 dòng lệnh, không cần tài khoản Cloudflare | Cần tài khoản Cloudflare & domain trỏ về Cloudflare Nameservers |
-| **Tính cố định** | Đổi URL mỗi khi tắt/bật lại tiến trình | URL cố định vĩnh viễn, không đổi |
+| Tiêu chí          | Quick Tunnel (Dùng thử / Demo)                                                                    | Named Tunnel (Chính thức / Production)                                                            |
+| :---------------- | :------------------------------------------------------------------------------------------------ | :------------------------------------------------------------------------------------------------ |
+| **Mục đích**      | Kiểm thử nhanh, demo cho nhóm hoặc khách xem trước                                                | Vận hành chính thức, production lâu dài                                                           |
+| **Tên miền**      | Ngẫu nhiên: `https://*.trycloudflare.com`                                                         | Tên miền riêng: `https://nori.yourdomain.com`                                                     |
+| **Cấu hình**      | 1 dòng lệnh, không cần tài khoản Cloudflare                                                       | Cần tài khoản Cloudflare & domain trỏ về Cloudflare Nameservers                                   |
+| **Tính cố định**  | Đổi URL mỗi khi tắt/bật lại tiến trình                                                            | URL cố định vĩnh viễn, không đổi                                                                  |
 | **Script có sẵn** | `deploy/cloudflare/run-quick-tunnel.bat` (Win)<br>`deploy/cloudflare/run-quick-tunnel.sh` (Linux) | `deploy/cloudflare/run-named-tunnel.bat` (Win)<br>`deploy/cloudflare/run-named-tunnel.sh` (Linux) |
 
 ---
@@ -19,6 +19,7 @@ Tài liệu hướng dẫn chi tiết cách đưa website NORI trên Home Server
 ## 2. Cài Đặt `cloudflared` Trên Máy Chủ
 
 ### Trên Windows:
+
 1. Tải file `cloudflared-windows-amd64.exe` từ [trang phát hành chính thức của Cloudflare](https://github.com/cloudflare/cloudflared/releases).
 2. Đổi tên thành `cloudflared.exe` và đặt vào thư mục trong `PATH` (ví dụ `C:\Windows\System32` hoặc thư mục dự án `deploy\cloudflare\`).
 3. Hoặc cài đặt qua Winget trong PowerShell:
@@ -27,6 +28,7 @@ Tài liệu hướng dẫn chi tiết cách đưa website NORI trên Home Server
    ```
 
 ### Trên Ubuntu Linux:
+
 ```bash
 # Tải và cài đặt file .deb
 curl -L --output cloudflared.deb https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
@@ -62,6 +64,7 @@ cloudflared --version
 ## 4. Cách 2: Cấu Hình Named Tunnel Với Tên Miền Riêng (Production)
 
 Có hai cách thiết lập Named Tunnel:
+
 - **Tùy chọn A (Giao diện Cloudflare Zero Trust Dashboard - Khuyên Dùng)**: Đơn giản nhất, quản lý từ xa.
 - **Tùy chọn B (Quản lý qua tệp cấu hình CLI local)**: Phù hợp cho sysadmin muốn lưu file config tại máy chủ.
 
@@ -110,7 +113,7 @@ Có hai cách thiết lập Named Tunnel:
    Copy file `deploy/cloudflare/config.yml.example` thành `deploy/cloudflare/config.yml`:
    ```yaml
    tunnel: <TUNNEL_ID_CUA_BAN>
-   credentials-file: C:\Users\<Username>\.cloudflared\<TUNNEL_ID>.json  # hoặc /home/nori/.cloudflared/...
+   credentials-file: C:\Users\<Username>\.cloudflared\<TUNNEL_ID>.json # hoặc /home/nori/.cloudflared/...
 
    ingress:
      - hostname: nori.yourdomain.com
@@ -129,6 +132,7 @@ Có hai cách thiết lập Named Tunnel:
 ## 5. Tự Động Hóa Nhận Diện HTTPS & Bảo Mật Cookie
 
 NORI đã được tích hợp sẵn cơ chế tương thích tuyệt đối với Cloudflare Tunnel:
+
 - Cloudflare gửi kèm header `cf-visitor: {"scheme":"https"}`.
 - Module `src/lib/session-cookie.ts` tự động kích hoạt cờ `Secure: true` cho cookie xác thực khách hàng và quản trị viên khi truy cập qua Tunnel.
 - Module `src/lib/api-utils.ts` tự động đọc địa chỉ IP thật của người dùng từ header `cf-connecting-ip` để tính toán chính xác Rate Limiting, ngăn chặn giả mạo IP.

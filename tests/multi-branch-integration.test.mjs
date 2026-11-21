@@ -6,6 +6,7 @@ import path from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { after, before, describe, it } from 'node:test'
 import { createFullBackup, restoreFromBackup, runDatabaseMigration } from '../src/lib/data-sync.ts'
+import { prepareTestDatabaseBaseline } from '../src/lib/dev-sync.ts'
 import {
   createVehicleTransferAtomic,
   evaluateVehicleBookingAvailabilityAndPricing,
@@ -283,7 +284,6 @@ describe('Module 3.7 Integration, Atomic Transactions, Concurrency & Persistence
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nori-mb-int-'))
   const dbPath = path.join(tmpDir, 'nori-test.db')
   const backupsDir = path.join(tmpDir, 'backups')
-  const liveDbPath = path.resolve('nori.db')
 
   let harness
   let branchAId
@@ -306,7 +306,7 @@ describe('Module 3.7 Integration, Atomic Transactions, Concurrency & Persistence
   }
 
   before(async () => {
-    fs.copyFileSync(liveDbPath, dbPath)
+    prepareTestDatabaseBaseline(dbPath, process.cwd())
     // DB-01/DB-02: Verify migration is idempotent & preserves 100% existing records
     const dbPre = new DatabaseSync(dbPath)
     baselineVehicleCount = dbPre.prepare('SELECT COUNT(*) as c FROM vehicles').get().c
@@ -688,5 +688,11 @@ describe('Module 3.7 Integration, Atomic Transactions, Concurrency & Persistence
     )
     assert.equal(verifyDb.prepare('PRAGMA integrity_check').get().integrity_check, 'ok')
     verifyDb.close()
+  })
+
+  after(() => {
+    try {
+      fs.rmSync(tmpDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
+    } catch {}
   })
 })

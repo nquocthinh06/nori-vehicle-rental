@@ -37,7 +37,8 @@ export type SessionCookieOptions = {
   maxAge: number
 }
 
-const IPV4_REGEX = /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/
+const IPV4_REGEX =
+  /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/
 const IPV6_REGEX = /^[0-9a-fA-F:]+$/
 
 export function isValidIp(ip: string): boolean {

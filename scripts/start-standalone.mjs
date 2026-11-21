@@ -77,9 +77,7 @@ const configuredDataDir = process.env.DATA_DIR?.trim() || process.env.NORI_DATA_
 const resolvedDbPath = path.resolve(
   rootDir,
   explicitSqlitePath ||
-    (explicitDbUri?.startsWith('file:')
-      ? explicitDbUri.slice(5)
-      : explicitDbUri) ||
+    (explicitDbUri?.startsWith('file:') ? explicitDbUri.slice(5) : explicitDbUri) ||
     (configuredDataDir ? path.join(configuredDataDir, 'nori.db') : 'nori.db'),
 )
 const resolvedMediaDir = path.resolve(
@@ -106,7 +104,13 @@ const resolvedLogDir = path.resolve(
 )
 
 // Ensure storage directories exist
-for (const dir of [path.dirname(resolvedDbPath), resolvedMediaDir, resolvedCacheDir, resolvedBackupDir, resolvedLogDir]) {
+for (const dir of [
+  path.dirname(resolvedDbPath),
+  resolvedMediaDir,
+  resolvedCacheDir,
+  resolvedBackupDir,
+  resolvedLogDir,
+]) {
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true })
   }

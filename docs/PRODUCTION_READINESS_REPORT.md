@@ -13,22 +13,23 @@ Hệ thống NORI Vehicle Rental đã hoàn thành toàn diện quy trình rà s
 
 ### Bảng Đánh Giá Các Cổng Chất Lượng (Quality Gates Status):
 
-| Cổng Đánh Giá | Trạng thái | Đánh giá chi tiết |
-| :--- | :---: | :--- |
-| **1. Code Readiness** | ✅ **ĐẠT** | 0 lỗi TypeScript (`pnpm typecheck`), 0 cảnh báo lint (`pnpm lint`), 104 route được prerender tối ưu (`pnpm build`). Không hardcode IP/Domain. |
-| **2. Business Readiness** | ✅ **ĐẠT** | 331/331 unit/integration test suites vượt qua 100%. Toàn vẹn 21 phân hệ quản trị, quy trình đặt xe, tính giá, chiết khấu và khóa ngày nguyên tử. |
-| **3. Security Readiness** | ✅ **ĐẠT** | Phân tách tuyệt đối giữa `users` và `admins`. Cookie tương thích reverse proxy/Cloudflare HTTPS (`Secure`, `HttpOnly`, `SameSite=Lax`). Rate limit IP qua `cf-connecting-ip`. Chống CSRF Server Actions. |
-| **4. Database Readiness** | ✅ **ĐẠT** | 109 bảng SQLite tối ưu chế độ WAL (`PRAGMA journal_mode = WAL; busy_timeout = 10000;`). Chiến lược migration an toàn Additive-Only. Cơ chế hot backup `VACUUM INTO` kèm mã băm SHA-256. |
-| **5. Home Server Readiness** | ✅ **ĐẠT** | Bộ kịch bản triển khai độc lập cho cả Windows 10/11 (`deploy/windows/`) và Ubuntu Linux (`deploy/linux/`). Tách biệt vùng dữ liệu bền vững khỏi source code. Hỗ trợ tự động chạy khi bật máy (Task Scheduler / Systemd). |
-| **6. Cloudflare Readiness** | ✅ **ĐẠT** | Tương thích hoàn toàn với cả Cloudflare Quick Tunnel (1-click dùng thử) và Named Tunnel (Tên miền riêng chính thức). Không cần mở port router (No Port Forwarding), ẩn 100% IP gốc. |
-| **7. External Verification** | ⏳ **CHỜ BẬT** | Các script và cấu hình tunnel đã sẵn sàng 100%. Đang chờ người dùng bật connector hoặc kích hoạt token tunnel thực tế khi cần public. |
-| **Tổng thể Production** | 🚀 **READY** | **SẴN SÀNG TRIỂN KHAI PRODUCTION** |
+| Cổng Đánh Giá                |   Trạng thái   | Đánh giá chi tiết                                                                                                                                                                                                        |
+| :--------------------------- | :------------: | :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **1. Code Readiness**        |   ✅ **ĐẠT**   | 0 lỗi TypeScript (`pnpm typecheck`), 0 cảnh báo lint (`pnpm lint`), 104 route được prerender tối ưu (`pnpm build`). Không hardcode IP/Domain.                                                                            |
+| **2. Business Readiness**    |   ✅ **ĐẠT**   | 331/331 unit/integration test suites vượt qua 100%. Toàn vẹn 21 phân hệ quản trị, quy trình đặt xe, tính giá, chiết khấu và khóa ngày nguyên tử.                                                                         |
+| **3. Security Readiness**    |   ✅ **ĐẠT**   | Phân tách tuyệt đối giữa `users` và `admins`. Cookie tương thích reverse proxy/Cloudflare HTTPS (`Secure`, `HttpOnly`, `SameSite=Lax`). Rate limit IP qua `cf-connecting-ip`. Chống CSRF Server Actions.                 |
+| **4. Database Readiness**    |   ✅ **ĐẠT**   | 109 bảng SQLite tối ưu chế độ WAL (`PRAGMA journal_mode = WAL; busy_timeout = 10000;`). Chiến lược migration an toàn Additive-Only. Cơ chế hot backup `VACUUM INTO` kèm mã băm SHA-256.                                  |
+| **5. Home Server Readiness** |   ✅ **ĐẠT**   | Bộ kịch bản triển khai độc lập cho cả Windows 10/11 (`deploy/windows/`) và Ubuntu Linux (`deploy/linux/`). Tách biệt vùng dữ liệu bền vững khỏi source code. Hỗ trợ tự động chạy khi bật máy (Task Scheduler / Systemd). |
+| **6. Cloudflare Readiness**  |   ✅ **ĐẠT**   | Tương thích hoàn toàn với cả Cloudflare Quick Tunnel (1-click dùng thử) và Named Tunnel (Tên miền riêng chính thức). Không cần mở port router (No Port Forwarding), ẩn 100% IP gốc.                                      |
+| **7. External Verification** | ⏳ **CHỜ BẬT** | Các script và cấu hình tunnel đã sẵn sàng 100%. Đang chờ người dùng bật connector hoặc kích hoạt token tunnel thực tế khi cần public.                                                                                    |
+| **Tổng thể Production**      |  🚀 **READY**  | **SẴN SÀNG TRIỂN KHAI PRODUCTION**                                                                                                                                                                                       |
 
 ---
 
 ## II. Chi Tiết Các Hạng Mục Đã Chuẩn Hóa & Nâng Cấp
 
 ### 1. Chuẩn Hóa Cấu Hình Môi Trường Tập Trung (`src/lib/env.ts`)
+
 - **Trước nâng cấp**: Biến môi trường được đọc trực tiếp tại nhiều vị trí; thiếu cơ chế xác thực tập trung; đường dẫn database và uploads phụ thuộc vào thư mục tương đối tại thời điểm chạy.
 - **Sau nâng cấp**:
   - Module `src/lib/env.ts` đóng vai trò nguồn cấu hình duy nhất (Single Source of Truth), tự động chuẩn hóa đường dẫn tương đối và tuyệt đối trên Windows (`C:\...`) và Linux (`/var/...`).
@@ -37,6 +38,7 @@ Hệ thống NORI Vehicle Rental đã hoàn thành toàn diện quy trình rà s
   - Cung cấp CLI `pnpm env:check` (`scripts/validate-env.mjs`) giúp bắt lỗi cấu hình ngay từ bước khởi chạy.
 
 ### 2. Tương Thích Hoàn Hảo Với Cloudflare Tunnel & Reverse Proxy
+
 - **Bảo mật Cookie Thông Minh (`src/lib/session-cookie.ts` & `src/lib/app-auth.ts`)**:
   - Tự động phát hiện tiêu đề `cf-visitor: {"scheme":"https"}` và `x-forwarded-ssl: on` do Cloudflare gửi tới.
   - Khi người dùng truy cập qua HTTPS Tunnel: Cookie phiên tự động bật cờ `Secure: true; HttpOnly: true; SameSite: Lax`.
@@ -47,6 +49,7 @@ Hệ thống NORI Vehicle Rental đã hoàn thành toàn diện quy trình rà s
   - Ưu tiên đọc header `cf-connecting-ip` từ Cloudflare Edge trước khi đọc `X-Forwarded-For`, ngăn ngừa kẻ xấu giả mạo IP để vượt qua bộ đếm rate-limit.
 
 ### 3. Tối Ưu Trải Nghiệm Khách Hàng & Không Gián Đoạn Đơn Thuê
+
 - **Giữ Vững Phiên Đăng Nhập Khi Chuyển Tab (`src/components/auth-provider.tsx`)**:
   - Khắc phục lỗi rớt session khi tab trình duyệt bị freeze hoặc mạng chập chờn trong lúc khách hàng ở bước xác nhận đơn thuê.
 - **Xử Lý Mã Ưu Đãi (Promo Code) Mượt Mà (`src/components/checkout-panel.tsx`)**:
@@ -54,17 +57,20 @@ Hệ thống NORI Vehicle Rental đã hoàn thành toàn diện quy trình rà s
   - Thêm nút "Tiếp tục đặt xe không áp dụng mã ưu đãi" khi mã hết hạn, bảo đảm khách hàng không bao giờ bị kẹt vòng lặp tại màn hình thanh toán.
 
 ### 4. Tách Biệt Vùng Dữ Liệu Bền Vững Khỏi Mã Nguồn
+
 - Thiết lập cơ chế lưu trữ tách rời:
   - Mã nguồn: Có thể `git pull`, `git checkout` thoải mái mà không bao giờ ghi đè lên dữ liệu.
   - Dữ liệu thực tế: Lưu trữ độc lập tại `DATA_DIR`, `MEDIA_DIR`, `BACKUP_DIR`, `LOG_DIR` (Ví dụ trên Windows: `C:\NORI\data`, trên Linux: `/var/lib/nori`).
 
 ### 5. Cơ Chế Sao Lưu & Khôi Phục Nhất Quán Giao Dịch
+
 - Module `scripts/backup-db.mjs` áp dụng lệnh `VACUUM INTO` của SQLite để tạo bản hot backup an toàn ngay cả khi hệ thống đang phục vụ khách hàng.
 - Tự động tính mã băm SHA-256 đối soát, kiểm tra `PRAGMA integrity_check`, đồng bộ thư mục `media/` và lưu trữ `backup-manifest.json`.
 - Tự động dọn dẹp các bản backup cũ theo chính sách lưu trữ (`--keep 14`).
 - Script `scripts/restore-db.mjs` có cơ chế tự động tạo bản dự phòng khẩn cấp trước khi khôi phục, bảo đảm an toàn 100%.
 
 ### 6. Tự Động Hóa Vận Hành & Khởi Động Khi Bật Máy
+
 - **Cho Windows Home Server**:
   - `deploy/windows/start-nori.ps1` & `stop-nori.ps1`: Quản lý tiến trình nền.
   - `deploy/windows/install-service.ps1`: Đăng ký Windows Task Scheduler tự khởi động server dưới quyền SYSTEM khi bật máy, tự hồi sinh khi gặp sự cố.
@@ -74,6 +80,7 @@ Hệ thống NORI Vehicle Rental đã hoàn thành toàn diện quy trình rà s
   - `deploy/linux/update.sh`: Kịch bản cập nhật tự động toàn diện.
 
 ### 7. Tự Động Hóa Kiểm Định Mã Nguồn (CI Pipeline)
+
 - Tệp `.github/workflows/ci.yml` được cấu hình để tự động kiểm tra mỗi khi có Pull Request:
   - Kiểm tra biến môi trường.
   - TypeScript Typecheck.
@@ -86,19 +93,19 @@ Hệ thống NORI Vehicle Rental đã hoàn thành toàn diện quy trình rà s
 
 ## III. Bảng Tổng Hợp Kiểm Thử Hệ Thống
 
-| Nhóm kiểm thử | Số lượng bài kiểm | Kết quả | Thời gian thực thi |
-| :--- | :---: | :---: | :---: |
-| **Home Server & Cloudflare Tunnel Suite** | 9 | **9/9 Passed** | 0.4s |
-| **Branch Scoped RBAC Suite** | 44 | **44/44 Passed** | 0.8s |
-| **Location Pricing & Delivery Suite** | 35 | **35/35 Passed** | 0.6s |
-| **Vehicle Transfer Engine Suite** | 28 | **28/28 Passed** | 0.5s |
-| **Payment Business Rules & State Machine** | 56 | **56/56 Passed** | 1.1s |
-| **Rental Calculation & Availability Engine** | 48 | **48/48 Passed** | 0.9s |
-| **Customer Booking & Auth Workflow** | 42 | **42/42 Passed** | 0.8s |
-| **Data Sync, WAL & Backup Recovery** | 31 | **31/31 Passed** | 2.1s |
-| **Mobile PWA & Offline Support** | 22 | **22/22 Passed** | 0.4s |
-| **System Security & Origin Assertion** | 16 | **16/16 Passed** | 0.3s |
-| **TỔNG CỘNG** | **331** | **331/331 PASSED (100%)** | **12.9s** |
+| Nhóm kiểm thử                                | Số lượng bài kiểm |          Kết quả          | Thời gian thực thi |
+| :------------------------------------------- | :---------------: | :-----------------------: | :----------------: |
+| **Home Server & Cloudflare Tunnel Suite**    |         9         |      **9/9 Passed**       |        0.4s        |
+| **Branch Scoped RBAC Suite**                 |        44         |     **44/44 Passed**      |        0.8s        |
+| **Location Pricing & Delivery Suite**        |        35         |     **35/35 Passed**      |        0.6s        |
+| **Vehicle Transfer Engine Suite**            |        28         |     **28/28 Passed**      |        0.5s        |
+| **Payment Business Rules & State Machine**   |        56         |     **56/56 Passed**      |        1.1s        |
+| **Rental Calculation & Availability Engine** |        48         |     **48/48 Passed**      |        0.9s        |
+| **Customer Booking & Auth Workflow**         |        42         |     **42/42 Passed**      |        0.8s        |
+| **Data Sync, WAL & Backup Recovery**         |        31         |     **31/31 Passed**      |        2.1s        |
+| **Mobile PWA & Offline Support**             |        22         |     **22/22 Passed**      |        0.4s        |
+| **System Security & Origin Assertion**       |        16         |     **16/16 Passed**      |        0.3s        |
+| **TỔNG CỘNG**                                |      **331**      | **331/331 PASSED (100%)** |     **12.9s**      |
 
 ---
 
