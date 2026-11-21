@@ -53,6 +53,8 @@ export interface DevSyncVerificationReport {
   tempFilesFound: string[]
   localStatus: 'IN_SYNC' | 'AHEAD' | 'BEHIND' | 'CONFLICT' | 'NO_LOCAL_DB'
   localDbPath: string
+  snapshotDbSha?: string
+  manifestDbSha?: string
   counts?: Record<string, number>
   errors: string[]
   warnings: string[]
@@ -785,6 +787,14 @@ export function verifyDevDatabase(options?: {
   let foreignKeysOk = false
   let counts: Record<string, number> | undefined
   let manifest: DevSyncManifest | null = null
+  let snapshotDbSha: string | undefined
+  let manifestDbSha: string | undefined
+
+  if (snapshotExists) {
+    try {
+      snapshotDbSha = sha256File(paths.snapshotDbPath)
+    } catch {}
+  }
 
   if (snapshotExists && manifestExists) {
     try {
@@ -793,7 +803,9 @@ export function verifyDevDatabase(options?: {
       errors.push('File dev-data/manifest.json bị lỗi định dạng JSON')
     }
     if (manifest) {
-      const actualSha = sha256File(paths.snapshotDbPath)
+      manifestDbSha = manifest.dbSha256
+      const actualSha = snapshotDbSha ?? sha256File(paths.snapshotDbPath)
+      snapshotDbSha = actualSha
       if (actualSha !== manifest.dbSha256) {
         errors.push(
           `Checksum nori-dev.db (${actualSha}) không khớp manifest (${manifest.dbSha256})`,
@@ -914,6 +926,8 @@ export function verifyDevDatabase(options?: {
     ok: errors.length === 0,
     snapshotExists,
     manifestExists,
+    snapshotDbSha,
+    manifestDbSha,
     dbIntegrity,
     foreignKeysOk,
     mediaOk: missingMediaFiles.length === 0,
