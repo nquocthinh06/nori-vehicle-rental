@@ -46,7 +46,6 @@ import {
 import { resolveSqlitePath, toSqliteUri } from './lib/env'
 import { createPostgresPoolConfig } from './lib/postgres-url'
 import { seedNoriIfEmpty } from './lib/seed-nori'
-import { migrations as postgresMigrations } from './migrations-postgres'
 
 const filename = fileURLToPath(import.meta.url)
 const dirname = path.dirname(filename)
@@ -65,10 +64,12 @@ const dbAdapter = isPostgres
   ? postgresAdapter({
       pool: createPostgresPoolConfig(rawDbUrl),
       idType: 'uuid',
-      // Never allow uncontrolled runtime schema push in Production; use explicit migrations.
-      push: process.env.NODE_ENV !== 'production' && process.env.NORI_PG_PUSH === '1',
+      // Keep push: false so Payload never triggers Drizzle pushDevSchema() or inserts
+      // batch = -1 dev markers against Neon in Dev, Preview, CI, or Production.
+      // Also omit prodMigrations so next build / serverless cold starts never auto-run
+      // interactive migrate() prompts during Vercel build; run explicit CLI migrations instead.
+      push: false,
       migrationDir: path.resolve(dirname, 'migrations-postgres'),
-      prodMigrations: postgresMigrations,
     })
   : sqliteAdapter({
       idType: 'uuid',

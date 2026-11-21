@@ -299,7 +299,7 @@ test('Vercel Blob Storage Guard — blocks silent local fallback on Vercel and s
   }
 })
 
-test('Payload Config Safety — Postgres push is disabled in production and no rejectUnauthorized=false exists', () => {
+test('Payload Config Safety — Postgres push is disabled, no prodMigrations auto-prompt, and no rejectUnauthorized=false exists', () => {
   const payloadConfigSrc = fs.readFileSync(path.resolve(rootDir, 'src/payload.config.ts'), 'utf8')
   assert.equal(
     /push:\s*true\b/.test(payloadConfigSrc),
@@ -307,8 +307,61 @@ test('Payload Config Safety — Postgres push is disabled in production and no r
     'src/payload.config.ts must never hardcode push: true',
   )
   assert.equal(
+    /push:\s*false\b/.test(payloadConfigSrc),
+    true,
+    'src/payload.config.ts must explicitly keep push: false on database adapters',
+  )
+  assert.equal(
+    /\bprodMigrations\s*:/.test(payloadConfigSrc),
+    false,
+    'src/payload.config.ts must not auto-run prodMigrations inside next build / serverless connect()',
+  )
+  assert.equal(
     payloadConfigSrc.includes('rejectUnauthorized: false'),
     false,
     'src/payload.config.ts must not use rejectUnauthorized: false',
   )
+})
+
+test('Postgres Migration Safety Guard — blocks unconfirmed Production writes and extracts full schema contract', async () => {
+  const {
+    assertMigrationEnvironmentAllowed,
+    extractExpectedPostgresSchema,
+    getRegisteredPostgresMigrationNames,
+  } = await import('../scripts/pg-migrate-safe.mjs')
+
+  assert.doesNotThrow(() =>
+    assertMigrationEnvironmentAllowed({
+      isAuditOnly: true,
+      isProductionTarget: true,
+      confirmProduction: false,
+    }),
+  )
+  assert.throws(
+    () =>
+      assertMigrationEnvironmentAllowed({
+        isAuditOnly: false,
+        isProductionTarget: true,
+        confirmProduction: false,
+      }),
+    /PG-MIGRATE-GUARD/,
+  )
+  assert.doesNotThrow(() =>
+    assertMigrationEnvironmentAllowed({
+      isAuditOnly: false,
+      isProductionTarget: true,
+      confirmProduction: true,
+    }),
+  )
+
+  const expectedSchema = extractExpectedPostgresSchema()
+  assert.equal(expectedSchema.size, 109, 'Expected 109 PostgreSQL tables in generated schema')
+  assert.ok(expectedSchema.get('media')?.has('prefix'), 'media schema must require prefix')
+  assert.ok(expectedSchema.get('media')?.has('_objectkey'), 'media schema must require _objectkey')
+
+  const registered = getRegisteredPostgresMigrationNames()
+  assert.deepEqual(registered, [
+    '20261121_105804_init_postgres',
+    '20261121_120000_media_cloud_storage_columns',
+  ])
 })

@@ -50,6 +50,8 @@
     "db:migrate": "node scripts/db-migrate.ts",
     "db:migrate:safe": "node scripts/migrate-db-safe.mjs",
     "db:migrate:neon": "node scripts/migrate-sqlite-to-neon.mjs",
+    "db:pg:audit": "node --experimental-strip-types scripts/pg-migrate-safe.mjs --audit",
+    "db:pg:migrate": "node --experimental-strip-types scripts/pg-migrate-safe.mjs",
     "db:backup": "node scripts/backup-db.mjs",
     "db:restore": "node scripts/restore-db.mjs"
   },

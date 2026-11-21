@@ -208,8 +208,8 @@ let ensuredPaymentSchemaOnce = false
 export async function seedNoriIfEmpty(payload: Payload): Promise<void> {
   if (!ensuredPaymentSchemaOnce) {
     try {
-      const dbAdapter = payload.db as unknown as { drizzle?: unknown }
-      if (dbAdapter?.drizzle) {
+      const dbAdapter = payload.db as unknown as { drizzle?: unknown; name?: string }
+      if (dbAdapter?.drizzle && dbAdapter?.name !== 'postgres') {
         await ensureOnlinePaymentMigration({
           db: dbAdapter.drizzle as never,
           payload,
@@ -220,8 +220,8 @@ export async function seedNoriIfEmpty(payload: Payload): Promise<void> {
           payload,
           req: undefined as never,
         })
-        ensuredPaymentSchemaOnce = true
       }
+      ensuredPaymentSchemaOnce = true
     } catch {
       // Non-blocking if schema is already up to date
     }
