@@ -1,10 +1,12 @@
-import { APIError, type CollectionConfig } from 'payload'
+import { APIError, type CollectionAfterChangeHook, type CollectionConfig } from 'payload'
 
 import { createFolderField, createTagField } from 'payload'
 import { adminMediaDeleteAccess, adminMediaWriteAccess } from '@/access/nori'
 import { auditCollection } from '@/hooks/audit-nori'
 import { revalidateMedia, revalidateDeletedMedia } from '@/hooks/revalidate-nori'
-import { localMediaResizeHandler } from '@/lib/media-optimizer'
+import { isCloudStorageConfigured, uploadToCloudStorage } from '@/lib/cloud-storage'
+import { resolveMediaDir } from '@/lib/env'
+import { localMediaResizeHandler, resolveValidMediaSource } from '@/lib/media-optimizer'
 
 const mediaAudit = auditCollection({
   entity: 'media',
@@ -18,6 +20,22 @@ const mediaAudit = auditCollection({
     verified: 'Xác minh nguồn ảnh',
   },
 })
+
+const syncMediaToCloudAfterChange: CollectionAfterChangeHook = async ({ doc }) => {
+  if (!isCloudStorageConfigured()) return doc
+  if (!doc?.filename || typeof doc.filename !== 'string') return doc
+
+  try {
+    const source = await resolveValidMediaSource(doc.filename)
+    if (source?.buffer) {
+      const mimeType = (doc.mimeType as string) || 'application/octet-stream'
+      await uploadToCloudStorage(doc.filename, source.buffer, mimeType)
+    }
+  } catch (err) {
+    console.warn(`[CLOUD-STORAGE] Failed to auto-sync ${doc.filename}:`, err)
+  }
+  return doc
+}
 
 export const Media: CollectionConfig = {
   slug: 'media',
@@ -121,7 +139,7 @@ export const Media: CollectionConfig = {
         }
       },
     ],
-    afterChange: [revalidateMedia, mediaAudit.afterChange],
+    afterChange: [revalidateMedia, mediaAudit.afterChange, syncMediaToCloudAfterChange],
     afterDelete: [revalidateDeletedMedia, mediaAudit.afterDelete],
   },
   fields: [
@@ -153,9 +171,7 @@ export const Media: CollectionConfig = {
     createTagField({ relationTo: 'tags' }),
   ],
   upload: {
-    ...(process.env.MEDIA_DIR?.trim() || process.env.NORI_MEDIA_DIR?.trim()
-      ? { staticDir: (process.env.MEDIA_DIR || process.env.NORI_MEDIA_DIR)!.trim() }
-      : {}),
+    staticDir: resolveMediaDir(),
     handlers: [localMediaResizeHandler],
     modifyResponseHeaders: ({ headers }) => {
       headers.set(

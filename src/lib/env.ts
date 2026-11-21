@@ -106,6 +106,12 @@ export function resolveMediaDir(rootDir = process.cwd()): string {
     return path.join(resolveStoragePath(dataDir, rootDir), 'media')
   }
 
+  const publicMedia = path.resolve(rootDir, 'public', 'media')
+  if (fs.existsSync(publicMedia)) return publicMedia
+
+  const devDataMedia = path.resolve(rootDir, 'dev-data', 'media')
+  if (fs.existsSync(devDataMedia)) return devDataMedia
+
   return path.resolve(rootDir, 'media')
 }
 

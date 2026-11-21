@@ -90,6 +90,13 @@ const nextConfig: NextConfig = {
     root: path.resolve(dirname),
   },
   output: 'standalone',
+  outputFileTracingIncludes: {
+    '/api/**/*': [
+      './public/media/**/*',
+      './dev-data/media/**/*',
+      './public/seed-media/**/*',
+    ],
+  },
   images: {
     loader: 'custom',
     loaderFile: './figma-image-loader.ts',

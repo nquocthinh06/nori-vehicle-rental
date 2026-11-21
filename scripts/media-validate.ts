@@ -119,10 +119,16 @@ if (fs.existsSync(paths.dbPath)) {
       continue
     }
     dbFilenameSet.add(fn)
-    const runtimePath = path.join(paths.mediaDir, fn)
-    if (!fs.existsSync(runtimePath)) {
+    const candidatePaths = [
+      path.join(paths.mediaDir, fn),
+      path.join(process.cwd(), 'public', 'media', fn),
+      path.join(process.cwd(), 'dev-data', 'media', fn),
+      path.join(paths.seedMediaDir, fn),
+    ]
+    const runtimePath = candidatePaths.find((p) => fs.existsSync(p))
+    if (!runtimePath) {
       auditSummary.missingOnDisk.push(fn)
-      errors.push(`Thiếu file vật lý trong media/ cho bản ghi DB "${fn}" (id=${row.id})`)
+      errors.push(`Thiếu file vật lý trong media/ hoặc public/media/ cho bản ghi DB "${fn}" (id=${row.id})`)
       continue
     }
     const info = inspectImageMagic(runtimePath)
@@ -153,11 +159,17 @@ if (fs.existsSync(paths.dbPath)) {
   // Also check all referenced media from manifest
   for (const m of dbState.mediaManifest) {
     if (!dbFilenameSet.has(m.filename)) {
-      const runtimePath = path.join(paths.mediaDir, m.filename)
-      if (!fs.existsSync(runtimePath)) {
+      const candidatePaths = [
+        path.join(paths.mediaDir, m.filename),
+        path.join(process.cwd(), 'public', 'media', m.filename),
+        path.join(process.cwd(), 'dev-data', 'media', m.filename),
+        path.join(paths.seedMediaDir, m.filename),
+      ]
+      const runtimePath = candidatePaths.find((p) => fs.existsSync(p))
+      if (!runtimePath) {
         auditSummary.missingOnDisk.push(m.filename)
         errors.push(
-          `Thiếu file runtime trong media/ cho bản ghi DB "${m.filename}" (usedBy: ${m.usedBy.join(', ')})`,
+          `Thiếu file runtime trong media/ hoặc public/media/ cho bản ghi DB "${m.filename}" (usedBy: ${m.usedBy.join(', ')})`,
         )
       }
     }
