@@ -18,14 +18,19 @@ const isDryRun = process.argv.includes('--dry-run')
 const isForce = process.argv.includes('--force')
 
 async function getAllMediaRecords() {
-  const dbUrl = (process.env.DATABASE_URL || process.env.DATABASE_URI || '').trim()
-  const isPostgres = dbUrl.startsWith('postgresql:') || dbUrl.startsWith('postgres:')
+  const rawDbUrl = (process.env.DATABASE_URL || process.env.DATABASE_URI || '').trim()
+  const isPostgres = rawDbUrl.startsWith('postgresql:') || rawDbUrl.startsWith('postgres:')
 
   if (isPostgres) {
     console.log('[MIGRATE-CLOUD] Connecting to PostgreSQL to retrieve media records...')
+    const pgUrl =
+      rawDbUrl.includes('sslmode=require') && !rawDbUrl.includes('uselibpqcompat=true')
+        ? rawDbUrl.replace('sslmode=require', 'sslmode=verify-full')
+        : rawDbUrl
+    const isNeon = pgUrl.includes('neon.tech') || pgUrl.includes('sslmode=')
     const pool = new pg.Pool({
-      connectionString: dbUrl,
-      ssl: { rejectUnauthorized: false },
+      connectionString: pgUrl,
+      ...(isNeon ? {} : { ssl: { rejectUnauthorized: false } }),
     })
     try {
       const res = await pool.query('SELECT id, filename, mime_type, filesize FROM media ORDER BY filename ASC')
@@ -93,14 +98,12 @@ async function main() {
 
   const cloudConfig = getCloudStorageConfig()
   if (!cloudConfig) {
-    console.log('\n[MIGRATE-CLOUD] Cloud Storage is NOT configured.')
-    console.log('To enable S3/Cloudflare R2 migration, set the following environment variables:')
-    console.log('  - S3_BUCKET (or NORI_S3_BUCKET)')
-    console.log('  - S3_ACCESS_KEY_ID (or NORI_S3_ACCESS_KEY_ID)')
-    console.log('  - S3_SECRET_ACCESS_KEY (or NORI_S3_SECRET_ACCESS_KEY)')
-    console.log('  - S3_ENDPOINT (e.g. https://<id>.r2.cloudflarestorage.com or custom S3 endpoint)')
-    console.log('  - S3_REGION (default: "auto")')
-    console.log('  - S3_PUBLIC_DOMAIN (e.g. https://media.yourdomain.com, optional)')
+    console.log('\n[MIGRATE-CLOUD] No Cloud Storage provider is configured.')
+    console.log('To migrate media to durable Cloud Storage, configure ONE of:')
+    console.log('  1. VERCEL BLOB (Recommended on Vercel):')
+    console.log('     - BLOB_READ_WRITE_TOKEN')
+    console.log('  2. S3 / CLOUDFLARE R2 / SUPABASE STORAGE:')
+    console.log('     - S3_BUCKET, S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY, S3_ENDPOINT, S3_REGION')
     console.log('\nAudit Mode: Verifying local file availability for all records...')
 
     let localFound = 0
@@ -123,7 +126,12 @@ async function main() {
     return
   }
 
-  console.log(`\n[MIGRATE-CLOUD] Cloud Storage configured: Bucket="${cloudConfig.bucket}", Endpoint="${cloudConfig.endpoint || 'AWS Standard'}", Region="${cloudConfig.region}"`)
+  const providerLabel =
+    cloudConfig.provider === 'VERCEL_BLOB'
+      ? 'VERCEL BLOB STORAGE'
+      : `S3 / R2 (Bucket: "${cloudConfig.bucket}")`
+
+  console.log(`\n[MIGRATE-CLOUD] Active Cloud Storage Provider: ${providerLabel}`)
   if (isDryRun) {
     console.log('[MIGRATE-CLOUD] Running in DRY-RUN mode. No files will be uploaded.')
   }
@@ -174,6 +182,7 @@ async function main() {
   console.log('\n' + '='.repeat(70))
   console.log(' CLOUD MIGRATION SUMMARY')
   console.log('='.repeat(70))
+  console.log(`  - Provider: ${providerLabel}`)
   console.log(`  - Total records checked: ${records.length}`)
   console.log(`  - Successfully uploaded: ${uploaded}`)
   console.log(`  - Already existed in cloud: ${alreadyExisted}`)

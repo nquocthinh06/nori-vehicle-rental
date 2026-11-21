@@ -6,6 +6,11 @@ import path from 'node:path'
 import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import {
+  getCloudStorageConfig,
+  isCloudStorageConfigured,
+  isVercelBlobConfigured,
+} from '../src/lib/cloud-storage.ts'
+import {
   localMediaResizeHandler,
   resolveValidMediaSource,
 } from '../src/lib/media-optimizer.ts'
@@ -139,12 +144,10 @@ test('Git LFS Pointer Protection — resolveValidMediaSource skips LFS pointers 
   const lfsPointerContent = 'version https://git-lfs.github.com/spec/v1\noid sha256:1234567890abcdef\nsize 123456\n'
   fs.writeFileSync(fakeLfsFile, lfsPointerContent, 'utf8')
 
-  // Set NORI_MEDIA_DIR to point to this temp dir containing the pointer
   const origDir = process.env.NORI_MEDIA_DIR
   try {
     process.env.NORI_MEDIA_DIR = tempDir
 
-    // Try resolving an image that exists in public/media as a real binary
     const resolved = await resolveValidMediaSource('toyota-fortuner-catalogue.png')
     assert.ok(resolved, 'Should resolve the real image despite LFS pointer candidate')
     assert.ok(!resolved.buffer.toString('utf8').startsWith('version https://git-lfs'))
@@ -155,5 +158,37 @@ test('Git LFS Pointer Protection — resolveValidMediaSource skips LFS pointers 
       delete process.env.NORI_MEDIA_DIR
     }
     fs.rmSync(tempDir, { recursive: true, force: true })
+  }
+})
+
+test('Vercel Blob & Cloud Storage Integration — detects Vercel Blob and locks major Node version', async () => {
+  const pkg = JSON.parse(fs.readFileSync(path.resolve(rootDir, 'package.json'), 'utf8'))
+  assert.ok(pkg.engines?.node, 'package.json must specify engines.node')
+  assert.ok(
+    pkg.engines.node.includes('<25.0.0') || pkg.engines.node.startsWith('^24'),
+    `Node.js engine must lock major version 24, got: ${pkg.engines.node}`,
+  )
+
+  // Verify Vercel Blob storage adapter module loads
+  const { vercelBlobStorage } = await import('@payloadcms/storage-vercel-blob')
+  assert.equal(typeof vercelBlobStorage, 'function', 'vercelBlobStorage must be exported')
+
+  // Verify cloud-storage detection helper
+  const origToken = process.env.BLOB_READ_WRITE_TOKEN
+  try {
+    delete process.env.BLOB_READ_WRITE_TOKEN
+    assert.equal(isVercelBlobConfigured(), false)
+
+    process.env.BLOB_READ_WRITE_TOKEN = 'vercel_blob_rw_teststore_123456'
+    assert.equal(isVercelBlobConfigured(), true)
+    assert.equal(isCloudStorageConfigured(), true)
+    const cfg = getCloudStorageConfig()
+    assert.equal(cfg?.provider, 'VERCEL_BLOB')
+  } finally {
+    if (origToken !== undefined) {
+      process.env.BLOB_READ_WRITE_TOKEN = origToken
+    } else {
+      delete process.env.BLOB_READ_WRITE_TOKEN
+    }
   }
 })

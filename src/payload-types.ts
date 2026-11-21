@@ -483,6 +483,8 @@ export interface Media {
   verified?: boolean | null;
   _h_folders?: (string | null) | Folder;
   _h_tags?: (string | Tag)[] | null;
+  prefix?: string | null;
+  _objectKey?: string | null;
   createdBy?:
     | ({
         relationTo: 'admins';
@@ -2307,6 +2309,8 @@ export interface MediaSelect<T extends boolean = true> {
   verified?: T;
   _h_folders?: T;
   _h_tags?: T;
+  prefix?: T;
+  _objectKey?: T;
   createdBy?: T;
   updatedBy?: T;
   updatedAt?: T;

@@ -3,6 +3,7 @@ import { postgresAdapter } from '@payloadcms/db-postgres'
 import { sqliteAdapter } from '@payloadcms/db-sqlite'
 import { mcpPlugin } from '@payloadcms/plugin-mcp'
 import { lexicalEditor } from '@payloadcms/richtext-lexical'
+import { vercelBlobStorage } from '@payloadcms/storage-vercel-blob'
 import { en as adminLanguage } from '@payloadcms/translations/languages/en'
 import { buildConfig } from 'payload'
 import { fileURLToPath } from 'url'
@@ -48,14 +49,19 @@ if (process.env.NODE_ENV === 'production' && !payloadSecret) {
   throw new Error('PAYLOAD_SECRET environment variable is required in production.')
 }
 
-const dbUrl = (process.env.DATABASE_URL || process.env.DATABASE_URI || '').trim()
-const isPostgres = dbUrl.startsWith('postgresql:') || dbUrl.startsWith('postgres:')
+const rawDbUrl = (process.env.DATABASE_URL || process.env.DATABASE_URI || '').trim()
+const isPostgres = rawDbUrl.startsWith('postgresql:') || rawDbUrl.startsWith('postgres:')
+
+// Normalize Postgres TLS connection string to eliminate pg-connection-string security warning
+const dbUrl =
+  isPostgres && rawDbUrl.includes('sslmode=require') && !rawDbUrl.includes('uselibpqcompat=true')
+    ? rawDbUrl.replace('sslmode=require', 'sslmode=verify-full')
+    : rawDbUrl
 
 const dbAdapter = isPostgres
   ? postgresAdapter({
       pool: {
         connectionString: dbUrl,
-        ssl: { rejectUnauthorized: false },
       },
       idType: 'uuid',
       push: true,
@@ -140,6 +146,15 @@ export default buildConfig({
     fallback: true,
     defaultLocale: 'en',
   },
+  storage: [
+    vercelBlobStorage({
+      enabled: Boolean(process.env.BLOB_READ_WRITE_TOKEN),
+      collections: {
+        media: true,
+      },
+      token: process.env.BLOB_READ_WRITE_TOKEN || '',
+    }),
+  ],
   plugins: [mcpPlugin({})],
   onInit: async (payload) => {
     await seedNoriIfEmpty(payload)
