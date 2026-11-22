@@ -177,7 +177,7 @@ export const Media: CollectionConfig = {
     modifyResponseHeaders: ({ headers }) => {
       headers.set(
         'Cache-Control',
-        'public, max-age=3600, s-maxage=3600, stale-while-revalidate=86400',
+        'public, max-age=31536000, s-maxage=31536000, stale-while-revalidate=86400',
       )
       return headers
     },

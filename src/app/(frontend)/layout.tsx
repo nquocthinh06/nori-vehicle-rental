@@ -7,7 +7,7 @@ const beVietnamPro = Be_Vietnam_Pro({
   subsets: ['latin', 'vietnamese'],
   weight: ['400', '600'],
   display: 'swap',
-  preload: false,
+  preload: true,
   variable: '--font-be-vietnam',
   fallback: ['Arial', 'sans-serif'],
 })

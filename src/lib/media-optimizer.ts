@@ -56,6 +56,10 @@ export interface ResolvedMediaSource {
 export async function resolveValidMediaSource(
   filename: string,
   collection = 'media',
+  options?: {
+    cloudKeyHints?: string[]
+    resolveCloudKeyHints?: () => Promise<string[]>
+  },
 ): Promise<ResolvedMediaSource | null> {
   const cleanFilename = path.basename(filename)
   const cwd = process.cwd()
@@ -103,9 +107,15 @@ export async function resolveValidMediaSource(
     }
   }
 
-  // Not found in local filesystem; check sustainable Cloud Storage (S3 / R2)
+  // Not found in local filesystem; check Cloud Storage (Vercel Blob / S3 / R2)
   try {
-    const cloudBuffer = await getFromCloudStorage(cleanFilename)
+    const resolvedHints = options?.resolveCloudKeyHints
+      ? await options.resolveCloudKeyHints().catch(() => [])
+      : []
+    const hintKeys = [
+      ...new Set([...(options?.cloudKeyHints ?? []), ...resolvedHints].filter(Boolean)),
+    ]
+    const cloudBuffer = await getFromCloudStorage(cleanFilename, hintKeys)
     if (cloudBuffer && cloudBuffer.byteLength > 0) {
       const cacheDir = resolveCacheDir()
       const cachedFilePath = path.join(cacheDir, 'cloud-cache', cleanFilename)
@@ -151,7 +161,7 @@ async function ensureOptimizedVariant(params: {
 
     let buf: Buffer
     if (params.targetFormat === 'webp') {
-      buf = await pipeline.webp({ quality: params.quality, effort: 2 }).toBuffer()
+      buf = await pipeline.webp({ quality: params.quality, effort: 4 }).toBuffer()
     } else if (params.targetFormat === 'png') {
       buf = await pipeline.png({ compressionLevel: 8, quality: params.quality }).toBuffer()
     } else {
@@ -209,8 +219,37 @@ export function localMediaResizeHandler(
   const ext = path.extname(filename).toLowerCase()
   const rawW = req.searchParams?.get('w')
 
+  const collectionSlug = args.params.collection || 'media'
+  const mediaCacheControl =
+    'public, max-age=31536000, s-maxage=31536000, stale-while-revalidate=86400'
+
   return (async () => {
-    const source = await resolveValidMediaSource(filename, args.params.collection || 'media')
+    const cleanName = path.basename(filename)
+    const source = await resolveValidMediaSource(filename, collectionSlug, {
+      resolveCloudKeyHints: async () => {
+        if (!req.payload || typeof req.payload.find !== 'function') return []
+        const result = await req.payload.find({
+          collection: collectionSlug as 'media',
+          depth: 0,
+          limit: 1,
+          overrideAccess: true,
+          where: { filename: { equals: cleanName } },
+        })
+        const doc = result.docs?.[0] as
+          | { prefix?: string | null; _objectKey?: string | null }
+          | undefined
+        if (!doc) return []
+        const envPrefix = (process.env.BLOB_STORAGE_PREFIX || process.env.NORI_BLOB_PREFIX || '')
+          .trim()
+          .replace(/^\/+|\/+$/g, '')
+        const docPrefix = typeof doc.prefix === 'string' ? doc.prefix.replace(/^\/+|\/+$/g, '') : ''
+        return [
+          typeof doc._objectKey === 'string' ? doc._objectKey : '',
+          docPrefix ? `${docPrefix}/${cleanName}` : '',
+          envPrefix && docPrefix ? `${envPrefix}/${docPrefix}/${cleanName}` : '',
+        ].filter(Boolean)
+      },
+    })
     if (!source) {
       return undefined as unknown as Response
     }
@@ -231,7 +270,7 @@ export function localMediaResizeHandler(
           status: 304,
           headers: {
             ETag: etag,
-            'Cache-Control': 'public, max-age=3600, s-maxage=86400, stale-while-revalidate=604800',
+            'Cache-Control': mediaCacheControl,
             'X-Content-Type-Options': 'nosniff',
           },
         })
@@ -242,7 +281,7 @@ export function localMediaResizeHandler(
         headers: {
           'Content-Type': defaultContentType,
           'Content-Length': String(source.sizeBytes),
-          'Cache-Control': 'public, max-age=3600, s-maxage=86400, stale-while-revalidate=604800',
+          'Cache-Control': mediaCacheControl,
           ETag: etag,
           'X-Content-Type-Options': 'nosniff',
         },
@@ -284,7 +323,7 @@ export function localMediaResizeHandler(
         status: 304,
         headers: {
           ETag: etag,
-          'Cache-Control': 'public, max-age=3600, s-maxage=86400, stale-while-revalidate=604800',
+          'Cache-Control': mediaCacheControl,
           Vary: 'Accept',
         },
       })
@@ -314,7 +353,7 @@ export function localMediaResizeHandler(
         headers: {
           'Content-Type': contentType,
           'Content-Length': String(output.byteLength),
-          'Cache-Control': 'public, max-age=3600, s-maxage=86400, stale-while-revalidate=604800',
+          'Cache-Control': mediaCacheControl,
           ETag: etag,
           Vary: 'Accept',
           'X-Content-Type-Options': 'nosniff',
@@ -327,7 +366,7 @@ export function localMediaResizeHandler(
         headers: {
           'Content-Type': defaultContentType,
           'Content-Length': String(source.sizeBytes),
-          'Cache-Control': 'public, max-age=3600, s-maxage=86400, stale-while-revalidate=604800',
+          'Cache-Control': mediaCacheControl,
           'X-Content-Type-Options': 'nosniff',
         },
       })

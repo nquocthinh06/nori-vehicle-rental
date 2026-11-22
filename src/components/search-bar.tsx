@@ -106,130 +106,126 @@ export function SearchBar({ locations = [] }: { locations?: string[] }) {
           Chuyến đi tuyệt vời bắt đầu từ một lựa chọn.
         </Text>
       </div>
-      <form
-        onSubmit={submit}
-        id="search-service-panel"
-        role="tabpanel"
-        aria-labelledby={`search-tab-${intent}`}
-        className="space-y-3.5"
-      >
-        <div
-          className={
-            intent === 'rent'
-              ? 'grid items-end gap-3.5 md:grid-cols-2 lg:grid-cols-5'
-              : 'grid items-end gap-3.5 md:grid-cols-4'
-          }
-        >
-          <Select
-            id="hero-type"
-            label="Loại phương tiện"
-            value={type}
-            onChange={(e) => setType(e.target.value)}
+      <div id="search-service-panel" role="tabpanel" aria-labelledby={`search-tab-${intent}`}>
+        <form onSubmit={submit} className="space-y-3.5">
+          <div
+            className={
+              intent === 'rent'
+                ? 'grid items-end gap-3.5 md:grid-cols-2 lg:grid-cols-5'
+                : 'grid items-end gap-3.5 md:grid-cols-4'
+            }
           >
-            <option value="">Tất cả phương tiện</option>
-            <option value="CAR">Ô tô</option>
-            <option value="MOTORBIKE">Xe máy</option>
-            <option value="PICKUP">Bán tải</option>
-          </Select>
-          <Select
-            id="hero-location"
-            label="Khu vực"
-            value={location}
-            onChange={(e) => setLocation(e.target.value)}
-          >
-            <option value="">Tất cả khu vực</option>
-            {locations.map((loc) => (
-              <option key={loc} value={loc}>
-                {loc}
-              </option>
-            ))}
-          </Select>
-          {intent === 'rent' ? (
-            <>
-              <Input
-                id="hero-start"
-                label="Ngày nhận xe"
-                type="date"
-                value={start}
-                min={today || undefined}
-                max={today ? addDays(today, 90) : undefined}
-                onFocus={() => setToday(businessToday())}
-                onChange={(e) => {
-                  setStart(e.target.value)
-                  setError('')
-                }}
-              />
-              <Input
-                id="hero-end"
-                label="Ngày trả xe"
-                type="date"
-                value={end}
-                min={start ? addDays(start, 1) : today || undefined}
-                onFocus={() => setToday(businessToday())}
-                max={start ? addDays(start, 30) : undefined}
-                onChange={(e) => {
-                  setEnd(e.target.value)
-                  setError('')
-                }}
-              />
-            </>
-          ) : (
-            <div className="flex h-control items-center gap-2 rounded-control bg-subtle px-4 text-caption text-muted">
-              <Icon name="shield" className="size-4 text-brand" />
-              Thông tin xe minh bạch
-            </div>
-          )}
-          <Button type="submit" className="h-control gap-3">
-            <Icon name="search" className="size-4" />
-            {intent === 'rent' ? 'Tìm xe phù hợp' : 'Khám phá xe bán'}
-            <Icon name="arrow-right" className="ml-auto size-4" />
-          </Button>
-        </div>
-
-        {intent === 'rent' && branches.length > 0 && (
-          <div className="grid items-end gap-3 border-t border-line pt-3.5 md:grid-cols-3">
             <Select
-              id="hero-pickup-branch"
-              label="Chi nhánh nhận xe"
-              value={pickupBranchId}
-              onChange={(e) => setPickupBranchId(e.target.value)}
+              id="hero-type"
+              label="Loại phương tiện"
+              value={type}
+              onChange={(e) => setType(e.target.value)}
             >
-              <option value="">Tất cả chi nhánh NORI</option>
-              {branches.map((b) => (
-                <option key={b.id} value={b.id}>
-                  {b.name} ({b.province})
+              <option value="">Tất cả phương tiện</option>
+              <option value="CAR">Ô tô</option>
+              <option value="MOTORBIKE">Xe máy</option>
+              <option value="PICKUP">Bán tải</option>
+            </Select>
+            <Select
+              id="hero-location"
+              label="Khu vực"
+              value={location}
+              onChange={(e) => setLocation(e.target.value)}
+            >
+              <option value="">Tất cả khu vực</option>
+              {locations.map((loc) => (
+                <option key={loc} value={loc}>
+                  {loc}
                 </option>
               ))}
             </Select>
-            <div className="flex min-h-control items-center">
-              <Checkbox
-                id="hero-one-way"
-                checked={differentReturn}
-                onChange={(e) => {
-                  setDifferentReturn(e.target.checked)
-                  if (!e.target.checked) setReturnBranchId('')
-                }}
-                label="Trả xe tại địa điểm khác"
-              />
-            </div>
-            {differentReturn && (
+            {intent === 'rent' ? (
+              <>
+                <Input
+                  id="hero-start"
+                  label="Ngày nhận xe"
+                  type="date"
+                  value={start}
+                  min={today || undefined}
+                  max={today ? addDays(today, 90) : undefined}
+                  onFocus={() => setToday(businessToday())}
+                  onChange={(e) => {
+                    setStart(e.target.value)
+                    setError('')
+                  }}
+                />
+                <Input
+                  id="hero-end"
+                  label="Ngày trả xe"
+                  type="date"
+                  value={end}
+                  min={start ? addDays(start, 1) : today || undefined}
+                  onFocus={() => setToday(businessToday())}
+                  max={start ? addDays(start, 30) : undefined}
+                  onChange={(e) => {
+                    setEnd(e.target.value)
+                    setError('')
+                  }}
+                />
+              </>
+            ) : (
+              <div className="flex h-control items-center gap-2 rounded-control bg-subtle px-4 text-caption text-muted">
+                <Icon name="shield" className="size-4 text-brand" />
+                Thông tin xe minh bạch
+              </div>
+            )}
+            <Button type="submit" className="h-control gap-3">
+              <Icon name="search" className="size-4" />
+              {intent === 'rent' ? 'Tìm xe phù hợp' : 'Khám phá xe bán'}
+              <Icon name="arrow-right" className="ml-auto size-4" />
+            </Button>
+          </div>
+
+          {intent === 'rent' && branches.length > 0 && (
+            <div className="grid items-end gap-3 border-t border-line pt-3.5 md:grid-cols-3">
               <Select
-                id="hero-return-branch"
-                label="Chi nhánh trả xe"
-                value={returnBranchId}
-                onChange={(e) => setReturnBranchId(e.target.value)}
+                id="hero-pickup-branch"
+                label="Chi nhánh nhận xe"
+                value={pickupBranchId}
+                onChange={(e) => setPickupBranchId(e.target.value)}
               >
-                <option value="">Chọn chi nhánh trả xe</option>
+                <option value="">Tất cả chi nhánh NORI</option>
                 {branches.map((b) => (
                   <option key={b.id} value={b.id}>
                     {b.name} ({b.province})
                   </option>
                 ))}
               </Select>
-            )}
-          </div>
-        )}
-      </form>
+              <div className="flex min-h-control items-center">
+                <Checkbox
+                  id="hero-one-way"
+                  checked={differentReturn}
+                  onChange={(e) => {
+                    setDifferentReturn(e.target.checked)
+                    if (!e.target.checked) setReturnBranchId('')
+                  }}
+                  label="Trả xe tại địa điểm khác"
+                />
+              </div>
+              {differentReturn && (
+                <Select
+                  id="hero-return-branch"
+                  label="Chi nhánh trả xe"
+                  value={returnBranchId}
+                  onChange={(e) => setReturnBranchId(e.target.value)}
+                >
+                  <option value="">Chọn chi nhánh trả xe</option>
+                  {branches.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.name} ({b.province})
+                    </option>
+                  ))}
+                </Select>
+              )}
+            </div>
+          )}
+        </form>
+      </div>
       {error && (
         <Notice tone="error" className="mt-4">
           {error}
