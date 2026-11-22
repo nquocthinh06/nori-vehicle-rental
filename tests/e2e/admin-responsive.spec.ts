@@ -29,7 +29,10 @@ function getAdminCredentials() {
       if (k === 'NORI_ADMIN_PASSWORD') password = val
     }
   }
-  return { email, password }
+  return {
+    email: process.env.NORI_ADMIN_EMAIL || email,
+    password: process.env.NORI_ADMIN_PASSWORD || password,
+  }
 }
 
 async function loginAsAdmin(page: import('@playwright/test').Page) {

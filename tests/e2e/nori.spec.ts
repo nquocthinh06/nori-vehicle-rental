@@ -819,7 +819,9 @@ test('admin dashboard lifecycle, handover note, customer notifications, password
 
     // 5b. Verify Inquiries, Maintenance, Promotions, Payments, Content, Posts, Reports, Admins pages render cleanly
     await adminPage.goto(`${baseOrigin}/dashboard/inquiries`, { waitUntil: 'networkidle' })
-    await expect(adminPage.getByRole('heading', { name: 'Yêu cầu mua xe' })).toBeVisible()
+    await expect(
+      adminPage.getByRole('heading', { name: 'Yêu cầu mua xe', exact: true }),
+    ).toBeVisible()
     await adminPage.goto(`${baseOrigin}/dashboard/maintenance`, { waitUntil: 'networkidle' })
     await expect(adminPage.getByRole('button', { name: 'Lên lịch bảo trì' })).toBeVisible()
     await adminPage.goto(`${baseOrigin}/dashboard/promotions`, { waitUntil: 'networkidle' })
