@@ -1,11 +1,19 @@
 import { assertBranchScopeOrFail, requireAdmin, resolveCustomerDisplayNames } from '@/lib/admin-api'
-import { apiError, assertOrigin, body, fail, json, text } from '@/lib/api-utils'
+import {
+  apiError,
+  assertOrigin,
+  body,
+  createRequestLogger,
+  fail,
+  json,
+  text,
+} from '@/lib/api-utils'
+import { txReqOptions, withAtomicResourceLock } from '@/lib/db-tx'
 import {
   buildSitePaymentConfigFromDoc,
   computeBookingFinancialsSync,
   sweepExpiredPayments,
 } from '@/lib/payment-service'
-import { withBookingWriteLock } from '@/lib/promo-service'
 import {
   businessToday,
   calculateNextContactSlot,
@@ -507,9 +515,12 @@ export async function GET(request: Request) {
 }
 
 export async function PATCH(request: Request) {
+  const logger = createRequestLogger('nori-api/dashboard/bookings', request)
   try {
     assertOrigin(request)
-    const auth = await requireAdmin({ permission: ['bookings', 'update'] })
+    const auth = await logger.time('auth', () =>
+      requireAdmin({ permission: ['bookings', 'update'] }),
+    )
     if (!auth.ok) return auth.response
     const { payload, user } = auth
 
@@ -586,38 +597,55 @@ export async function PATCH(request: Request) {
         : undefined
     ) as 'NOT_APPLICABLE' | 'PENDING_INSPECTION' | 'PASSED' | 'DAMAGED_NEEDS_REPAIR' | undefined
 
-    return await withBookingWriteLock(async () => {
-      const updated = await payload.update({
-        collection: 'bookings',
-        id,
-        user,
-        overrideAccess: false,
-        context: {
-          ...(expectedRevision !== undefined ? { expectedRevision } : {}),
-          ...(enforceFinancialClearance ? { enforceFinancialClearance: true } : {}),
-          ...(approveFinancialException ? { approveFinancialException: true } : {}),
-        },
-        data: {
-          status: status as BookingStatus,
-          ...(handoverNote ? { handoverNote } : {}),
-          ...(extraFee !== undefined ? { extraFee } : {}),
-          ...(extraFeeNote ? { extraFeeNote } : {}),
-          ...(contractNumber ? { contractNumber } : {}),
-          ...(returnOdometer !== undefined ? { returnOdometer } : {}),
-          ...(returnCondition ? { returnCondition } : {}),
-          ...(actualReturnBranchId ? { actualReturnBranch: actualReturnBranchId } : {}),
-          ...(actualReturnWarehouseId ? { actualReturnWarehouse: actualReturnWarehouseId } : {}),
-          ...(returnFuelOrBattery ? { returnFuelOrBattery } : {}),
-          ...(returnInspectionStatus ? { returnInspectionStatus } : {}),
-        },
-      })
-      return json({
-        id: updated.id,
-        status: updated.status,
-        scheduleConflictAlert: updated.scheduleConflictAlert ?? null,
-      })
-    })
+    const preBooking = await payload
+      .findByID({ collection: 'bookings', id, user, overrideAccess: false, depth: 0 })
+      .catch(() => null)
+    const lockVehicleId = relationId(preBooking?.vehicle)
+    const lockKey = lockVehicleId ? `vehicle-booking:${lockVehicleId}` : `booking:${id}`
+
+    return await logger.time('admin_booking_patch', () =>
+      withAtomicResourceLock(payload, lockKey, async (tx) => {
+        const updated = await payload.update({
+          collection: 'bookings',
+          id,
+          user,
+          overrideAccess: false,
+          ...txReqOptions(
+            tx.req,
+            {
+              ...(expectedRevision !== undefined ? { expectedRevision } : {}),
+              ...(enforceFinancialClearance ? { enforceFinancialClearance: true } : {}),
+              ...(approveFinancialException ? { approveFinancialException: true } : {}),
+            },
+            user,
+          ),
+          data: {
+            status: status as BookingStatus,
+            ...(handoverNote ? { handoverNote } : {}),
+            ...(extraFee !== undefined ? { extraFee } : {}),
+            ...(extraFeeNote ? { extraFeeNote } : {}),
+            ...(contractNumber ? { contractNumber } : {}),
+            ...(returnOdometer !== undefined ? { returnOdometer } : {}),
+            ...(returnCondition ? { returnCondition } : {}),
+            ...(actualReturnBranchId ? { actualReturnBranch: actualReturnBranchId } : {}),
+            ...(actualReturnWarehouseId ? { actualReturnWarehouse: actualReturnWarehouseId } : {}),
+            ...(returnFuelOrBattery ? { returnFuelOrBattery } : {}),
+            ...(returnInspectionStatus ? { returnInspectionStatus } : {}),
+          },
+        })
+        logger.logSuccess(200, { status: updated.status ?? null })
+        return json(
+          {
+            id: updated.id,
+            status: updated.status,
+            scheduleConflictAlert: updated.scheduleConflictAlert ?? null,
+          },
+          200,
+          logger.responseHeaders(),
+        )
+      }),
+    )
   } catch (error) {
-    return apiError(error)
+    return apiError(error, { logger, route: 'nori-api/dashboard/bookings' })
   }
 }

@@ -1,4 +1,5 @@
 import type { Payload, PayloadRequest } from 'payload'
+import { runBestEffortSafe } from './db-tx.ts'
 
 export type NotificationDispatchResult = {
   inAppSaved: boolean
@@ -35,7 +36,7 @@ export async function dispatchBookingConfirmationNotice(params: {
   let inAppSaved = existingNotifCount > 0
 
   if (!inAppSaved) {
-    try {
+    const created = await runBestEffortSafe(payload, req, async () => {
       await payload.create({
         collection: 'notifications',
         req,
@@ -64,10 +65,9 @@ export async function dispatchBookingConfirmationNotice(params: {
           popupDismissed: false,
         },
       })
-      inAppSaved = true
-    } catch {
-      inAppSaved = false
-    }
+      return true
+    })
+    inAppSaved = Boolean(created)
   }
 
   const webhookUrl = process.env.NORI_NOTIFY_WEBHOOK_URL?.trim()

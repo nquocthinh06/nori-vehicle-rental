@@ -1,6 +1,17 @@
 import { appAuth } from '@/lib/app-auth'
 import { getPayloadClient } from '@/lib/payload'
-import { apiError, assertOrigin, assertRateLimit, body, fail, json, text } from '@/lib/api-utils'
+import {
+  apiError,
+  assertOrigin,
+  assertRateLimit,
+  body,
+  createRequestLogger,
+  fail,
+  json,
+  text,
+} from '@/lib/api-utils'
+import { classifyUnexpectedError } from '@/lib/error-classifier'
+import { withBookingWriteLock } from '@/lib/promo-service'
 
 type Context = { params: Promise<{ action: string }> }
 
@@ -58,6 +69,7 @@ export async function GET(_request: Request, context: Context) {
 
 export async function POST(request: Request, context: Context) {
   const { action } = await context.params
+  const logger = createRequestLogger(`nori-api/auth/${action}`, request)
   try {
     assertOrigin(request)
     if (action === 'logout') {
@@ -155,43 +167,59 @@ export async function POST(request: Request, context: Context) {
           fields,
         )
       const payload = await getPayloadClient()
-      const adminCollision = await payload.find({
-        collection: 'admins',
-        where: { email: { equals: email } },
-        limit: 1,
-        overrideAccess: true,
-        depth: 0,
-      })
-      const officialAdminEmail = (
-        process.env.NORI_ADMIN_EMAIL?.trim() || 'admin@nori.vn'
-      ).toLowerCase()
-      if (email === officialAdminEmail || adminCollision.docs.length > 0) {
-        return fail(
-          'Chưa thể tạo tài khoản. Email có thể đã được sử dụng; hãy đăng nhập hoặc thử email khác.',
-          409,
-          'ACCOUNT_NOT_CREATED',
-        )
-      }
-      try {
-        await payload.create({
-          collection: 'users',
-          overrideAccess: false,
-          data: {
-            email,
-            password,
-            fullName,
-            phone: phone || undefined,
-            role: 'CUSTOMER',
-            status: 'ACTIVE',
-          },
+      const runWrite = <T>(fn: () => Promise<T>): Promise<T> =>
+        String((payload.db as { name?: string })?.name ?? '').toLowerCase() !== 'postgres'
+          ? withBookingWriteLock(fn)
+          : fn()
+
+      return await runWrite(async () => {
+        const adminCollision = await payload.find({
+          collection: 'admins',
+          where: { email: { equals: email } },
+          limit: 1,
+          overrideAccess: true,
+          depth: 0,
         })
-      } catch {
-        return fail(
-          'Chưa thể tạo tài khoản. Email có thể đã được sử dụng; hãy đăng nhập hoặc thử email khác.',
-          409,
-          'ACCOUNT_NOT_CREATED',
-        )
-      }
+        const officialAdminEmail = (
+          process.env.NORI_ADMIN_EMAIL?.trim() || 'admin@nori.vn'
+        ).toLowerCase()
+        if (email === officialAdminEmail || adminCollision.docs.length > 0) {
+          return fail(
+            'Chưa thể tạo tài khoản. Email có thể đã được sử dụng; hãy đăng nhập hoặc thử email khác.',
+            409,
+            'ACCOUNT_NOT_CREATED',
+          )
+        }
+        try {
+          await payload.create({
+            collection: 'users',
+            overrideAccess: false,
+            data: {
+              email,
+              password,
+              fullName,
+              phone: phone || undefined,
+              role: 'CUSTOMER',
+              status: 'ACTIVE',
+            },
+          })
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err)
+          if (!/unique|duplicate|23505|already exists/i.test(msg)) {
+            const cls = classifyUnexpectedError(err)
+            if (cls.category !== 'SYSTEM_ERROR') {
+              return fail(cls.userMessage, cls.status, cls.code)
+            }
+          }
+          return fail(
+            'Chưa thể tạo tài khoản. Email có thể đã được sử dụng; hãy đăng nhập hoặc thử email khác.',
+            409,
+            'ACCOUNT_NOT_CREATED',
+          )
+        }
+        const user = await appAuth.login(email, password, request)
+        return json(publicUser(user), 201)
+      })
     } else if (Object.keys(fields).length)
       return fail('Vui lòng kiểm tra email và mật khẩu.', 400, 'VALIDATION_ERROR', fields)
     try {
@@ -240,14 +268,17 @@ export async function POST(request: Request, context: Context) {
       const user = await appAuth.login(email, password, request)
       return json(publicUser(user), action === 'register' ? 201 : 200)
     } catch {
+      logger.logError('UNAUTHORIZED', 401, 'Invalid credentials or locked account')
       return fail(
         'Email hoặc mật khẩu chưa chính xác, hoặc tài khoản tạm khóa. Vui lòng thử lại.',
         401,
         'UNAUTHORIZED',
+        undefined,
+        logger.responseHeaders(),
       )
     }
   } catch (error) {
-    return apiError(error)
+    return apiError(error, { logger, route: `nori-api/auth/${action}` })
   }
 }
 

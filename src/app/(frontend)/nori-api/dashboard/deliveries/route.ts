@@ -1,5 +1,6 @@
 import { assertBranchScopeOrFail, requireAdmin } from '@/lib/admin-api'
 import { apiError, assertOrigin, body, fail, json, text } from '@/lib/api-utils'
+import { txReqOptions, withAtomicResourceLock } from '@/lib/db-tx'
 import { recordAudit } from '@/hooks/audit-nori'
 import {
   DELIVERY_JOB_STATUSES,
@@ -10,7 +11,6 @@ import {
   type DeliveryJobStatus,
 } from '@/lib/multi-branch-rules'
 import { recordVehicleLocationEvent } from '@/lib/multi-branch-service'
-import { withBookingWriteLock } from '@/lib/promo-service'
 import { relationId, validateTimeString } from '@/lib/rental-rules'
 
 export async function GET(request: Request) {
@@ -716,9 +716,15 @@ export async function PATCH(request: Request) {
     const bookingId = relationId(existing.booking)
     const vehicleId = relationId(existing.vehicle)
     if (nextStatus === 'COMPLETED' && bookingId && vehicleId) {
-      await withBookingWriteLock(async () => {
+      await withAtomicResourceLock(payload, `vehicle-booking:${vehicleId}`, async (tx) => {
         const bk = await payload
-          .findByID({ collection: 'bookings', id: bookingId, overrideAccess: true, depth: 0 })
+          .findByID({
+            collection: 'bookings',
+            id: bookingId,
+            overrideAccess: true,
+            depth: 0,
+            ...txReqOptions(tx.req),
+          })
           .catch(() => null)
         if (bk) {
           if (
@@ -729,6 +735,10 @@ export async function PATCH(request: Request) {
               collection: 'bookings',
               id: bookingId,
               overrideAccess: true,
+              ...txReqOptions(tx.req, {
+                noriSystemPaymentSync: true,
+                noriSystemActorLabel: admin.email,
+              }),
               data: {
                 status: 'ONGOING',
                 handoverNote:
@@ -741,6 +751,10 @@ export async function PATCH(request: Request) {
               collection: 'bookings',
               id: bookingId,
               overrideAccess: true,
+              ...txReqOptions(tx.req, {
+                noriSystemPaymentSync: true,
+                noriSystemActorLabel: admin.email,
+              }),
               data: {
                 status: 'INSPECTING',
                 returnOdometer:
@@ -754,7 +768,7 @@ export async function PATCH(request: Request) {
             })
           }
         }
-        await recordVehicleLocationEvent(payload, undefined, {
+        await recordVehicleLocationEvent(payload, tx.req, {
           vehicleId,
           vehicleReference: existing.vehicleReferenceSnapshot ?? undefined,
           eventType: existing.jobType === 'PICKUP' ? 'PICKUP_RETURN' : 'DELIVERY_DISPATCH',

@@ -363,5 +363,7 @@ test('Postgres Migration Safety Guard — blocks unconfirmed Production writes a
   assert.deepEqual(registered, [
     '20261121_105804_init_postgres',
     '20261121_120000_media_cloud_storage_columns',
+    '20261122_010000_perf_composite_indexes',
+    '20261122_020000_parity_unique_constraints',
   ])
 })

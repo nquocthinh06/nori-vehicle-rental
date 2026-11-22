@@ -79,7 +79,9 @@ export function syncPublicMedia() {
   }
 
   const finalPublic = fs.readdirSync(publicMediaDir)
-  console.log(`[SYNC-PUBLIC-MEDIA] public/media synchronized: ${finalPublic.length} files (copied: ${synced}, unchanged: ${skipped}, purged stale: ${removed}).`)
+  console.log(
+    `[SYNC-PUBLIC-MEDIA] public/media synchronized: ${finalPublic.length} files (copied: ${synced}, unchanged: ${skipped}, purged stale: ${removed}).`,
+  )
   return { count: finalPublic.length, synced, skipped, removed }
 }
 

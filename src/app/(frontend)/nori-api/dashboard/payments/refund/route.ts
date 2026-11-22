@@ -1,6 +1,14 @@
 import { adminHasPermission } from '@/access/nori'
 import { requireAdmin } from '@/lib/admin-api'
-import { apiError, assertOrigin, body, fail, json, text } from '@/lib/api-utils'
+import {
+  apiError,
+  assertOrigin,
+  body,
+  createRequestLogger,
+  fail,
+  json,
+  text,
+} from '@/lib/api-utils'
 import { createOrProcessAdminRefund } from '@/lib/payment-service'
 
 const VALID_REFUND_TYPES = [
@@ -11,62 +19,73 @@ const VALID_REFUND_TYPES = [
   'SECURITY_DEPOSIT_RETURN',
 ] as const
 
-export async function GET() {
+export async function GET(request: Request) {
+  const logger = createRequestLogger('nori-api/dashboard/payments/refund', request)
   try {
-    const auth = await requireAdmin({ permission: ['payments', 'read'] })
+    const auth = await logger.time('auth', () => requireAdmin({ permission: ['payments', 'read'] }))
     if (!auth.ok) return auth.response
     const { payload, user } = auth
 
-    const res = await payload.find({
-      collection: 'refunds',
-      user,
-      overrideAccess: false,
-      depth: 1,
-      limit: 100,
-      sort: '-createdAt',
-    })
+    const res = await logger.time('find_refunds', () =>
+      payload.find({
+        collection: 'refunds',
+        user,
+        overrideAccess: false,
+        depth: 1,
+        limit: 100,
+        sort: '-createdAt',
+      }),
+    )
 
-    return json({
-      items: res.docs.map((r) => ({
-        id: r.id,
-        reference: r.reference ?? r.id,
-        bookingId: typeof r.booking === 'object' && r.booking ? r.booking.id : String(r.booking),
-        bookingKey:
-          typeof r.booking === 'object' && r.booking
-            ? (r.booking.bookingKey ?? r.booking.id)
-            : String(r.booking),
-        paymentId:
-          typeof r.payment === 'object' && r.payment
-            ? r.payment.id
-            : typeof r.payment === 'string'
-              ? r.payment
-              : null,
-        refundType: r.refundType,
-        amount: r.amount,
-        reason: r.reason,
-        status: r.status,
-        provider: r.provider ?? 'MANUAL',
-        providerRefundId: r.providerRefundId ?? null,
-        requestedBy: r.requestedBy ?? null,
-        approvedBy: r.approvedBy ?? null,
-        completedBy: r.completedBy ?? null,
-        requestedAt: r.requestedAt ?? r.createdAt,
-        approvedAt: r.approvedAt ?? null,
-        completedAt: r.completedAt ?? null,
-        reconciliationNote: r.reconciliationNote ?? null,
-        bankAccountInfo: r.bankAccountInfo ?? null,
-        createdAt: r.createdAt,
-      })),
-    })
+    logger.logSuccess(200, { count: res.docs.length })
+    return json(
+      {
+        items: res.docs.map((r) => ({
+          id: r.id,
+          reference: r.reference ?? r.id,
+          bookingId: typeof r.booking === 'object' && r.booking ? r.booking.id : String(r.booking),
+          bookingKey:
+            typeof r.booking === 'object' && r.booking
+              ? (r.booking.bookingKey ?? r.booking.id)
+              : String(r.booking),
+          paymentId:
+            typeof r.payment === 'object' && r.payment
+              ? r.payment.id
+              : typeof r.payment === 'string'
+                ? r.payment
+                : null,
+          refundType: r.refundType,
+          amount: r.amount,
+          reason: r.reason,
+          status: r.status,
+          provider: r.provider ?? 'MANUAL',
+          providerRefundId: r.providerRefundId ?? null,
+          requestedBy: r.requestedBy ?? null,
+          approvedBy: r.approvedBy ?? null,
+          completedBy: r.completedBy ?? null,
+          requestedAt: r.requestedAt ?? r.createdAt,
+          approvedAt: r.approvedAt ?? null,
+          completedAt: r.completedAt ?? null,
+          reconciliationNote: r.reconciliationNote ?? null,
+          bankAccountInfo: r.bankAccountInfo ?? null,
+          createdAt: r.createdAt,
+        })),
+      },
+      200,
+      logger.responseHeaders(),
+    )
   } catch (error) {
-    return apiError(error)
+    return apiError(error, { logger, route: 'nori-api/dashboard/payments/refund' })
   }
 }
 
 export async function POST(request: Request) {
+  const logger = createRequestLogger('nori-api/dashboard/payments/refund', request)
   try {
     assertOrigin(request)
-    const auth = await requireAdmin({ permission: ['payments', 'update'] })
+    const auth = await logger.time('auth', () =>
+      requireAdmin({ permission: ['payments', 'update'] }),
+    )
     if (!auth.ok) return auth.response
     const { payload, admin } = auth
 
@@ -143,9 +162,12 @@ export async function POST(request: Request) {
           message: completed.message,
         },
         201,
+        logger.responseHeaders(),
       )
     }
 
+    const status = action === 'create' ? 201 : 200
+    logger.logSuccess(status, { action, refundStatus: result.refund.status })
     return json(
       {
         id: result.refund.id,
@@ -154,10 +176,11 @@ export async function POST(request: Request) {
         amount: result.refund.amount,
         message: result.message,
       },
-      action === 'create' ? 201 : 200,
+      status,
+      logger.responseHeaders(),
     )
   } catch (error) {
-    return apiError(error)
+    return apiError(error, { logger, route: 'nori-api/dashboard/payments/refund' })
   }
 }
 

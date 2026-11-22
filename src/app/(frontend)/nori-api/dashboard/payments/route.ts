@@ -1,7 +1,15 @@
 import { assertBranchScopeOrFail, requireAdmin, resolveCustomerDisplayNames } from '@/lib/admin-api'
-import { apiError, assertOrigin, body, fail, json, text } from '@/lib/api-utils'
+import {
+  apiError,
+  assertOrigin,
+  body,
+  createRequestLogger,
+  fail,
+  json,
+  text,
+} from '@/lib/api-utils'
+import { txReqOptions, withAtomicResourceLock } from '@/lib/db-tx'
 import { getSitePaymentConfig, sweepExpiredPayments } from '@/lib/payment-service'
-import { withBookingWriteLock } from '@/lib/promo-service'
 import {
   PAYMENT_METHODS,
   PAYMENT_PROVIDERS,
@@ -379,9 +387,12 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  const logger = createRequestLogger('nori-api/dashboard/payments', request)
   try {
     assertOrigin(request)
-    const auth = await requireAdmin({ permission: ['payments', 'create'] })
+    const auth = await logger.time('auth', () =>
+      requireAdmin({ permission: ['payments', 'create'] }),
+    )
     if (!auth.ok) return auth.response
     const { payload, user } = auth
 
@@ -425,98 +436,110 @@ export async function POST(request: Request) {
       PAYMENT_STATUSES.includes(String(data.status) as PaymentStatus) ? data.status : 'CONFIRMED'
     ) as PaymentStatus
 
-    return await withBookingWriteLock(async () => {
-      if (bookingId) {
-        const b = await payload.findByID({
-          collection: 'bookings',
-          id: bookingId,
-          user,
-          overrideAccess: false,
-          depth: 0,
-        })
-        if (
-          ['CANCELLED', 'REJECTED'].includes(String(b.status ?? '')) &&
-          paymentStatus !== 'CANCELLED' &&
-          paymentType !== 'REFUND'
-        ) {
-          return fail(
-            'Không thể ghi nhận thu tiền cho đơn thuê đã hủy hoặc đã từ chối.',
-            409,
-            'INVALID_BOOKING_STATE',
-          )
-        }
-        customerId =
-          typeof b.customer === 'object' && b.customer ? b.customer.id : (b.customer ?? undefined)
-        branchId = relationId(b.revenueAttributionBranch) ?? relationId(b.pickupBranch) ?? undefined
+    const postLockKey = bookingId ? `payment-booking:${bookingId}` : 'payment-admin:create'
 
-        const recentDuplicates = await payload.find({
+    return await logger.time('admin_payment_create', () =>
+      withAtomicResourceLock(payload, postLockKey, async (tx) => {
+        if (bookingId) {
+          const b = await payload.findByID({
+            collection: 'bookings',
+            id: bookingId,
+            user,
+            overrideAccess: false,
+            depth: 0,
+            ...txReqOptions(tx.req, undefined, user),
+          })
+          if (
+            ['CANCELLED', 'REJECTED'].includes(String(b.status ?? '')) &&
+            paymentStatus !== 'CANCELLED' &&
+            paymentType !== 'REFUND'
+          ) {
+            return fail(
+              'Không thể ghi nhận thu tiền cho đơn thuê đã hủy hoặc đã từ chối.',
+              409,
+              'INVALID_BOOKING_STATE',
+            )
+          }
+          customerId =
+            typeof b.customer === 'object' && b.customer ? b.customer.id : (b.customer ?? undefined)
+          branchId =
+            relationId(b.revenueAttributionBranch) ?? relationId(b.pickupBranch) ?? undefined
+
+          const recentDuplicates = await payload.find({
+            collection: 'payments',
+            user,
+            overrideAccess: false,
+            limit: 1,
+            sort: '-createdAt',
+            ...txReqOptions(tx.req, undefined, user),
+            where: {
+              and: [
+                { booking: { equals: bookingId } },
+                { paymentType: { equals: paymentType } },
+                { amount: { equals: amount } },
+                { status: { in: ['PENDING', 'CONFIRMED'] } },
+              ],
+            },
+          })
+          if (recentDuplicates.totalDocs > 0) {
+            const lastCreatedAt = new Date(recentDuplicates.docs[0].createdAt).getTime()
+            if (Date.now() - lastCreatedAt < 30_000) {
+              return fail(
+                'Giao dịch tương tự vừa được tạo cách đây ít giây. Vui lòng không gửi lặp lại.',
+                409,
+                'DUPLICATE_PAYMENT',
+              )
+            }
+          }
+        }
+
+        const receivedAmount =
+          data.receivedAmount !== undefined && data.receivedAmount !== null
+            ? roundVndInteger(Number(data.receivedAmount))
+            : paymentStatus === 'CONFIRMED'
+              ? amount
+              : 0
+
+        const created = await payload.create({
           collection: 'payments',
           user,
           overrideAccess: false,
-          limit: 1,
-          sort: '-createdAt',
-          where: {
-            and: [
-              { booking: { equals: bookingId } },
-              { paymentType: { equals: paymentType } },
-              { amount: { equals: amount } },
-              { status: { in: ['PENDING', 'CONFIRMED'] } },
-            ],
+          ...txReqOptions(tx.req, undefined, user),
+          data: {
+            booking: bookingId,
+            customer: customerId,
+            ...(branchId ? { branch: branchId } : {}),
+            paymentType,
+            method,
+            provider,
+            amount,
+            expectedAmount: amount,
+            receivedAmount,
+            status: paymentStatus,
+            reconciliationStatus: paymentStatus === 'CONFIRMED' ? 'MANUAL_OVERRIDE' : 'NONE',
+            providerTransactionId,
+            reconciliationNote,
+            paidAt,
+            verifiedAt: paymentStatus === 'CONFIRMED' ? new Date().toISOString() : undefined,
+            note,
           },
         })
-        if (recentDuplicates.totalDocs > 0) {
-          const lastCreatedAt = new Date(recentDuplicates.docs[0].createdAt).getTime()
-          if (Date.now() - lastCreatedAt < 30_000) {
-            return fail(
-              'Giao dịch tương tự vừa được tạo cách đây ít giây. Vui lòng không gửi lặp lại.',
-              409,
-              'DUPLICATE_PAYMENT',
-            )
-          }
-        }
-      }
-
-      const receivedAmount =
-        data.receivedAmount !== undefined && data.receivedAmount !== null
-          ? roundVndInteger(Number(data.receivedAmount))
-          : paymentStatus === 'CONFIRMED'
-            ? amount
-            : 0
-
-      const created = await payload.create({
-        collection: 'payments',
-        user,
-        overrideAccess: false,
-        data: {
-          booking: bookingId,
-          customer: customerId,
-          ...(branchId ? { branch: branchId } : {}),
-          paymentType,
-          method,
-          provider,
-          amount,
-          expectedAmount: amount,
-          receivedAmount,
-          status: paymentStatus,
-          reconciliationStatus: paymentStatus === 'CONFIRMED' ? 'MANUAL_OVERRIDE' : 'NONE',
-          providerTransactionId,
-          reconciliationNote,
-          paidAt,
-          verifiedAt: paymentStatus === 'CONFIRMED' ? new Date().toISOString() : undefined,
-          note,
-        },
-      })
-      return json({ id: created.id, reference: created.reference }, 201)
-    })
+        logger.logSuccess(201, { status: paymentStatus })
+        return json({ id: created.id, reference: created.reference }, 201, logger.responseHeaders())
+      }),
+    )
   } catch (error) {
-    return apiError(error)
+    return apiError(error, { logger, route: 'nori-api/dashboard/payments' })
   }
 }
 
 export async function PATCH(request: Request) {
+  const logger = createRequestLogger('nori-api/dashboard/payments', request)
   try {
     assertOrigin(request)
-    const auth = await requireAdmin({ permission: ['payments', 'update'] })
+    const auth = await logger.time('auth', () =>
+      requireAdmin({ permission: ['payments', 'update'] }),
+    )
     if (!auth.ok) return auth.response
     const { payload, user } = auth
 
@@ -538,27 +561,37 @@ export async function PATCH(request: Request) {
       ? (reconRaw as ReconciliationStatus)
       : undefined
 
-    return await withBookingWriteLock(async () => {
-      const updated = await payload.update({
-        collection: 'payments',
-        id,
-        user,
-        overrideAccess: false,
-        data: {
-          status: status as PaymentStatus,
-          ...(reconciliationStatus ? { reconciliationStatus } : {}),
-          ...(data.receivedAmount !== undefined
-            ? { receivedAmount: roundVndInteger(Number(data.receivedAmount)) }
-            : {}),
-          ...(data.reconciliationNote !== undefined
-            ? { reconciliationNote: text(data.reconciliationNote, 500) }
-            : {}),
-          ...(data.note !== undefined ? { note: text(data.note, 500) } : {}),
-        },
-      })
-      return json({ id: updated.id, status: updated.status })
-    })
+    const prePay = await payload
+      .findByID({ collection: 'payments', id, user, overrideAccess: false, depth: 0 })
+      .catch(() => null)
+    const patchBookingId = relationId(prePay?.booking)
+    const patchLockKey = patchBookingId ? `payment-booking:${patchBookingId}` : `payment:${id}`
+
+    return await logger.time('admin_payment_patch', () =>
+      withAtomicResourceLock(payload, patchLockKey, async (tx) => {
+        const updated = await payload.update({
+          collection: 'payments',
+          id,
+          user,
+          overrideAccess: false,
+          ...txReqOptions(tx.req, undefined, user),
+          data: {
+            status: status as PaymentStatus,
+            ...(reconciliationStatus ? { reconciliationStatus } : {}),
+            ...(data.receivedAmount !== undefined
+              ? { receivedAmount: roundVndInteger(Number(data.receivedAmount)) }
+              : {}),
+            ...(data.reconciliationNote !== undefined
+              ? { reconciliationNote: text(data.reconciliationNote, 500) }
+              : {}),
+            ...(data.note !== undefined ? { note: text(data.note, 500) } : {}),
+          },
+        })
+        logger.logSuccess(200, { status: updated.status })
+        return json({ id: updated.id, status: updated.status }, 200, logger.responseHeaders())
+      }),
+    )
   } catch (error) {
-    return apiError(error)
+    return apiError(error, { logger, route: 'nori-api/dashboard/payments' })
   }
 }

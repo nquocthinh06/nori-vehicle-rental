@@ -21,13 +21,14 @@ import {
   type TransferStatus,
   type VehicleInventoryRecord,
 } from './multi-branch-rules.ts'
-import { lookupAndEvaluatePromotion, withBookingWriteLock } from './promo-service.ts'
+import { findPromotionByCode, withBookingWriteLock, type PromoWithScope } from './promo-service.ts'
 import {
   HOLD_STATUSES,
   addDays,
   applyPromotionToQuote,
   businessToday,
   dateNumber,
+  evaluatePromotion,
   parseAddonKeys,
   relationId,
   rentalDays,
@@ -149,6 +150,11 @@ export type EvaluateBookingMultiBranchInput = {
   excludeBookingId?: string | null
   excludeBookingKey?: string | null
   alreadyHeldPromoCode?: string | null
+  preloadedVehicle?: Record<string, unknown> | null
+  preloadedModel?: Record<string, unknown> | null
+  preloadedBranches?: Record<string, unknown>[] | null
+  preloadedPricingRules?: Record<string, unknown>[] | null
+  preloadedOneWayRules?: Record<string, unknown>[] | null
   req?: PayloadRequest
   user?: unknown
 }
@@ -217,50 +223,114 @@ export async function evaluateVehicleBookingAvailabilityAndPricing(
     return emptyFail('INVALID_DATES', dateVal.error ?? 'Ngày thuê không hợp lệ.')
   }
 
-  const vehicle = (await payload
-    .findByID({
-      collection: 'vehicles',
-      id: input.vehicleId,
-      overrideAccess: true,
-      depth: 0,
-      ...reqOpt,
-    })
-    .catch(() => null)) as Record<string, unknown> | null
+  const vehicle =
+    input.preloadedVehicle ??
+    ((await payload
+      .findByID({
+        collection: 'vehicles',
+        id: input.vehicleId,
+        overrideAccess: true,
+        depth: 0,
+        select: {
+          model: true,
+          status: true,
+          intent: true,
+          operationStatus: true,
+          currentBranch: true,
+          managingBranch: true,
+          pricePerDay: true,
+          pricePerWeek: true,
+          pricePerMonth: true,
+          weekendSurcharge: true,
+          holidaySurcharge: true,
+          depositAmount: true,
+          deliveryFee: true,
+          kmLimitPerDay: true,
+          overKmFee: true,
+          lateReturnFeePerHour: true,
+          pickupLocation: true,
+          location: true,
+          reference: true,
+        },
+        ...reqOpt,
+      })
+      .catch(() => null)) as Record<string, unknown> | null)
 
   if (!vehicle) {
     return emptyFail('VEHICLE_NOT_FOUND', 'Không tìm thấy phương tiện đã chọn.')
   }
   const modelId = relationId(vehicle.model as string | { id: string } | null)
-  const model = modelId
-    ? ((await payload
-        .findByID({
-          collection: 'vehicle-models',
-          id: modelId,
-          overrideAccess: true,
-          depth: 0,
-          ...reqOpt,
-        })
-        .catch(() => null)) as Record<string, unknown> | null)
-    : null
+  const model =
+    input.preloadedModel ??
+    (modelId
+      ? ((await payload
+          .findByID({
+            collection: 'vehicle-models',
+            id: modelId,
+            overrideAccess: true,
+            depth: 0,
+            select: { name: true, slug: true, visible: true, category: true },
+            ...reqOpt,
+          })
+          .catch(() => null)) as Record<string, unknown> | null)
+      : null)
 
   if (!model || !model.visible) {
     return emptyFail('MODEL_UNAVAILABLE', 'Dòng xe chưa được công bố.', { vehicle })
   }
 
-  // Resolve service locations -> branch IDs
-  let pickupLocDoc: Record<string, unknown> | null = null
-  let returnLocDoc: Record<string, unknown> | null = null
+  // Resolve service locations -> branch IDs (in parallel when both specified)
+  const [pickupLocDocRaw, returnLocDocRaw] = await Promise.all([
+    input.pickupServiceLocationId
+      ? (payload
+          .findByID({
+            collection: 'service-locations' as never,
+            id: input.pickupServiceLocationId,
+            overrideAccess: true,
+            depth: 0,
+            select: {
+              name: true,
+              address: true,
+              status: true,
+              verified: true,
+              supportsPickup: true,
+              supportedCategories: true,
+              branch: true,
+              openTime: true,
+              closeTime: true,
+              surchargeFee: true,
+            } as never,
+            ...reqOpt,
+          })
+          .catch(() => null) as Promise<Record<string, unknown> | null>)
+      : Promise.resolve(null),
+    input.returnServiceLocationId
+      ? (payload
+          .findByID({
+            collection: 'service-locations' as never,
+            id: input.returnServiceLocationId,
+            overrideAccess: true,
+            depth: 0,
+            select: {
+              name: true,
+              address: true,
+              status: true,
+              verified: true,
+              supportsReturn: true,
+              branch: true,
+              openTime: true,
+              closeTime: true,
+              surchargeFee: true,
+            } as never,
+            ...reqOpt,
+          })
+          .catch(() => null) as Promise<Record<string, unknown> | null>)
+      : Promise.resolve(null),
+  ])
+  const pickupLocDoc = pickupLocDocRaw
+  const returnLocDoc = returnLocDocRaw
 
   if (input.pickupServiceLocationId) {
-    pickupLocDoc = (await payload
-      .findByID({
-        collection: 'service-locations' as never,
-        id: input.pickupServiceLocationId,
-        overrideAccess: true,
-        depth: 0,
-        ...reqOpt,
-      })
-      .catch(() => null)) as Record<string, unknown> | null
     if (!pickupLocDoc) {
       return emptyFail('PICKUP_LOCATION_NOT_FOUND', 'Điểm nhận xe đã chọn không tồn tại.', {
         vehicle,
@@ -295,15 +365,6 @@ export async function evaluateVehicleBookingAvailabilityAndPricing(
   }
 
   if (input.returnServiceLocationId) {
-    returnLocDoc = (await payload
-      .findByID({
-        collection: 'service-locations' as never,
-        id: input.returnServiceLocationId,
-        overrideAccess: true,
-        depth: 0,
-        ...reqOpt,
-      })
-      .catch(() => null)) as Record<string, unknown> | null
     if (!returnLocDoc) {
       return emptyFail('RETURN_LOCATION_NOT_FOUND', 'Điểm trả xe đã chọn không tồn tại.', {
         vehicle,
@@ -352,6 +413,9 @@ export async function evaluateVehicleBookingAvailabilityAndPricing(
     ),
   ]
 
+  const promoCodeNorm = (input.promoCode ?? '').trim().toUpperCase()
+  const branchIdSet = new Set(branchIdsToFetch)
+
   const [
     branchesRes,
     bookingsRes,
@@ -361,22 +425,50 @@ export async function evaluateVehicleBookingAvailabilityAndPricing(
     pricingRulesRes,
     oneWayRulesRes,
     deliveryZoneDoc,
+    promoDoc,
   ] = await Promise.all([
-    branchIdsToFetch.length
-      ? payload.find({
-          collection: 'branches' as never,
-          overrideAccess: true,
-          depth: 0,
-          limit: 10,
-          where: { id: { in: branchIdsToFetch } },
-          ...reqOpt,
+    input.preloadedBranches
+      ? Promise.resolve({
+          docs: input.preloadedBranches.filter((b) => branchIdSet.has(String(b.id))),
         })
-      : Promise.resolve({ docs: [] }),
+      : branchIdsToFetch.length
+        ? payload.find({
+            collection: 'branches' as never,
+            overrideAccess: true,
+            depth: 0,
+            limit: 10,
+            select: {
+              name: true,
+              address: true,
+              status: true,
+              workStartTime: true,
+              workEndTime: true,
+              supportsHomeDelivery: true,
+              supportsHomePickup: true,
+              deliveryStartTime: true,
+              deliveryEndTime: true,
+              defaultDeliveryFee: true,
+              defaultPickupFee: true,
+              afterHoursFee: true,
+              freeDeliveryMinOrder: true,
+            } as never,
+            where: { id: { in: branchIdsToFetch } },
+            ...reqOpt,
+          })
+        : Promise.resolve({ docs: [] }),
     payload.find({
       collection: 'bookings',
       overrideAccess: true,
       depth: 0,
       limit: 200,
+      select: {
+        bookingKey: true,
+        startDate: true,
+        endDate: true,
+        status: true,
+        pickupBranch: true,
+        returnBranch: true,
+      },
       where: {
         and: [{ vehicle: { equals: input.vehicleId } }, { status: { in: [...HOLD_STATUSES] } }],
       },
@@ -387,6 +479,14 @@ export async function evaluateVehicleBookingAvailabilityAndPricing(
       overrideAccess: true,
       depth: 0,
       limit: 100,
+      select: {
+        transferCode: true,
+        fromBranch: true,
+        toBranch: true,
+        startDate: true,
+        endDate: true,
+        status: true,
+      } as never,
       where: {
         and: [
           { vehicle: { equals: input.vehicleId } },
@@ -400,6 +500,7 @@ export async function evaluateVehicleBookingAvailabilityAndPricing(
       overrideAccess: true,
       depth: 0,
       limit: 50,
+      select: { startDate: true, endDate: true, status: true },
       where: {
         and: [
           { vehicle: { equals: input.vehicleId } },
@@ -422,31 +523,79 @@ export async function evaluateVehicleBookingAvailabilityAndPricing(
       },
       ...reqOpt,
     }),
-    payload.find({
-      collection: 'location-pricing-rules' as never,
-      overrideAccess: true,
-      depth: 0,
-      limit: 200,
-      where: { active: { equals: true } },
-      ...reqOpt,
-    }),
+    input.preloadedPricingRules
+      ? Promise.resolve({ docs: input.preloadedPricingRules })
+      : payload.find({
+          collection: 'location-pricing-rules' as never,
+          overrideAccess: true,
+          depth: 0,
+          limit: 200,
+          select: {
+            code: true,
+            name: true,
+            scopeType: true,
+            branch: true,
+            vehicleModel: true,
+            vehicle: true,
+            dailyPrice: true,
+            weeklyPrice: true,
+            monthlyPrice: true,
+            weekendSurcharge: true,
+            holidaySurcharge: true,
+            depositAmount: true,
+            locationSurcharge: true,
+            afterHoursFee: true,
+            weeklyDiscountPercent: true,
+            monthlyDiscountPercent: true,
+            validFrom: true,
+            validTo: true,
+            priority: true,
+            active: true,
+          } as never,
+          where: { active: { equals: true } },
+          ...reqOpt,
+        }),
     effectivePickupBranchId &&
     effectiveReturnBranchId &&
     effectivePickupBranchId !== effectiveReturnBranchId
-      ? payload.find({
-          collection: 'one-way-rental-rules' as never,
-          overrideAccess: true,
-          depth: 0,
-          limit: 50,
-          where: {
-            and: [
-              { fromBranch: { equals: effectivePickupBranchId } },
-              { toBranch: { equals: effectiveReturnBranchId } },
-              { active: { equals: true } },
-            ],
-          },
-          ...reqOpt,
-        })
+      ? input.preloadedOneWayRules
+        ? Promise.resolve({
+            docs: input.preloadedOneWayRules.filter(
+              (r) =>
+                String(relationId(r.fromBranch as string | { id: string } | null) ?? '') ===
+                  effectivePickupBranchId &&
+                String(relationId(r.toBranch as string | { id: string } | null) ?? '') ===
+                  effectiveReturnBranchId,
+            ),
+          })
+        : payload.find({
+            collection: 'one-way-rental-rules' as never,
+            overrideAccess: true,
+            depth: 0,
+            limit: 50,
+            select: {
+              routeKey: true,
+              fromBranch: true,
+              toBranch: true,
+              vehicleCategory: true,
+              allowed: true,
+              fee: true,
+              minRentalDays: true,
+              estimatedTransitHours: true,
+              preparationBufferHours: true,
+              revenueSplitMode: true,
+              pickupBranchSharePercent: true,
+              active: true,
+            } as never,
+            where: {
+              and: [
+                { fromBranch: { equals: effectivePickupBranchId } },
+                { toBranch: { equals: effectiveReturnBranchId } },
+                { active: { equals: true } },
+              ],
+            },
+            ...reqOpt,
+          })
       : Promise.resolve({ docs: [] }),
     input.deliveryZoneId
       ? payload
@@ -455,10 +604,22 @@ export async function evaluateVehicleBookingAvailabilityAndPricing(
             id: input.deliveryZoneId,
             overrideAccess: true,
             depth: 0,
+            select: {
+              active: true,
+              branch: true,
+              name: true,
+              serviceStartTime: true,
+              serviceEndTime: true,
+              afterHoursFee: true,
+              deliveryFee: true,
+              pickupFee: true,
+              freeOverOrderAmount: true,
+            } as never,
             ...reqOpt,
           })
           .catch(() => null)
       : Promise.resolve(null),
+    promoCodeNorm ? findPromotionByCode(payload, promoCodeNorm, input.req) : Promise.resolve(null),
   ])
 
   const branchMap = new Map<string, Record<string, unknown>>()
@@ -820,31 +981,26 @@ export async function evaluateVehicleBookingAvailabilityAndPricing(
         })
       : prelimQuote
 
-  // Evaluate Promotion with Branch Scope (PR-04, PR-05, PR-06)
-  const promoCodeNorm = (input.promoCode ?? '').trim().toUpperCase()
+  // Evaluate Promotion with Branch Scope (PR-04, PR-05, PR-06) using pre-fetched promoDoc
   let promoEval: PromoEvaluationResult | null = null
   let promoId: string | null = null
   if (promoCodeNorm) {
-    const { promo, evaluation } = await lookupAndEvaluatePromotion(payload, {
+    const promo = promoDoc as PromoWithScope | null
+    const evaluation = evaluatePromotion(promo, {
       code: promoCodeNorm,
       serviceType: 'RENT',
       totalDays: finalBaseQuote.totalDays,
       subtotalBeforePromo: finalBaseQuote.estimatedTotal,
       alreadyHeldByCurrentBooking: input.alreadyHeldPromoCode === promoCodeNorm,
-      req: input.req,
     })
     if (promo && evaluation.valid) {
-      // Load branch scope on the promotion record
-      const fullPromo = (await payload
-        .findByID({
-          collection: 'promotions',
-          id: promo.id,
-          overrideAccess: true,
-          depth: 0,
-          ...reqOpt,
-        })
-        .catch(() => null)) as { branchScope?: string | null; applicableBranchIds?: unknown } | null
-      const branchCheck = isPromotionEligibleForBranch(fullPromo ?? {}, effectivePickupBranchId)
+      const branchCheck = isPromotionEligibleForBranch(
+        {
+          branchScope: promo.branchScope ?? null,
+          applicableBranchIds: promo.applicableBranchIds ?? null,
+        },
+        effectivePickupBranchId,
+      )
       if (!branchCheck.eligible) {
         promoEval = {
           valid: false,
@@ -962,32 +1118,59 @@ export async function evaluateVehicleBookingAvailabilityAndPricing(
 // ATOMIC VEHICLE TRANSFER ENGINE (Section V — TR-01 .. TR-12)
 // ============================================================================
 
-async function runInSqliteTransaction<T>(
+async function runInAtomicDbTransaction<T>(
   payload: Payload,
+  lockKey: string,
   fn: (req: PayloadRequest) => Promise<T>,
   actorUser?: unknown,
 ): Promise<T> {
-  const txId = await payload.db.beginTransaction?.()
-  const req = {
-    payload,
-    transactionID: txId ?? undefined,
-    user: actorUser ?? undefined,
-    context: {},
-  } as unknown as PayloadRequest
-  try {
-    const result = await fn(req)
-    if (txId) await payload.db.commitTransaction?.(txId)
-    return result
-  } catch (err) {
-    if (txId) {
-      try {
-        await payload.db.rollbackTransaction?.(txId)
-      } catch {
-        // ignore rollback error
-      }
-    }
-    throw err
+  const dbAdapter = payload.db as unknown as {
+    name?: string
+    url?: string
+    sessions?: Record<string, { db?: { execute?: (stmt: unknown) => Promise<unknown> } }>
   }
+  const dbName = String(dbAdapter?.name ?? '').toLowerCase()
+  const rawUri = String(
+    dbAdapter?.url ?? process.env.DATABASE_URL ?? process.env.DATABASE_URI ?? '',
+  )
+    .trim()
+    .toLowerCase()
+  const isPg =
+    dbName.includes('postgres') ||
+    (!dbName && (rawUri.startsWith('postgres://') || rawUri.startsWith('postgresql://')))
+
+  const runTxBody = async (): Promise<T> => {
+    const txId = await payload.db.beginTransaction?.()
+    const req = {
+      payload,
+      transactionID: txId ?? undefined,
+      user: actorUser ?? undefined,
+      context: {},
+    } as unknown as PayloadRequest
+    try {
+      if (isPg && txId != null) {
+        const sessionDb = dbAdapter?.sessions?.[String(txId)]?.db
+        if (sessionDb?.execute) {
+          const { sql: pgSql } = await import('@payloadcms/db-postgres')
+          await sessionDb.execute(pgSql`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`)
+        }
+      }
+      const result = await fn(req)
+      if (txId) await payload.db.commitTransaction?.(txId)
+      return result
+    } catch (err) {
+      if (txId) {
+        try {
+          await payload.db.rollbackTransaction?.(txId)
+        } catch {
+          // ignore rollback error
+        }
+      }
+      throw err
+    }
+  }
+
+  return isPg ? runTxBody() : withBookingWriteLock(runTxBody)
 }
 
 export async function createVehicleTransferAtomic(
@@ -1021,267 +1204,265 @@ export async function createVehicleTransferAtomic(
     idempotencyKey?: string | null
   },
 ) {
-  return withBookingWriteLock(async () => {
-    if (input.idempotencyKey) {
-      const dup = await payload.find({
-        collection: 'vehicle-transfers' as never,
-        overrideAccess: true,
-        depth: 0,
-        limit: 1,
-        where: { idempotencyKey: { equals: input.idempotencyKey } },
-      })
-      if (dup.docs[0]) {
-        return { transfer: dup.docs[0], reused: true }
+  return runInAtomicDbTransaction(
+    payload,
+    `vehicle-transfer:${input.vehicleId}`,
+    async (req) => {
+      if (input.idempotencyKey) {
+        const dup = await payload.find({
+          collection: 'vehicle-transfers' as never,
+          overrideAccess: true,
+          depth: 0,
+          limit: 1,
+          req,
+          where: { idempotencyKey: { equals: input.idempotencyKey } },
+        })
+        if (dup.docs[0]) {
+          return { transfer: dup.docs[0], reused: true }
+        }
       }
-    }
+      const vehicle = (await payload
+        .findByID({
+          collection: 'vehicles',
+          id: input.vehicleId,
+          overrideAccess: true,
+          depth: 0,
+          req,
+        })
+        .catch(() => null)) as Record<string, unknown> | null
+      if (!vehicle) throw new APIError('Không tìm thấy phương tiện cần điều chuyển.', 404)
 
-    return runInSqliteTransaction(
-      payload,
-      async (req) => {
-        const vehicle = (await payload
+      const opStatus = String(vehicle.operationStatus ?? 'READY')
+      if (opStatus === 'RENTED') {
+        throw new APIError('Không thể tạo phiếu điều chuyển khi xe đang được khách thuê.', 409)
+      }
+      if (opStatus === 'SOLD') {
+        throw new APIError('Không thể điều chuyển phương tiện đã bán.', 409)
+      }
+      if (opStatus === 'IN_TRANSIT') {
+        throw new APIError('Phương tiện hiện đang trong một chuyến điều chuyển khác.', 409)
+      }
+      if (opStatus === 'MAINTENANCE' && !input.allowMaintenanceException) {
+        throw new APIError(
+          'Xe đang trong trạng thái bảo dưỡng; cần phê duyệt quy trình ngoại lệ để điều chuyển.',
+          409,
+        )
+      }
+
+      const fromBranchId =
+        input.fromBranchId ||
+        relationId(vehicle.currentBranch as string | { id: string } | null) ||
+        relationId(vehicle.managingBranch as string | { id: string } | null)
+      const fromWarehouseId =
+        input.fromWarehouseId ||
+        relationId(vehicle.currentWarehouse as string | { id: string } | null)
+      if (!fromBranchId || !fromWarehouseId) {
+        throw new APIError(
+          'Phương tiện chưa được phân bổ chi nhánh / kho xuất hợp lệ. Hãy phân bổ xe trước khi điều chuyển.',
+          400,
+        )
+      }
+      if (fromWarehouseId === input.toWarehouseId) {
+        throw new APIError('Kho nhận phải khác kho xuất.', 400)
+      }
+
+      // Branch RBAC guard: actor must have access to source or destination branch
+      if (!adminCanAccessAnyBranch(actor, [fromBranchId, input.toBranchId])) {
+        throw new APIError(
+          'Bạn không có quyền tạo phiếu điều chuyển cho chi nhánh ngoài phạm vi được phân công.',
+          403,
+        )
+      }
+
+      // Validate destination branch & warehouse active + capacity
+      const [toBranch, toWarehouse, fromWarehouse] = await Promise.all([
+        payload
           .findByID({
-            collection: 'vehicles',
-            id: input.vehicleId,
+            collection: 'branches' as never,
+            id: input.toBranchId,
             overrideAccess: true,
             depth: 0,
             req,
           })
-          .catch(() => null)) as Record<string, unknown> | null
-        if (!vehicle) throw new APIError('Không tìm thấy phương tiện cần điều chuyển.', 404)
-
-        const opStatus = String(vehicle.operationStatus ?? 'READY')
-        if (opStatus === 'RENTED') {
-          throw new APIError('Không thể tạo phiếu điều chuyển khi xe đang được khách thuê.', 409)
-        }
-        if (opStatus === 'SOLD') {
-          throw new APIError('Không thể điều chuyển phương tiện đã bán.', 409)
-        }
-        if (opStatus === 'IN_TRANSIT') {
-          throw new APIError('Phương tiện hiện đang trong một chuyến điều chuyển khác.', 409)
-        }
-        if (opStatus === 'MAINTENANCE' && !input.allowMaintenanceException) {
-          throw new APIError(
-            'Xe đang trong trạng thái bảo dưỡng; cần phê duyệt quy trình ngoại lệ để điều chuyển.',
-            409,
-          )
-        }
-
-        const fromBranchId =
-          input.fromBranchId ||
-          relationId(vehicle.currentBranch as string | { id: string } | null) ||
-          relationId(vehicle.managingBranch as string | { id: string } | null)
-        const fromWarehouseId =
-          input.fromWarehouseId ||
-          relationId(vehicle.currentWarehouse as string | { id: string } | null)
-        if (!fromBranchId || !fromWarehouseId) {
-          throw new APIError(
-            'Phương tiện chưa được phân bổ chi nhánh / kho xuất hợp lệ. Hãy phân bổ xe trước khi điều chuyển.',
-            400,
-          )
-        }
-        if (fromWarehouseId === input.toWarehouseId) {
-          throw new APIError('Kho nhận phải khác kho xuất.', 400)
-        }
-
-        // Branch RBAC guard: actor must have access to source or destination branch
-        if (!adminCanAccessAnyBranch(actor, [fromBranchId, input.toBranchId])) {
-          throw new APIError(
-            'Bạn không có quyền tạo phiếu điều chuyển cho chi nhánh ngoài phạm vi được phân công.',
-            403,
-          )
-        }
-
-        // Validate destination branch & warehouse active + capacity
-        const [toBranch, toWarehouse, fromWarehouse] = await Promise.all([
-          payload
-            .findByID({
-              collection: 'branches' as never,
-              id: input.toBranchId,
-              overrideAccess: true,
-              depth: 0,
-              req,
-            })
-            .catch(() => null) as Promise<Record<string, unknown> | null>,
-          payload
-            .findByID({
-              collection: 'warehouses' as never,
-              id: input.toWarehouseId,
-              overrideAccess: true,
-              depth: 0,
-              req,
-            })
-            .catch(() => null) as Promise<Record<string, unknown> | null>,
-          payload
-            .findByID({
-              collection: 'warehouses' as never,
-              id: fromWarehouseId,
-              overrideAccess: true,
-              depth: 0,
-              req,
-            })
-            .catch(() => null) as Promise<Record<string, unknown> | null>,
-        ])
-        if (!toBranch || toBranch.status !== 'ACTIVE') {
-          throw new APIError('Chi nhánh nhận hiện không hoạt động.', 409)
-        }
-        if (!fromWarehouse) {
-          throw new APIError('Kho xuất không tồn tại.', 404)
-        }
-        if (!toWarehouse || toWarehouse.status !== 'ACTIVE') {
-          throw new APIError('Kho nhận hiện không hoạt động hoặc đang bảo trì.', 409)
-        }
-        const toWhBranchId = relationId(toWarehouse.branch as string | { id: string } | null)
-        if (toWhBranchId !== input.toBranchId) {
-          throw new APIError('Kho nhận không trực thuộc chi nhánh nhận đã chọn.', 400)
-        }
-
-        // Check destination warehouse capacity (WH-03)
-        const allVehInDestWh = await payload.find({
-          collection: 'vehicles',
-          overrideAccess: true,
-          depth: 0,
-          limit: 500,
-          where: { currentWarehouse: { equals: input.toWarehouseId } },
-          req,
-        })
-        const occ = computeWarehouseOccupancy(
-          (allVehInDestWh.docs as unknown as Record<string, unknown>[]).map((v) => ({
-            id: String(v.id),
-            managingBranchId:
-              relationId(v.managingBranch as string | { id: string } | null) ?? null,
-            currentBranchId: relationId(v.currentBranch as string | { id: string } | null) ?? null,
-            currentWarehouseId:
-              relationId(v.currentWarehouse as string | { id: string } | null) ?? null,
-            operationStatus: String(v.operationStatus ?? 'READY'),
-            status: String(v.status ?? 'ACTIVE'),
-          })),
-          input.toWarehouseId,
-          Number(toWarehouse.capacity ?? 1),
-        )
-        if (occ.availableSlots <= 0 && !toWarehouse.allowOverCapacity) {
-          throw new APIError(
-            `Kho nhận "${String(toWarehouse.name)}" đã đạt sức chứa tối đa (${occ.physicalCount}/${occ.capacity} xe).`,
-            409,
-          )
-        }
-
-        const startDate = input.scheduledDepartureAt.slice(0, 10)
-        const endDate = input.scheduledArrivalAt.slice(0, 10)
-        if (
-          !Number.isFinite(dateNumber(startDate)) ||
-          !Number.isFinite(dateNumber(endDate)) ||
-          endDate < startDate
-        ) {
-          throw new APIError('Ngày giờ xuất và ngày giờ đến dự kiến không hợp lệ.', 400)
-        }
-
-        // Check conflicting bookings, transfers, and rental-days (TR-02, TR-03, TR-04)
-        const endExclusive = addDays(endDate, 1)
-        const [conflictDays, conflictTransfers] = await Promise.all([
-          payload.count({
-            collection: 'rental-days',
-            overrideAccess: true,
-            req,
-            where: {
-              and: [
-                { vehicle: { equals: input.vehicleId } },
-                { day: { greater_than_equal: startDate, less_than: endExclusive } },
-              ],
-            },
-          }),
-          payload.find({
-            collection: 'vehicle-transfers' as never,
+          .catch(() => null) as Promise<Record<string, unknown> | null>,
+        payload
+          .findByID({
+            collection: 'warehouses' as never,
+            id: input.toWarehouseId,
             overrideAccess: true,
             depth: 0,
-            limit: 50,
             req,
-            where: {
-              and: [
-                { vehicle: { equals: input.vehicleId } },
-                {
-                  status: {
-                    in: [
-                      'DRAFT',
-                      'PENDING_APPROVAL',
-                      'APPROVED',
-                      'IN_TRANSIT',
-                      'ARRIVED',
-                      'EXCEPTION',
-                    ],
-                  },
-                },
-              ],
-            },
-          }),
-        ])
-        if (conflictDays.totalDocs > 0) {
-          throw new APIError(
-            'Phương tiện đã có lịch thuê hoặc lịch giữ trong khoảng thời gian điều chuyển dự kiến.',
-            409,
-          )
-        }
-        const hasTransferOverlap = (
-          conflictTransfers.docs as unknown as Array<{ startDate: string; endDate: string }>
-        ).some((t) => t.startDate <= endDate && t.endDate >= startDate)
-        if (hasTransferOverlap) {
-          throw new APIError(
-            'Phương tiện đã có phiếu điều chuyển khác trùng khoảng thời gian này.',
-            409,
-          )
-        }
+          })
+          .catch(() => null) as Promise<Record<string, unknown> | null>,
+        payload
+          .findByID({
+            collection: 'warehouses' as never,
+            id: fromWarehouseId,
+            overrideAccess: true,
+            depth: 0,
+            req,
+          })
+          .catch(() => null) as Promise<Record<string, unknown> | null>,
+      ])
+      if (!toBranch || toBranch.status !== 'ACTIVE') {
+        throw new APIError('Chi nhánh nhận hiện không hoạt động.', 409)
+      }
+      if (!fromWarehouse) {
+        throw new APIError('Kho xuất không tồn tại.', 404)
+      }
+      if (!toWarehouse || toWarehouse.status !== 'ACTIVE') {
+        throw new APIError('Kho nhận hiện không hoạt động hoặc đang bảo trì.', 409)
+      }
+      const toWhBranchId = relationId(toWarehouse.branch as string | { id: string } | null)
+      if (toWhBranchId !== input.toBranchId) {
+        throw new APIError('Kho nhận không trực thuộc chi nhánh nhận đã chọn.', 400)
+      }
 
-        const initialStatus: TransferStatus = input.submitForApproval ? 'PENDING_APPROVAL' : 'DRAFT'
-        const transferCode = `TRF-${businessToday().replaceAll('-', '')}-${crypto.randomUUID().slice(0, 4).toUpperCase()}`
-        const nowIso = new Date().toISOString()
+      // Check destination warehouse capacity (WH-03)
+      const allVehInDestWh = await payload.find({
+        collection: 'vehicles',
+        overrideAccess: true,
+        depth: 0,
+        limit: 500,
+        where: { currentWarehouse: { equals: input.toWarehouseId } },
+        req,
+      })
+      const occ = computeWarehouseOccupancy(
+        (allVehInDestWh.docs as unknown as Record<string, unknown>[]).map((v) => ({
+          id: String(v.id),
+          managingBranchId: relationId(v.managingBranch as string | { id: string } | null) ?? null,
+          currentBranchId: relationId(v.currentBranch as string | { id: string } | null) ?? null,
+          currentWarehouseId:
+            relationId(v.currentWarehouse as string | { id: string } | null) ?? null,
+          operationStatus: String(v.operationStatus ?? 'READY'),
+          status: String(v.status ?? 'ACTIVE'),
+        })),
+        input.toWarehouseId,
+        Number(toWarehouse.capacity ?? 1),
+      )
+      if (occ.availableSlots <= 0 && !toWarehouse.allowOverCapacity) {
+        throw new APIError(
+          `Kho nhận "${String(toWarehouse.name)}" đã đạt sức chứa tối đa (${occ.physicalCount}/${occ.capacity} xe).`,
+          409,
+        )
+      }
 
-        const created = await payload.create({
-          collection: 'vehicle-transfers' as never,
+      const startDate = input.scheduledDepartureAt.slice(0, 10)
+      const endDate = input.scheduledArrivalAt.slice(0, 10)
+      if (
+        !Number.isFinite(dateNumber(startDate)) ||
+        !Number.isFinite(dateNumber(endDate)) ||
+        endDate < startDate
+      ) {
+        throw new APIError('Ngày giờ xuất và ngày giờ đến dự kiến không hợp lệ.', 400)
+      }
+
+      // Check conflicting bookings, transfers, and rental-days (TR-02, TR-03, TR-04)
+      const endExclusive = addDays(endDate, 1)
+      const [conflictDays, conflictTransfers] = await Promise.all([
+        payload.count({
+          collection: 'rental-days',
           overrideAccess: true,
           req,
-          data: {
-            transferCode,
-            vehicle: input.vehicleId,
-            vehicleReferenceSnapshot: String(vehicle.reference ?? input.vehicleId),
-            fromBranch: fromBranchId,
-            fromWarehouse: fromWarehouseId,
-            toBranch: input.toBranchId,
-            toWarehouse: input.toWarehouseId,
-            reason: input.reason.trim().slice(0, 300),
-            startDate,
-            endDate,
-            scheduledDepartureAt: input.scheduledDepartureAt,
-            scheduledArrivalAt: input.scheduledArrivalAt,
-            assignedStaff: input.assignedStaffId || undefined,
-            assignedStaffName: input.assignedStaffName || undefined,
-            transferCost: Math.max(0, roundVndInteger(input.transferCost ?? 0)),
-            status: initialStatus,
-            conditionBefore: input.conditionBefore ?? undefined,
-            odometerBefore:
-              typeof input.odometerBefore === 'number'
-                ? input.odometerBefore
-                : vehicle.odometer != null
-                  ? Number(vehicle.odometer)
-                  : undefined,
-            handoverReportNote: input.handoverReportNote ?? undefined,
-            createdBy: actor.email,
-            revision: 1,
-            idempotencyKey: input.idempotencyKey ?? undefined,
-            statusHistory: [
+          where: {
+            and: [
+              { vehicle: { equals: input.vehicleId } },
+              { day: { greater_than_equal: startDate, less_than: endExclusive } },
+            ],
+          },
+        }),
+        payload.find({
+          collection: 'vehicle-transfers' as never,
+          overrideAccess: true,
+          depth: 0,
+          limit: 50,
+          req,
+          where: {
+            and: [
+              { vehicle: { equals: input.vehicleId } },
               {
-                status: initialStatus,
-                changedAt: nowIso,
-                changedBy: actor.email,
-                note: `Tạo phiếu điều chuyển (${initialStatus === 'PENDING_APPROVAL' ? 'gửi phê duyệt' : 'bản nháp'})`,
+                status: {
+                  in: [
+                    'DRAFT',
+                    'PENDING_APPROVAL',
+                    'APPROVED',
+                    'IN_TRANSIT',
+                    'ARRIVED',
+                    'EXCEPTION',
+                  ],
+                },
               },
             ],
-          } as never,
-        })
+          },
+        }),
+      ])
+      if (conflictDays.totalDocs > 0) {
+        throw new APIError(
+          'Phương tiện đã có lịch thuê hoặc lịch giữ trong khoảng thời gian điều chuyển dự kiến.',
+          409,
+        )
+      }
+      const hasTransferOverlap = (
+        conflictTransfers.docs as unknown as Array<{ startDate: string; endDate: string }>
+      ).some((t) => t.startDate <= endDate && t.endDate >= startDate)
+      if (hasTransferOverlap) {
+        throw new APIError(
+          'Phương tiện đã có phiếu điều chuyển khác trùng khoảng thời gian này.',
+          409,
+        )
+      }
 
-        return { transfer: created, reused: false }
-      },
-      actor,
-    )
-  })
+      const initialStatus: TransferStatus = input.submitForApproval ? 'PENDING_APPROVAL' : 'DRAFT'
+      const transferCode = `TRF-${businessToday().replaceAll('-', '')}-${crypto.randomUUID().slice(0, 4).toUpperCase()}`
+      const nowIso = new Date().toISOString()
+
+      const created = await payload.create({
+        collection: 'vehicle-transfers' as never,
+        overrideAccess: true,
+        req,
+        data: {
+          transferCode,
+          vehicle: input.vehicleId,
+          vehicleReferenceSnapshot: String(vehicle.reference ?? input.vehicleId),
+          fromBranch: fromBranchId,
+          fromWarehouse: fromWarehouseId,
+          toBranch: input.toBranchId,
+          toWarehouse: input.toWarehouseId,
+          reason: input.reason.trim().slice(0, 300),
+          startDate,
+          endDate,
+          scheduledDepartureAt: input.scheduledDepartureAt,
+          scheduledArrivalAt: input.scheduledArrivalAt,
+          assignedStaff: input.assignedStaffId || undefined,
+          assignedStaffName: input.assignedStaffName || undefined,
+          transferCost: Math.max(0, roundVndInteger(input.transferCost ?? 0)),
+          status: initialStatus,
+          conditionBefore: input.conditionBefore ?? undefined,
+          odometerBefore:
+            typeof input.odometerBefore === 'number'
+              ? input.odometerBefore
+              : vehicle.odometer != null
+                ? Number(vehicle.odometer)
+                : undefined,
+          handoverReportNote: input.handoverReportNote ?? undefined,
+          createdBy: actor.email,
+          revision: 1,
+          idempotencyKey: input.idempotencyKey ?? undefined,
+          statusHistory: [
+            {
+              status: initialStatus,
+              changedAt: nowIso,
+              changedBy: actor.email,
+              note: `Tạo phiếu điều chuyển (${initialStatus === 'PENDING_APPROVAL' ? 'gửi phê duyệt' : 'bản nháp'})`,
+            },
+          ],
+        } as never,
+      })
+
+      return { transfer: created, reused: false }
+    },
+    actor,
+  )
 }
 
 export async function transitionVehicleTransferAtomic(
@@ -1311,348 +1492,345 @@ export async function transitionVehicleTransferAtomic(
     simulateMidTxFailure?: boolean
   },
 ) {
-  return withBookingWriteLock(async () =>
-    runInSqliteTransaction(
-      payload,
-      async (req) => {
-        const doc = (await payload
-          .findByID({
-            collection: 'vehicle-transfers' as never,
-            id: input.transferId,
-            overrideAccess: true,
-            depth: 0,
-            req,
-          })
-          .catch(() => null)) as Record<string, unknown> | null
-        if (!doc) throw new APIError('Không tìm thấy phiếu điều chuyển.', 404)
+  return runInAtomicDbTransaction(
+    payload,
+    `vehicle-transfer:${input.transferId}`,
+    async (req) => {
+      const doc = (await payload
+        .findByID({
+          collection: 'vehicle-transfers' as never,
+          id: input.transferId,
+          overrideAccess: true,
+          depth: 0,
+          req,
+        })
+        .catch(() => null)) as Record<string, unknown> | null
+      if (!doc) throw new APIError('Không tìm thấy phiếu điều chuyển.', 404)
 
-        const fromBranchId = String(
-          relationId(doc.fromBranch as string | { id: string } | null) ?? '',
+      const fromBranchId = String(
+        relationId(doc.fromBranch as string | { id: string } | null) ?? '',
+      )
+      const toBranchId = String(relationId(doc.toBranch as string | { id: string } | null) ?? '')
+      const fromWarehouseId = String(
+        relationId(doc.fromWarehouse as string | { id: string } | null) ?? '',
+      )
+      const toWarehouseId = String(
+        relationId(doc.toWarehouse as string | { id: string } | null) ?? '',
+      )
+      const vehicleId = String(relationId(doc.vehicle as string | { id: string } | null) ?? '')
+
+      if (!adminCanAccessAnyBranch(actor, [fromBranchId, toBranchId])) {
+        throw new APIError(
+          'Bạn không có quyền thao tác trên phiếu điều chuyển ngoài chi nhánh.',
+          403,
         )
-        const toBranchId = String(relationId(doc.toBranch as string | { id: string } | null) ?? '')
-        const fromWarehouseId = String(
-          relationId(doc.fromWarehouse as string | { id: string } | null) ?? '',
+      }
+
+      const currentRev = Number(doc.revision ?? 1)
+      if (input.expectedRevision !== undefined && input.expectedRevision !== currentRev) {
+        throw new APIError(
+          'Phiếu điều chuyển vừa được cập nhật từ phiên làm việc khác. Vui lòng tải lại trước khi xác nhận.',
+          409,
         )
-        const toWarehouseId = String(
-          relationId(doc.toWarehouse as string | { id: string } | null) ?? '',
-        )
-        const vehicleId = String(relationId(doc.vehicle as string | { id: string } | null) ?? '')
+      }
 
-        if (!adminCanAccessAnyBranch(actor, [fromBranchId, toBranchId])) {
-          throw new APIError(
-            'Bạn không có quyền thao tác trên phiếu điều chuyển ngoài chi nhánh.',
-            403,
-          )
-        }
+      const currentStatus = String(doc.status ?? 'DRAFT') as TransferStatus
+      const nowIso = new Date().toISOString()
+      const actorTitle = staffTitleOf(actor) ?? 'OPERATOR'
+      const transferCode = String(doc.transferCode ?? doc.id)
 
-        const currentRev = Number(doc.revision ?? 1)
-        if (input.expectedRevision !== undefined && input.expectedRevision !== currentRev) {
-          throw new APIError(
-            'Phiếu điều chuyển vừa được cập nhật từ phiên làm việc khác. Vui lòng tải lại trước khi xác nhận.',
-            409,
-          )
-        }
-
-        const currentStatus = String(doc.status ?? 'DRAFT') as TransferStatus
-        const nowIso = new Date().toISOString()
-        const actorTitle = staffTitleOf(actor) ?? 'OPERATOR'
-        const transferCode = String(doc.transferCode ?? doc.id)
-
-        // Delay update without changing status (TR-12)
-        if (!input.nextStatus && input.scheduledArrivalAt) {
-          const newEndDate = input.scheduledArrivalAt.slice(0, 10)
-          const futureBookings = await payload.find({
-            collection: 'bookings',
-            overrideAccess: true,
-            depth: 0,
-            limit: 50,
-            req,
-            where: {
-              and: [
-                { vehicle: { equals: vehicleId } },
-                { status: { in: [...HOLD_STATUSES] } },
-                { startDate: { less_than_equal: newEndDate } },
-                { endDate: { greater_than_equal: String(doc.startDate) } },
-              ],
-            },
-          })
-          const affectedKeys = futureBookings.docs.map((b) => String(b.bookingKey ?? b.id))
-          const isDelayed = input.scheduledArrivalAt > String(doc.scheduledArrivalAt)
-          const updated = await payload.update({
-            collection: 'vehicle-transfers' as never,
-            id: input.transferId,
-            overrideAccess: true,
-            req,
-            data: {
-              scheduledArrivalAt: input.scheduledArrivalAt,
-              endDate: newEndDate,
-              delayedWarning: isDelayed || affectedKeys.length > 0,
-              affectedBookingKeys: affectedKeys,
-              revision: currentRev + 1,
-            } as never,
-          })
-          return { transfer: updated, affectedBookingKeys: affectedKeys }
-        }
-
-        const targetStatus = input.nextStatus
-        if (!targetStatus) {
-          throw new APIError('Thiếu trạng thái điều chuyển cần cập nhật.', 400)
-        }
-
-        const check = canTransitionTransfer(currentStatus, targetStatus, actorTitle)
-        if (!check.allowed) {
-          throw new APIError(check.reason ?? 'Chuyển trạng thái điều chuyển không hợp lệ.', 409)
-        }
-
-        // Branch-specific role checks for departure vs arrival confirmation
-        if (targetStatus === 'IN_TRANSIT' && !adminCanAccessBranch(actor, fromBranchId)) {
-          throw new APIError(
-            'Chỉ nhân viên chi nhánh xuất hoặc Quản trị tổng mới được xác nhận xuất kho.',
-            403,
-          )
-        }
-        if (
-          (targetStatus === 'ARRIVED' || targetStatus === 'COMPLETED') &&
-          !adminCanAccessBranch(actor, toBranchId)
-        ) {
-          throw new APIError(
-            'Chỉ nhân viên chi nhánh nhận hoặc Quản trị tổng mới được xác nhận tiếp nhận xe.',
-            403,
-          )
-        }
-
-        const updatePayload: Record<string, unknown> = {
-          status: targetStatus,
-          revision: currentRev + 1,
-          ...(input.odometerBefore != null ? { odometerBefore: input.odometerBefore } : {}),
-          ...(input.odometerAfter != null ? { odometerAfter: input.odometerAfter } : {}),
-          ...(input.conditionBefore ? { conditionBefore: input.conditionBefore } : {}),
-          ...(input.conditionAfter ? { conditionAfter: input.conditionAfter } : {}),
-          ...(input.handoverPhotos ? { handoverPhotos: input.handoverPhotos } : {}),
-          ...(input.exceptionNote ? { exceptionNote: input.exceptionNote } : {}),
-        }
-
-        // Lock rental-days globally on APPROVED
-        if (targetStatus === 'APPROVED') {
-          updatePayload.approvedBy = actor.email
-          const daysToLock = rentalDays(String(doc.startDate), addDays(String(doc.endDate), 1))
-          for (const day of daysToLock) {
-            try {
-              await payload.create({
-                collection: 'rental-days',
-                overrideAccess: true,
-                req,
-                data: {
-                  key: `${vehicleId}:${day}`,
-                  vehicle: vehicleId,
-                  day,
-                  bookingKey: transferCode,
-                  lockType: 'TRANSFER',
-                  referenceId: String(doc.id),
-                  branchId: fromBranchId,
-                } as never,
-              })
-            } catch {
-              throw new APIError(
-                `Không thể khóa lịch điều chuyển ngày ${day} do phương tiện đã có đơn thuê hoặc lịch giữ trùng.`,
-                409,
-              )
-            }
-          }
-        }
-
-        // Departure (TR-05): Vehicle is IN_TRANSIT, not in source or destination physical warehouse stock
-        if (targetStatus === 'IN_TRANSIT') {
-          updatePayload.actualDepartureAt = nowIso
-          await payload.update({
-            collection: 'vehicles',
-            id: vehicleId,
-            overrideAccess: true,
-            req,
-            data: {
-              operationStatus: 'IN_TRANSIT',
-              currentWarehouse: null,
-              nextExpectedBranch: toBranchId,
-              nextExpectedLocationNote: `Đang điều chuyển theo phiếu ${transferCode}`,
-              ...(input.odometerBefore != null ? { odometer: input.odometerBefore } : {}),
-            } as never,
-          })
-          await recordVehicleLocationEvent(payload, req, {
-            vehicleId,
-            vehicleReference: String(doc.vehicleReferenceSnapshot ?? ''),
-            eventType: 'TRANSFER_DEPARTURE',
-            fromBranchId,
-            fromWarehouseId,
-            toBranchId,
-            toWarehouseId,
-            relatedTransferId: String(doc.id),
-            odometer:
-              input.odometerBefore ??
-              (doc.odometerBefore != null ? Number(doc.odometerBefore) : null),
-            conditionNote:
-              input.conditionBefore ?? (doc.conditionBefore ? String(doc.conditionBefore) : null),
-            actorEmail: actor.email,
-            actorRole: actorTitle,
-            note: input.note ?? `Xuất xe điều chuyển ${transferCode}`,
-          })
-        }
-
-        // Arrival at destination (TR-06): DO NOT update destination physical inventory until COMPLETED!
-        if (targetStatus === 'ARRIVED') {
-          updatePayload.actualArrivalAt = nowIso
-          await recordVehicleLocationEvent(payload, req, {
-            vehicleId,
-            vehicleReference: String(doc.vehicleReferenceSnapshot ?? ''),
-            eventType: 'TRANSFER_ARRIVAL',
-            fromBranchId,
-            fromWarehouseId,
-            toBranchId,
-            toWarehouseId,
-            relatedTransferId: String(doc.id),
-            odometer: input.odometerAfter ?? null,
-            conditionNote: input.conditionAfter ?? null,
-            actorEmail: actor.email,
-            actorRole: actorTitle,
-            note: input.note ?? `Xe đã đến kho đích, chờ kiểm tra tiếp nhận (${transferCode})`,
-          })
-        }
-
-        // Complete transfer (TR-07, TR-08, TR-11): Update vehicle currentBranch & currentWarehouse atomically and release locks!
-        if (targetStatus === 'COMPLETED') {
-          updatePayload.completedAt = nowIso
-          updatePayload.receivedBy = actor.email
-
-          const toBranchDoc = (await payload
-            .findByID({
-              collection: 'branches' as never,
-              id: toBranchId,
-              overrideAccess: true,
-              depth: 0,
-              req,
-            })
-            .catch(() => null)) as Record<string, unknown> | null
-
-          await payload.update({
-            collection: 'vehicles',
-            id: vehicleId,
-            overrideAccess: true,
-            req,
-            data: {
-              currentBranch: toBranchId,
-              currentWarehouse: toWarehouseId,
-              allocationStatus: 'ALLOCATED',
-              operationStatus: input.requirePostArrivalInspection ? 'PENDING_INSPECTION' : 'READY',
-              nextExpectedBranch: null,
-              nextExpectedLocationNote: null,
-              ...(toBranchDoc?.province ? { location: String(toBranchDoc.province) } : {}),
-              ...(toBranchDoc?.address
-                ? { pickupLocation: `${String(toBranchDoc.name)} — ${String(toBranchDoc.address)}` }
-                : {}),
-              ...(input.odometerAfter != null ? { odometer: input.odometerAfter } : {}),
-              ...(input.conditionAfter ? { condition: input.conditionAfter } : {}),
-            } as never,
-          })
-
-          if (input.simulateMidTxFailure) {
-            throw new APIError(
-              'Simulated mid-transaction failure for atomic rollback test (TR-11).',
-              500,
-            )
-          }
-
-          await payload.delete({
-            collection: 'rental-days',
-            overrideAccess: true,
-            req,
-            where: { bookingKey: { equals: transferCode } },
-          })
-
-          await recordVehicleLocationEvent(payload, req, {
-            vehicleId,
-            vehicleReference: String(doc.vehicleReferenceSnapshot ?? ''),
-            eventType: 'TRANSFER_COMPLETED',
-            fromBranchId,
-            fromWarehouseId,
-            toBranchId,
-            toWarehouseId,
-            relatedTransferId: String(doc.id),
-            odometer: input.odometerAfter ?? null,
-            conditionNote: input.conditionAfter ?? null,
-            actorEmail: actor.email,
-            actorRole: actorTitle,
-            note: input.note ?? `Hoàn tất tiếp nhận điều chuyển ${transferCode}`,
-          })
-        }
-
-        // Cancel before departure (TR-09): release locked rental-days
-        if (targetStatus === 'CANCELLED' || targetStatus === 'REJECTED') {
-          await payload.delete({
-            collection: 'rental-days',
-            overrideAccess: true,
-            req,
-            where: { bookingKey: { equals: transferCode } },
-          })
-          // If cancelling from EXCEPTION after departure, keep vehicle status safe (PENDING_INSPECTION at source branch)
-          if (currentStatus === 'EXCEPTION') {
-            await payload.update({
-              collection: 'vehicles',
-              id: vehicleId,
-              overrideAccess: true,
-              req,
-              data: {
-                operationStatus: 'PENDING_INSPECTION',
-                nextExpectedBranch: null,
-                nextExpectedLocationNote: `Hủy ngoại lệ phiếu ${transferCode} — cần kiểm tra xác minh vị trí thực tế`,
-              } as never,
-            })
-          }
-        }
-
-        const prevHistory = Array.isArray(doc.statusHistory) ? doc.statusHistory : []
-        updatePayload.statusHistory = [
-          ...prevHistory,
-          {
-            status: targetStatus,
-            changedAt: nowIso,
-            changedBy: actor.email,
-            note:
-              input.note ||
-              input.exceptionNote ||
-              `Chuyển trạng thái sang ${transferStatusLabels[targetStatus]}`,
+      // Delay update without changing status (TR-12)
+      if (!input.nextStatus && input.scheduledArrivalAt) {
+        const newEndDate = input.scheduledArrivalAt.slice(0, 10)
+        const futureBookings = await payload.find({
+          collection: 'bookings',
+          overrideAccess: true,
+          depth: 0,
+          limit: 50,
+          req,
+          where: {
+            and: [
+              { vehicle: { equals: vehicleId } },
+              { status: { in: [...HOLD_STATUSES] } },
+              { startDate: { less_than_equal: newEndDate } },
+              { endDate: { greater_than_equal: String(doc.startDate) } },
+            ],
           },
-        ]
-
+        })
+        const affectedKeys = futureBookings.docs.map((b) => String(b.bookingKey ?? b.id))
+        const isDelayed = input.scheduledArrivalAt > String(doc.scheduledArrivalAt)
         const updated = await payload.update({
           collection: 'vehicle-transfers' as never,
           id: input.transferId,
           overrideAccess: true,
           req,
-          data: updatePayload as never,
+          data: {
+            scheduledArrivalAt: input.scheduledArrivalAt,
+            endDate: newEndDate,
+            delayedWarning: isDelayed || affectedKeys.length > 0,
+            affectedBookingKeys: affectedKeys,
+            revision: currentRev + 1,
+          } as never,
+        })
+        return { transfer: updated, affectedBookingKeys: affectedKeys }
+      }
+
+      const targetStatus = input.nextStatus
+      if (!targetStatus) {
+        throw new APIError('Thiếu trạng thái điều chuyển cần cập nhật.', 400)
+      }
+
+      const check = canTransitionTransfer(currentStatus, targetStatus, actorTitle)
+      if (!check.allowed) {
+        throw new APIError(check.reason ?? 'Chuyển trạng thái điều chuyển không hợp lệ.', 409)
+      }
+
+      // Branch-specific role checks for departure vs arrival confirmation
+      if (targetStatus === 'IN_TRANSIT' && !adminCanAccessBranch(actor, fromBranchId)) {
+        throw new APIError(
+          'Chỉ nhân viên chi nhánh xuất hoặc Quản trị tổng mới được xác nhận xuất kho.',
+          403,
+        )
+      }
+      if (
+        (targetStatus === 'ARRIVED' || targetStatus === 'COMPLETED') &&
+        !adminCanAccessBranch(actor, toBranchId)
+      ) {
+        throw new APIError(
+          'Chỉ nhân viên chi nhánh nhận hoặc Quản trị tổng mới được xác nhận tiếp nhận xe.',
+          403,
+        )
+      }
+
+      const updatePayload: Record<string, unknown> = {
+        status: targetStatus,
+        revision: currentRev + 1,
+        ...(input.odometerBefore != null ? { odometerBefore: input.odometerBefore } : {}),
+        ...(input.odometerAfter != null ? { odometerAfter: input.odometerAfter } : {}),
+        ...(input.conditionBefore ? { conditionBefore: input.conditionBefore } : {}),
+        ...(input.conditionAfter ? { conditionAfter: input.conditionAfter } : {}),
+        ...(input.handoverPhotos ? { handoverPhotos: input.handoverPhotos } : {}),
+        ...(input.exceptionNote ? { exceptionNote: input.exceptionNote } : {}),
+      }
+
+      // Lock rental-days globally on APPROVED
+      if (targetStatus === 'APPROVED') {
+        updatePayload.approvedBy = actor.email
+        const daysToLock = rentalDays(String(doc.startDate), addDays(String(doc.endDate), 1))
+        for (const day of daysToLock) {
+          try {
+            await payload.create({
+              collection: 'rental-days',
+              overrideAccess: true,
+              req,
+              data: {
+                key: `${vehicleId}:${day}`,
+                vehicle: vehicleId,
+                day,
+                bookingKey: transferCode,
+                lockType: 'TRANSFER',
+                referenceId: String(doc.id),
+                branchId: fromBranchId,
+              } as never,
+            })
+          } catch {
+            throw new APIError(
+              `Không thể khóa lịch điều chuyển ngày ${day} do phương tiện đã có đơn thuê hoặc lịch giữ trùng.`,
+              409,
+            )
+          }
+        }
+      }
+
+      // Departure (TR-05): Vehicle is IN_TRANSIT, not in source or destination physical warehouse stock
+      if (targetStatus === 'IN_TRANSIT') {
+        updatePayload.actualDepartureAt = nowIso
+        await payload.update({
+          collection: 'vehicles',
+          id: vehicleId,
+          overrideAccess: true,
+          req,
+          data: {
+            operationStatus: 'IN_TRANSIT',
+            currentWarehouse: null,
+            nextExpectedBranch: toBranchId,
+            nextExpectedLocationNote: `Đang điều chuyển theo phiếu ${transferCode}`,
+            ...(input.odometerBefore != null ? { odometer: input.odometerBefore } : {}),
+          } as never,
+        })
+        await recordVehicleLocationEvent(payload, req, {
+          vehicleId,
+          vehicleReference: String(doc.vehicleReferenceSnapshot ?? ''),
+          eventType: 'TRANSFER_DEPARTURE',
+          fromBranchId,
+          fromWarehouseId,
+          toBranchId,
+          toWarehouseId,
+          relatedTransferId: String(doc.id),
+          odometer:
+            input.odometerBefore ??
+            (doc.odometerBefore != null ? Number(doc.odometerBefore) : null),
+          conditionNote:
+            input.conditionBefore ?? (doc.conditionBefore ? String(doc.conditionBefore) : null),
+          actorEmail: actor.email,
+          actorRole: actorTitle,
+          note: input.note ?? `Xuất xe điều chuyển ${transferCode}`,
+        })
+      }
+
+      // Arrival at destination (TR-06): DO NOT update destination physical inventory until COMPLETED!
+      if (targetStatus === 'ARRIVED') {
+        updatePayload.actualArrivalAt = nowIso
+        await recordVehicleLocationEvent(payload, req, {
+          vehicleId,
+          vehicleReference: String(doc.vehicleReferenceSnapshot ?? ''),
+          eventType: 'TRANSFER_ARRIVAL',
+          fromBranchId,
+          fromWarehouseId,
+          toBranchId,
+          toWarehouseId,
+          relatedTransferId: String(doc.id),
+          odometer: input.odometerAfter ?? null,
+          conditionNote: input.conditionAfter ?? null,
+          actorEmail: actor.email,
+          actorRole: actorTitle,
+          note: input.note ?? `Xe đã đến kho đích, chờ kiểm tra tiếp nhận (${transferCode})`,
+        })
+      }
+
+      // Complete transfer (TR-07, TR-08, TR-11): Update vehicle currentBranch & currentWarehouse atomically and release locks!
+      if (targetStatus === 'COMPLETED') {
+        updatePayload.completedAt = nowIso
+        updatePayload.receivedBy = actor.email
+
+        const toBranchDoc = (await payload
+          .findByID({
+            collection: 'branches' as never,
+            id: toBranchId,
+            overrideAccess: true,
+            depth: 0,
+            req,
+          })
+          .catch(() => null)) as Record<string, unknown> | null
+
+        await payload.update({
+          collection: 'vehicles',
+          id: vehicleId,
+          overrideAccess: true,
+          req,
+          data: {
+            currentBranch: toBranchId,
+            currentWarehouse: toWarehouseId,
+            allocationStatus: 'ALLOCATED',
+            operationStatus: input.requirePostArrivalInspection ? 'PENDING_INSPECTION' : 'READY',
+            nextExpectedBranch: null,
+            nextExpectedLocationNote: null,
+            ...(toBranchDoc?.province ? { location: String(toBranchDoc.province) } : {}),
+            ...(toBranchDoc?.address
+              ? { pickupLocation: `${String(toBranchDoc.name)} — ${String(toBranchDoc.address)}` }
+              : {}),
+            ...(input.odometerAfter != null ? { odometer: input.odometerAfter } : {}),
+            ...(input.conditionAfter ? { condition: input.conditionAfter } : {}),
+          } as never,
         })
 
-        await recordAudit(
-          payload,
-          actor,
-          {
-            action: `transfer.${targetStatus.toLowerCase()}`,
-            entity: 'vehicle-transfer',
-            entityId: String(doc.id),
-            entityLabel: transferCode,
-            summary: `Điều chuyển ${transferCode}: ${transferStatusLabels[currentStatus]} → ${transferStatusLabels[targetStatus]}`,
-            fromStatus: currentStatus,
-            toStatus: targetStatus,
-            branchId:
-              targetStatus === 'COMPLETED' || targetStatus === 'ARRIVED'
-                ? toBranchId
-                : fromBranchId,
-          },
-          req,
-        )
+        if (input.simulateMidTxFailure) {
+          throw new APIError(
+            'Simulated mid-transaction failure for atomic rollback test (TR-11).',
+            500,
+          )
+        }
 
-        return { transfer: updated }
-      },
-      actor,
-    ),
+        await payload.delete({
+          collection: 'rental-days',
+          overrideAccess: true,
+          req,
+          where: { bookingKey: { equals: transferCode } },
+        })
+
+        await recordVehicleLocationEvent(payload, req, {
+          vehicleId,
+          vehicleReference: String(doc.vehicleReferenceSnapshot ?? ''),
+          eventType: 'TRANSFER_COMPLETED',
+          fromBranchId,
+          fromWarehouseId,
+          toBranchId,
+          toWarehouseId,
+          relatedTransferId: String(doc.id),
+          odometer: input.odometerAfter ?? null,
+          conditionNote: input.conditionAfter ?? null,
+          actorEmail: actor.email,
+          actorRole: actorTitle,
+          note: input.note ?? `Hoàn tất tiếp nhận điều chuyển ${transferCode}`,
+        })
+      }
+
+      // Cancel before departure (TR-09): release locked rental-days
+      if (targetStatus === 'CANCELLED' || targetStatus === 'REJECTED') {
+        await payload.delete({
+          collection: 'rental-days',
+          overrideAccess: true,
+          req,
+          where: { bookingKey: { equals: transferCode } },
+        })
+        // If cancelling from EXCEPTION after departure, keep vehicle status safe (PENDING_INSPECTION at source branch)
+        if (currentStatus === 'EXCEPTION') {
+          await payload.update({
+            collection: 'vehicles',
+            id: vehicleId,
+            overrideAccess: true,
+            req,
+            data: {
+              operationStatus: 'PENDING_INSPECTION',
+              nextExpectedBranch: null,
+              nextExpectedLocationNote: `Hủy ngoại lệ phiếu ${transferCode} — cần kiểm tra xác minh vị trí thực tế`,
+            } as never,
+          })
+        }
+      }
+
+      const prevHistory = Array.isArray(doc.statusHistory) ? doc.statusHistory : []
+      updatePayload.statusHistory = [
+        ...prevHistory,
+        {
+          status: targetStatus,
+          changedAt: nowIso,
+          changedBy: actor.email,
+          note:
+            input.note ||
+            input.exceptionNote ||
+            `Chuyển trạng thái sang ${transferStatusLabels[targetStatus]}`,
+        },
+      ]
+
+      const updated = await payload.update({
+        collection: 'vehicle-transfers' as never,
+        id: input.transferId,
+        overrideAccess: true,
+        req,
+        data: updatePayload as never,
+      })
+
+      await recordAudit(
+        payload,
+        actor,
+        {
+          action: `transfer.${targetStatus.toLowerCase()}`,
+          entity: 'vehicle-transfer',
+          entityId: String(doc.id),
+          entityLabel: transferCode,
+          summary: `Điều chuyển ${transferCode}: ${transferStatusLabels[currentStatus]} → ${transferStatusLabels[targetStatus]}`,
+          fromStatus: currentStatus,
+          toStatus: targetStatus,
+          branchId:
+            targetStatus === 'COMPLETED' || targetStatus === 'ARRIVED' ? toBranchId : fromBranchId,
+        },
+        req,
+      )
+
+      return { transfer: updated }
+    },
+    actor,
   )
 }
 

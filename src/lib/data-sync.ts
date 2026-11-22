@@ -205,7 +205,11 @@ export function resolvePaths(options?: {
   sharedSeedMediaDir?: string
   backupsDir?: string
 }) {
-  const rootDir = path.resolve(/*turbopackIgnore: true*/ options?.rootDir || process.cwd())
+  const rootDir = path.resolve(
+    /*turbopackIgnore: true*/ options?.rootDir ||
+      process.env.NORI_ROOT_DIR?.trim() ||
+      process.cwd(),
+  )
   const rawDb =
     options?.dbPath ||
     process.env.NORI_SQLITE_PATH ||
@@ -220,9 +224,12 @@ export function resolvePaths(options?: {
   )
   const runtimeDir = path.resolve(/*turbopackIgnore: true*/ rootDir, 'data', 'runtime')
   const seedDir = path.resolve(/*turbopackIgnore: true*/ rootDir, 'data', 'seed')
+  const envMediaDir = !options?.rootDir
+    ? process.env.MEDIA_DIR?.trim() || process.env.NORI_MEDIA_DIR?.trim()
+    : undefined
   const mediaDir = path.resolve(
     /*turbopackIgnore: true*/
-    options?.mediaDir || path.join(/*turbopackIgnore: true*/ rootDir, 'media'),
+    options?.mediaDir || envMediaDir || path.join(/*turbopackIgnore: true*/ rootDir, 'media'),
   )
   const seedMediaDir = path.resolve(
     /*turbopackIgnore: true*/
@@ -232,9 +239,12 @@ export function resolvePaths(options?: {
     /*turbopackIgnore: true*/
     options?.sharedSeedMediaDir || path.join(/*turbopackIgnore: true*/ rootDir, 'media', 'seed'),
   )
+  const envBackupDir = !options?.rootDir
+    ? process.env.BACKUP_DIR?.trim() || process.env.NORI_BACKUP_DIR?.trim()
+    : undefined
   const backupsDir = path.resolve(
     /*turbopackIgnore: true*/
-    options?.backupsDir || path.join(/*turbopackIgnore: true*/ rootDir, 'backups'),
+    options?.backupsDir || envBackupDir || path.join(/*turbopackIgnore: true*/ rootDir, 'backups'),
   )
   const syncStatePath = path.join(/*turbopackIgnore: true*/ runtimeDir, 'sync-state.json')
 

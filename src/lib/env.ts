@@ -3,9 +3,12 @@ import fs from 'node:fs'
 import { isS3Configured, isValidVercelBlobToken, isVercelBlobConfigured } from './cloud-storage.ts'
 
 export type EnvironmentMode = 'development' | 'production' | 'test'
+export type DeploymentTier = 'production' | 'staging' | 'ci' | 'local'
 
 export interface NoriEnvironmentConfig {
   nodeEnv: EnvironmentMode
+  deploymentTier: DeploymentTier
+  isVercelRuntime: boolean
   isProduction: boolean
   isDevelopment: boolean
   isTest: boolean
@@ -13,6 +16,7 @@ export interface NoriEnvironmentConfig {
   host: string
   appUrl: string
   allowedOrigins: string[]
+  databaseEngine: 'postgres' | 'sqlite'
   databaseUri: string
   sqlitePath: string
   dataDir: string
@@ -192,6 +196,18 @@ export function validateEnvironment(options?: {
   const isProduction = nodeEnv === 'production'
   const isDevelopment = nodeEnv === 'development'
   const isTest = nodeEnv === 'test'
+  const isVercelRuntime = process.env.VERCEL === '1' || Boolean(process.env.VERCEL_ENV?.trim())
+  const explicitAppEnv = (process.env.APP_ENV || process.env.NORI_ENV || '').trim().toLowerCase()
+  const vercelEnv = (process.env.VERCEL_ENV || '').trim().toLowerCase()
+  const deploymentTier: DeploymentTier =
+    vercelEnv === 'production' || explicitAppEnv === 'production'
+      ? 'production'
+      : vercelEnv === 'preview' || explicitAppEnv === 'staging' || explicitAppEnv === 'preview'
+        ? 'staging'
+        : process.env.CI === 'true' || isTest
+          ? 'ci'
+          : 'local'
+  const requireStrictSecrets = isProduction || isVercelRuntime || deploymentTier === 'production'
 
   const port = Number(process.env.PORT || '3000')
   if (Number.isNaN(port) || port <= 0 || port > 65535) {
@@ -208,10 +224,10 @@ export function validateEnvironment(options?: {
   const payloadSecret = process.env.PAYLOAD_SECRET?.trim() || ''
   const defaultDevSecret = 'nori-local-dev-secret-9b4df14a-91bb-4c9b-b923-b2dfa62da7e4'
 
-  if (isProduction) {
+  if (requireStrictSecrets) {
     if (!payloadSecret) {
       errors.push(
-        'PAYLOAD_SECRET là bắt buộc trong môi trường Production. Vui lòng tạo chuỗi ngẫu nhiên từ 32 ký tự trở lên.',
+        'PAYLOAD_SECRET là bắt buộc trong môi trường Production/Vercel. Vui lòng tạo chuỗi ngẫu nhiên từ 32 ký tự trở lên.',
       )
     } else if (payloadSecret.length < 32) {
       errors.push(
@@ -232,6 +248,15 @@ export function validateEnvironment(options?: {
     )
   }
 
+  const explicitSessionSecret = process.env.NORI_SESSION_SECRET?.trim() || ''
+  if (
+    requireStrictSecrets &&
+    explicitSessionSecret &&
+    (explicitSessionSecret.length < 32 || explicitSessionSecret === defaultDevSecret)
+  ) {
+    errors.push('NORI_SESSION_SECRET phải dài tối thiểu 32 ký tự và không dùng giá trị mặc định.')
+  }
+
   // Security check: ensure sensitive secrets are NEVER exposed in NEXT_PUBLIC_*
   for (const key of Object.keys(process.env)) {
     if (key.startsWith('NEXT_PUBLIC_')) {
@@ -249,16 +274,43 @@ export function validateEnvironment(options?: {
     }
   }
 
+  const rawDbUrl = (process.env.DATABASE_URL || process.env.DATABASE_URI || '').trim()
+  const isPostgres = rawDbUrl.startsWith('postgres://') || rawDbUrl.startsWith('postgresql://')
+  const requirePostgres =
+    isVercelRuntime || deploymentTier === 'production' || process.env.NORI_REQUIRE_POSTGRES === '1'
+  if (requirePostgres && !isPostgres) {
+    errors.push(
+      `Môi trường ${deploymentTier === 'production' ? 'Production' : isVercelRuntime ? 'Vercel' : 'Postgres bắt buộc'} yêu cầu DATABASE_URL trỏ tới PostgreSQL; không cho phép fallback SQLite cục bộ.`,
+    )
+  }
+
+  let pgHost = ''
+  if (isPostgres) {
+    try {
+      pgHost = new URL(rawDbUrl).hostname.toLowerCase()
+    } catch {
+      errors.push('DATABASE_URL PostgreSQL không đúng định dạng URL hợp lệ.')
+    }
+  }
+
+  const prodDbHostHint = (process.env.NORI_PRODUCTION_DB_HOST || '').trim().toLowerCase()
+  if (deploymentTier === 'staging' && isPostgres && prodDbHostHint && pgHost === prodDbHostHint) {
+    errors.push(
+      'Staging DATABASE_URL không được trỏ cùng host database Production (NORI_PRODUCTION_DB_HOST).',
+    )
+  }
+
   const sqlitePath = resolveSqlitePath(rootDir)
-  const databaseUri = toSqliteUri(sqlitePath)
+  const databaseEngine: 'postgres' | 'sqlite' = isPostgres ? 'postgres' : 'sqlite'
+  const databaseUri = isPostgres ? `postgres://${pgHost || 'configured'}` : toSqliteUri(sqlitePath)
   const dataDir =
     process.env.DATA_DIR?.trim() || process.env.NORI_DATA_DIR?.trim() || path.dirname(sqlitePath)
   const mediaDir = resolveMediaDir(rootDir)
   const backupDir = resolveBackupDir(rootDir)
   const logDir = resolveLogDir(rootDir)
 
-  // Ensure storage parent directories are writable when requested
-  if (options?.checkStorageWritable) {
+  // Ensure local filesystem storage directories are writable only on stateful non-Vercel SQLite/disk runtimes
+  if (options?.checkStorageWritable && !isVercelRuntime && databaseEngine === 'sqlite') {
     for (const [dirLabel, dirPath] of [
       ['Database Dir', path.dirname(sqlitePath)],
       ['Media Dir', mediaDir],
@@ -293,22 +345,38 @@ export function validateEnvironment(options?: {
     )
   }
 
-  const isVercelRuntime = process.env.VERCEL === '1' || Boolean(process.env.VERCEL_ENV?.trim())
   const blobToken = process.env.BLOB_READ_WRITE_TOKEN?.trim() || ''
   if (blobToken && !isValidVercelBlobToken(blobToken)) {
     errors.push(
       'BLOB_READ_WRITE_TOKEN không đúng định dạng (cần dạng vercel_blob_rw_<store_id>_<secret>).',
     )
   }
-  if (isVercelRuntime && !isVercelBlobConfigured() && !isS3Configured()) {
+  if (
+    (isVercelRuntime || deploymentTier === 'production') &&
+    !isVercelBlobConfigured() &&
+    !isS3Configured()
+  ) {
     errors.push(
-      `Thiếu BLOB_READ_WRITE_TOKEN cho môi trường Vercel (${process.env.VERCEL_ENV || 'unknown'}). Bắt buộc cấu hình Vercel Blob Storage cho Build & Runtime để tránh mất file upload.`,
+      `Thiếu BLOB_READ_WRITE_TOKEN cho môi trường ${deploymentTier} (${process.env.VERCEL_ENV || 'server'}). Bắt buộc cấu hình Cloud/Vercel Blob Storage cho Build & Runtime để tránh mất file upload.`,
     )
   }
 
-  const sessionSecret = process.env.NORI_SESSION_SECRET?.trim() || payloadSecret || defaultDevSecret
+  const blobPrefix = (process.env.BLOB_STORAGE_PREFIX || process.env.NORI_BLOB_PREFIX || '').trim()
+  const prodBlobPrefix = (process.env.NORI_PRODUCTION_BLOB_PREFIX || '').trim()
+  if (deploymentTier === 'staging') {
+    if (prodBlobPrefix && blobPrefix === prodBlobPrefix) {
+      errors.push('Staging BLOB_STORAGE_PREFIX không được trùng với NORI_PRODUCTION_BLOB_PREFIX.')
+    } else if (isVercelRuntime && !blobPrefix) {
+      warnings.push(
+        'Preview/Staging trên Vercel nên dùng Vercel Blob store riêng hoặc cấu hình BLOB_STORAGE_PREFIX=staging để tách biệt khỏi Production.',
+      )
+    }
+  }
+
+  const sessionSecret = explicitSessionSecret || payloadSecret || defaultDevSecret
   const adminEmail = (process.env.NORI_ADMIN_EMAIL?.trim() || 'admin@nori.vn').toLowerCase()
-  const disableDemoSeed = process.env.NORI_DISABLE_DEMO_SEED === '1'
+  const disableDemoSeed =
+    process.env.NORI_DISABLE_DEMO_SEED === '1' || deploymentTier === 'production'
 
   const paymentEnabled = ['true', '1'].includes(
     String(process.env.PAYMENT_ENABLED ?? 'true').toLowerCase(),
@@ -323,12 +391,25 @@ export function validateEnvironment(options?: {
     | 'SANDBOX'
     | 'PRODUCTION'
 
+  if (deploymentTier === 'staging' && paymentMode === 'PRODUCTION') {
+    errors.push('Môi trường Staging/Preview không được bật PAYMENT_MODE=PRODUCTION.')
+  }
+  if (paymentEnabled && paymentProvider === 'SEPAY' && paymentMode === 'PRODUCTION') {
+    if (!process.env.SEPAY_WEBHOOK_SECRET?.trim() || !process.env.SEPAY_API_KEY?.trim()) {
+      errors.push(
+        'PAYMENT_PROVIDER=SEPAY với PAYMENT_MODE=PRODUCTION yêu cầu SEPAY_API_KEY và SEPAY_WEBHOOK_SECRET.',
+      )
+    }
+  }
+
   return {
     ok: errors.length === 0,
     errors,
     warnings,
     config: {
       nodeEnv,
+      deploymentTier,
+      isVercelRuntime,
       isProduction,
       isDevelopment,
       isTest,
@@ -336,6 +417,7 @@ export function validateEnvironment(options?: {
       host,
       appUrl,
       allowedOrigins,
+      databaseEngine,
       databaseUri,
       sqlitePath,
       dataDir,
@@ -350,5 +432,17 @@ export function validateEnvironment(options?: {
       paymentProvider,
       paymentMode,
     },
+  }
+}
+
+export function getEnvConfigSummary() {
+  const { ok, config } = validateEnvironment({ checkStorageWritable: false })
+  return {
+    ok,
+    tier: config.deploymentTier,
+    databaseEngine: config.databaseEngine,
+    isVercelRuntime: config.isVercelRuntime,
+    paymentMode: config.paymentMode,
+    paymentProvider: config.paymentProvider,
   }
 }

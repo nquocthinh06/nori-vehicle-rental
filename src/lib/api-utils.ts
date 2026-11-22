@@ -1,15 +1,130 @@
 import 'server-only'
+import crypto from 'node:crypto'
 import { APIError } from 'payload'
+import { classifyUnexpectedError } from './error-classifier'
 import { extractClientIp } from './session-cookie'
 
-const NO_STORE_HEADERS = {
+const NO_STORE_HEADERS: Record<string, string> = {
   'Cache-Control': 'private, no-store, no-cache, must-revalidate',
   Pragma: 'no-cache',
   Vary: 'Cookie',
 }
 
-export function json(data: unknown, status = 200) {
-  return Response.json({ success: true, data }, { status, headers: NO_STORE_HEADERS })
+export type RequestLogger = {
+  requestId: string
+  route: string
+  step: (name: string, durationMs: number) => void
+  time: <T>(name: string, fn: () => Promise<T>) => Promise<T>
+  steps: () => Record<string, number>
+  totalMs: () => number
+  responseHeaders: (extra?: Record<string, string>) => Record<string, string>
+  logSuccess: (status: number, extra?: Record<string, string | number | boolean | null>) => void
+  logError: (
+    category: string,
+    status: number,
+    summary: string,
+    extra?: Record<string, string | number | boolean | null>,
+  ) => void
+}
+
+function sanitizeIncomingRequestId(raw: string | null): string {
+  const clean = (raw ?? '')
+    .trim()
+    .replace(/[^a-zA-Z0-9_-]/g, '')
+    .slice(0, 32)
+  return clean || `nr-${crypto.randomUUID().slice(0, 12)}`
+}
+
+export function createRequestLogger(route: string, request?: Request): RequestLogger {
+  const requestId = sanitizeIncomingRequestId(
+    request?.headers.get('x-nori-request-id') ||
+      request?.headers.get('x-request-id') ||
+      request?.headers.get('x-vercel-id') ||
+      null,
+  )
+  const startedAt = performance.now()
+  const stepTimings: Record<string, number> = {}
+
+  const recordStep = (name: string, durationMs: number) => {
+    const safeName = name.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 40)
+    stepTimings[safeName] = Number(durationMs.toFixed(1))
+  }
+
+  return {
+    requestId,
+    route,
+    step: recordStep,
+    async time<T>(name: string, fn: () => Promise<T>): Promise<T> {
+      const t0 = performance.now()
+      try {
+        return await fn()
+      } finally {
+        recordStep(name, performance.now() - t0)
+      }
+    },
+    steps: () => ({ ...stepTimings }),
+    totalMs: () => Number((performance.now() - startedAt).toFixed(1)),
+    responseHeaders(extra?: Record<string, string>) {
+      const total = Number((performance.now() - startedAt).toFixed(1))
+      const serverTiming = [
+        ...Object.entries(stepTimings).map(([k, v]) => `${k};dur=${v}`),
+        `total;dur=${total}`,
+      ].join(', ')
+      return {
+        'X-NORI-Request-Id': requestId,
+        'Server-Timing': serverTiming,
+        ...extra,
+      }
+    },
+    logSuccess(status: number, extra?: Record<string, string | number | boolean | null>) {
+      const totalMs = Number((performance.now() - startedAt).toFixed(1))
+      if (process.env.NORI_LOG_REQUESTS === '1' || totalMs >= 500) {
+        console.info(
+          JSON.stringify({
+            ts: new Date().toISOString(),
+            level: totalMs >= 1000 ? 'warn' : 'info',
+            event: 'nori_api_request',
+            requestId,
+            route,
+            status,
+            durationMs: totalMs,
+            steps: stepTimings,
+            ...extra,
+          }),
+        )
+      }
+    },
+    logError(
+      category: string,
+      status: number,
+      summary: string,
+      extra?: Record<string, string | number | boolean | null>,
+    ) {
+      const totalMs = Number((performance.now() - startedAt).toFixed(1))
+      console.error(
+        JSON.stringify({
+          ts: new Date().toISOString(),
+          level: status >= 500 ? 'error' : 'warn',
+          event: 'nori_api_error',
+          requestId,
+          route,
+          status,
+          category,
+          durationMs: totalMs,
+          steps: stepTimings,
+          summary: summary.slice(0, 240),
+          ...extra,
+        }),
+      )
+    },
+  }
+}
+
+export function json(data: unknown, status = 200, extraHeaders?: Record<string, string>) {
+  return Response.json(
+    { success: true, data },
+    { status, headers: { ...NO_STORE_HEADERS, ...extraHeaders } },
+  )
 }
 
 export function fail(
@@ -17,10 +132,11 @@ export function fail(
   status = 400,
   code = 'VALIDATION_ERROR',
   fields?: Record<string, string>,
+  extraHeaders?: Record<string, string>,
 ) {
   return Response.json(
     { success: false, error: { message, code, fields } },
-    { status, headers: NO_STORE_HEADERS },
+    { status, headers: { ...NO_STORE_HEADERS, ...extraHeaders } },
   )
 }
 
@@ -153,7 +269,9 @@ export function assertOrigin(request: Request) {
   }
 }
 
-export function apiError(error: unknown) {
+export function apiError(error: unknown, context?: { logger?: RequestLogger; route?: string }) {
+  const logger = context?.logger
+  const headers = logger ? logger.responseHeaders() : undefined
   const isApiError =
     error instanceof APIError ||
     (typeof error === 'object' &&
@@ -162,10 +280,26 @@ export function apiError(error: unknown) {
       typeof (error as { status?: unknown }).status === 'number')
   if (isApiError) {
     const err = error as { status: number; message: string; data?: { code?: string } | null }
-    if (err.status === 404)
-      return fail('Không tìm thấy thông tin được yêu cầu.', 404, 'RESOURCE_NOT_FOUND')
-    if (err.status >= 500 && err.status !== 503)
-      return fail('NORI chưa thể xử lý yêu cầu. Vui lòng thử lại sau.', 503, 'SERVICE_UNAVAILABLE')
+    if (err.status === 404) {
+      logger?.logError('RESOURCE_NOT_FOUND', 404, err.message)
+      return fail(
+        'Không tìm thấy thông tin được yêu cầu.',
+        404,
+        'RESOURCE_NOT_FOUND',
+        undefined,
+        headers,
+      )
+    }
+    if (err.status >= 500 && err.status !== 503 && err.status !== 504) {
+      logger?.logError('INTERNAL_API_ERROR', 503, err.message)
+      return fail(
+        'NORI chưa thể xử lý yêu cầu. Vui lòng thử lại sau.',
+        503,
+        'SERVICE_UNAVAILABLE',
+        undefined,
+        headers,
+      )
+    }
     const explicitCode =
       typeof err.data?.code === 'string' && err.data.code.trim() ? err.data.code.trim() : null
     const code =
@@ -178,35 +312,32 @@ export function apiError(error: unknown) {
             ? 'FORBIDDEN'
             : err.status === 429
               ? 'RATE_LIMITED'
-              : 'VALIDATION_ERROR')
-    return fail(err.message, err.status, code)
+              : err.status === 504
+                ? 'REQUEST_TIMEOUT'
+                : err.status === 503
+                  ? 'SERVICE_UNAVAILABLE'
+                  : 'VALIDATION_ERROR')
+    logger?.logError(code, err.status, err.message)
+    return fail(err.message, err.status, code, undefined, headers)
   }
 
-  const errorMessage = error instanceof Error ? error.message : String(error)
-  const isDbError =
-    errorMessage.includes('SQLITE_ERROR') ||
-    errorMessage.includes('LibsqlError') ||
-    errorMessage.includes('no such column') ||
-    errorMessage.includes('no such table')
+  const classified = classifyUnexpectedError(error)
+  const requestId = logger?.requestId ?? `nr-${crypto.randomUUID().slice(0, 8)}`
+  const routeTag = context?.route ?? logger?.route ?? 'api'
 
-  const requestId = Math.random().toString(36).slice(2, 10)
-  if (isDbError) {
-    // Distinguish database schema/query errors without leaking raw SQL or schema internals to client
-    const isColumnMissing = errorMessage.includes('no such column')
-    const isTableMissing = errorMessage.includes('no such table')
-    const summary = isColumnMissing
-      ? 'Cơ sở dữ liệu đang thiếu cột dữ liệu nghiệp vụ (cần chạy migration).'
-      : isTableMissing
-        ? 'Cơ sở dữ liệu chưa hoàn thiện bảng nghiệp vụ (cần chạy migration).'
-        : 'Lỗi truy vấn cơ sở dữ liệu.'
-    console.error(`[NORI DB ERROR][req-${requestId}] ${summary}: ${errorMessage.slice(0, 300)}`)
-    return fail(
-      'Hệ thống đang bảo trì dữ liệu hoặc cơ sở dữ liệu chưa sẵn sàng. Vui lòng thử lại sau.',
-      503,
-      'DATABASE_ERROR',
+  logger?.logError(classified.category, classified.status, classified.summary, {
+    dbCode: classified.dbCode,
+  })
+  if (!logger) {
+    console.error(
+      `[NORI ${classified.category}][${routeTag}][${requestId}] code=${classified.dbCode || 'none'} msg=${classified.summary}`,
     )
   }
-
-  console.error(`[NORI][req-${requestId}] Request failed:`, errorMessage.slice(0, 300))
-  return fail('NORI chưa thể xử lý yêu cầu. Vui lòng thử lại sau.', 503, 'SERVICE_UNAVAILABLE')
+  return fail(
+    classified.userMessage,
+    classified.status,
+    classified.code,
+    undefined,
+    headers ?? { 'X-NORI-Request-Id': requestId },
+  )
 }

@@ -26,7 +26,12 @@ import {
   resolvePaymentRuntimeConfig,
   type BankAccountConfig,
 } from './payment-providers.ts'
-import { withBookingWriteLock } from './promo-service.ts'
+import {
+  isUniqueConstraintError,
+  runBestEffortSafe,
+  txReqOptions,
+  withAtomicResourceLock,
+} from './db-tx.ts'
 
 export type SitePaymentConfiguration = {
   onlinePaymentEnabled: boolean
@@ -395,7 +400,7 @@ export async function sweepExpiredPayments(
     const bId = relationId(p.booking)
     const cId = relationId(p.customer)
     if (cId && bId) {
-      try {
+      await runBestEffortSafe(payload, options?.req, async () => {
         await payload.create({
           collection: 'notifications',
           ...(options?.req ? { req: options.req } : {}),
@@ -413,9 +418,7 @@ export async function sweepExpiredPayments(
             popupDismissed: true,
           },
         })
-      } catch {
-        // Ignore duplicate notification
-      }
+      })
     }
   }
 
@@ -477,247 +480,309 @@ export type CreateCustomerPaymentParams = {
 export async function createOrReuseCustomerPayment(params: CreateCustomerPaymentParams) {
   const { payload, user, bookingId } = params
 
-  return await withBookingWriteLock(async () => {
-    await sweepExpiredPayments(payload, { bookingId })
+  try {
+    return await withAtomicResourceLock(payload, `payment-booking:${bookingId}`, async (tx) => {
+      await sweepExpiredPayments(payload, { bookingId, req: tx.req })
 
-    const siteConfig = await getSitePaymentConfig(payload)
-    const booking = await payload
-      .findByID({
-        collection: 'bookings',
-        id: bookingId,
-        overrideAccess: true,
-        depth: 0,
+      const siteConfig = await getSitePaymentConfig(payload, tx.req)
+      const booking = await payload
+        .findByID({
+          collection: 'bookings',
+          id: bookingId,
+          overrideAccess: true,
+          depth: 0,
+          ...txReqOptions(tx.req),
+        })
+        .catch(() => null)
+
+      if (!booking) {
+        throw new APIError('Không tìm thấy đơn thuê.', 404)
+      }
+
+      const ownerId = relationId(booking.customer)
+      const isCustomer = user.collection === 'users' && user.status === 'ACTIVE'
+      const isOwner = Boolean(ownerId && String(ownerId) === String(user.id))
+
+      if (!isOwner) {
+        throw new APIError('Bạn không có quyền truy cập hoặc thanh toán cho đơn thuê này.', 403)
+      }
+
+      const { financial, payments } = await computeBookingFinancialsFromDb(payload, booking, {
+        siteConfig,
+        req: tx.req,
       })
-      .catch(() => null)
 
-    if (!booking) {
-      throw new APIError('Không tìm thấy đơn thuê.', 404)
-    }
+      const requestedType: PaymentType =
+        params.paymentType ?? (financial.remainingDepositDue > 0 ? 'DEPOSIT' : 'RENTAL_FEE')
 
-    const ownerId = relationId(booking.customer)
-    const isCustomer = user.collection === 'users' && user.status === 'ACTIVE'
-    const isOwner = Boolean(ownerId && String(ownerId) === String(user.id))
+      if (requestedType === 'FULL_PAYMENT' && !siteConfig.allowFullPaymentOnline) {
+        throw new APIError('Chức năng thanh toán toàn bộ trực tuyến hiện đang tạm tắt.', 409)
+      }
 
-    if (!isOwner) {
-      throw new APIError('Bạn không có quyền truy cập hoặc thanh toán cho đơn thuê này.', 403)
-    }
+      // Determine authoritative amount due on the server for the requested payment type
+      let authoritativeAmount = 0
+      if (requestedType === 'DEPOSIT') {
+        authoritativeAmount =
+          financial.remainingDepositDue > 0
+            ? financial.remainingDepositDue
+            : financial.totalRemainingRentalObligation
+      } else if (requestedType === 'FULL_PAYMENT') {
+        authoritativeAmount = financial.totalRemainingRentalObligation
+      } else if (requestedType === 'RENTAL_FEE') {
+        authoritativeAmount =
+          financial.remainingRentalBeforeExtra > 0
+            ? financial.remainingRentalBeforeExtra
+            : financial.totalRemainingRentalObligation
+      } else if (requestedType === 'EXTRA_FEE') {
+        authoritativeAmount = financial.remainingExtraFeeDue
+      } else if (requestedType === 'SECURITY_DEPOSIT') {
+        authoritativeAmount = financial.remainingSecurityDepositDue
+      }
 
-    const { financial, payments } = await computeBookingFinancialsFromDb(payload, booking, {
-      siteConfig,
-    })
+      // Strict anti-tampering check (PAY-016): if client supplied an amount that does not match authoritative obligation, reject immediately!
+      if (
+        params.clientExpectedAmount !== undefined &&
+        params.clientExpectedAmount !== null &&
+        Number(params.clientExpectedAmount) !== authoritativeAmount
+      ) {
+        throw new APIError(
+          `Số tiền yêu cầu thanh toán không khớp với số dư công nợ trên máy chủ (cần thanh toán: ${formatVnd(authoritativeAmount)}).`,
+          400,
+        )
+      }
 
-    const requestedType: PaymentType =
-      params.paymentType ?? (financial.remainingDepositDue > 0 ? 'DEPOSIT' : 'RENTAL_FEE')
+      const requestedProvider: PaymentProviderName =
+        params.provider ??
+        (params.method === 'BANK_TRANSFER' ||
+        params.method === 'CASH' ||
+        params.method === 'CARD_POS'
+          ? 'MANUAL'
+          : siteConfig.activeProvider)
 
-    if (requestedType === 'FULL_PAYMENT' && !siteConfig.allowFullPaymentOnline) {
-      throw new APIError('Chức năng thanh toán toàn bộ trực tuyến hiện đang tạm tắt.', 409)
-    }
-
-    // Determine authoritative amount due on the server for the requested payment type
-    let authoritativeAmount = 0
-    if (requestedType === 'DEPOSIT') {
-      authoritativeAmount =
-        financial.remainingDepositDue > 0
-          ? financial.remainingDepositDue
-          : financial.totalRemainingRentalObligation
-    } else if (requestedType === 'FULL_PAYMENT') {
-      authoritativeAmount = financial.totalRemainingRentalObligation
-    } else if (requestedType === 'RENTAL_FEE') {
-      authoritativeAmount =
-        financial.remainingRentalBeforeExtra > 0
-          ? financial.remainingRentalBeforeExtra
-          : financial.totalRemainingRentalObligation
-    } else if (requestedType === 'EXTRA_FEE') {
-      authoritativeAmount = financial.remainingExtraFeeDue
-    } else if (requestedType === 'SECURITY_DEPOSIT') {
-      authoritativeAmount = financial.remainingSecurityDepositDue
-    }
-
-    // Strict anti-tampering check (PAY-016): if client supplied an amount that does not match authoritative obligation, reject immediately!
-    if (
-      params.clientExpectedAmount !== undefined &&
-      params.clientExpectedAmount !== null &&
-      Number(params.clientExpectedAmount) !== authoritativeAmount
-    ) {
-      throw new APIError(
-        `Số tiền yêu cầu thanh toán không khớp với số dư công nợ trên máy chủ (cần thanh toán: ${formatVnd(authoritativeAmount)}).`,
-        400,
+      const adapter = getPaymentProviderAdapter(requestedProvider)
+      const providerConfigCheck = adapter.isConfigured(
+        siteConfig.environment,
+        siteConfig.bankConfig,
       )
-    }
 
-    const requestedProvider: PaymentProviderName =
-      params.provider ??
-      (params.method === 'BANK_TRANSFER' || params.method === 'CASH' || params.method === 'CARD_POS'
-        ? 'MANUAL'
-        : siteConfig.activeProvider)
+      const eligibility = canInitiateOnlinePayment({
+        isLoggedIn: Boolean(user?.id),
+        isCustomer,
+        isOwner,
+        bookingStatus: String(booking.status ?? 'PENDING'),
+        paymentType: requestedType,
+        requestedAmount: authoritativeAmount,
+        onlinePaymentEnabled:
+          requestedProvider === 'MANUAL' ? true : siteConfig.onlinePaymentEnabled,
+        environment: siteConfig.environment,
+        productionApproved: siteConfig.productionApproved,
+        providerConfigured: providerConfigCheck.configured,
+      })
 
-    const adapter = getPaymentProviderAdapter(requestedProvider)
-    const providerConfigCheck = adapter.isConfigured(siteConfig.environment, siteConfig.bankConfig)
+      if (!eligibility.allowed) {
+        throw new APIError(eligibility.message, eligibility.httpStatus, { code: eligibility.code })
+      }
 
-    const eligibility = canInitiateOnlinePayment({
-      isLoggedIn: Boolean(user?.id),
-      isCustomer,
-      isOwner,
-      bookingStatus: String(booking.status ?? 'PENDING'),
-      paymentType: requestedType,
-      requestedAmount: authoritativeAmount,
-      onlinePaymentEnabled: requestedProvider === 'MANUAL' ? true : siteConfig.onlinePaymentEnabled,
-      environment: siteConfig.environment,
-      productionApproved: siteConfig.productionApproved,
-      providerConfigured: providerConfigCheck.configured,
-    })
+      const resolvedMethod: PaymentMethod =
+        params.method ??
+        (requestedProvider === 'SEPAY'
+          ? 'VIETQR_SEPAY'
+          : requestedProvider === 'MOCK'
+            ? 'ONLINE_MOCK'
+            : 'BANK_TRANSFER')
 
-    if (!eligibility.allowed) {
-      throw new APIError(eligibility.message, eligibility.httpStatus, { code: eligibility.code })
-    }
+      const nowMs = Date.now()
 
-    const resolvedMethod: PaymentMethod =
-      params.method ??
-      (requestedProvider === 'SEPAY'
-        ? 'VIETQR_SEPAY'
-        : requestedProvider === 'MOCK'
-          ? 'ONLINE_MOCK'
-          : 'BANK_TRANSFER')
+      // Check for an existing active PENDING payment intent on this booking to prevent duplicate charges
+      // across rapid clicks, page refreshes, multiple tabs, or multiple devices (PAY-010, PAY-011, PAY-012)
+      const existingActive = payments.find((p) => {
+        if (p.status !== 'PENDING') return false
+        const expMs = p.expiresAt ? Date.parse(p.expiresAt) : NaN
+        if (Number.isFinite(expMs) && expMs <= nowMs) return false
+        if (params.idempotencyKey && p.idempotencyKey === params.idempotencyKey) return true
+        return (
+          p.paymentType === requestedType &&
+          Number(p.amount) === authoritativeAmount &&
+          (p.provider ?? 'MANUAL') === requestedProvider
+        )
+      })
 
-    const nowMs = Date.now()
+      if (existingActive) {
+        const providerDetails = await adapter.createPayment({
+          paymentId: existingActive.id,
+          paymentReference: String(existingActive.reference ?? existingActive.id),
+          providerPaymentRef: String(
+            existingActive.providerPaymentRef ?? existingActive.reference ?? existingActive.id,
+          ),
+          bookingKey: String(booking.bookingKey ?? booking.id),
+          amount: authoritativeAmount,
+          description:
+            `${existingActive.providerPaymentRef ?? existingActive.reference} ${booking.bookingKey ?? ''}`.trim(),
+          expiresAt:
+            existingActive.expiresAt ??
+            new Date(nowMs + siteConfig.paymentExpiryMinutes * 60_000).toISOString(),
+          environment: (existingActive.environment as PaymentEnvironment) ?? siteConfig.environment,
+          bankConfig: siteConfig.bankConfig,
+        })
 
-    // Check for an existing active PENDING payment intent on this booking to prevent duplicate charges
-    // across rapid clicks, page refreshes, multiple tabs, or multiple devices (PAY-010, PAY-011, PAY-012)
-    const existingActive = payments.find((p) => {
-      if (p.status !== 'PENDING') return false
-      const expMs = p.expiresAt ? Date.parse(p.expiresAt) : NaN
-      if (Number.isFinite(expMs) && expMs <= nowMs) return false
-      if (params.idempotencyKey && p.idempotencyKey === params.idempotencyKey) return true
-      return (
-        p.paymentType === requestedType &&
-        Number(p.amount) === authoritativeAmount &&
-        (p.provider ?? 'MANUAL') === requestedProvider
+        return {
+          reused: true,
+          payment: existingActive,
+          providerDetails,
+          financial,
+        }
+      }
+
+      // Cancel any other open PENDING payment intents on this booking (e.g., if user switched from DEPOSIT to FULL_PAYMENT)
+      for (const stalePending of payments.filter((p) => p.status === 'PENDING')) {
+        await payload.update({
+          collection: 'payments',
+          id: stalePending.id,
+          overrideAccess: true,
+          ...txReqOptions(tx.req),
+          data: {
+            status: 'CANCELLED',
+            note: `${stalePending.note ? `${stalePending.note} · ` : ''}Tự động hủy do khách hàng chuyển sang yêu cầu thanh toán mới`,
+          },
+        })
+      }
+
+      const reference = `PAY-${crypto.randomUUID().slice(0, 8).toUpperCase()}`
+      const providerPaymentRef = generateProviderPaymentCode(
+        `${booking.id}:${requestedType}:${authoritativeAmount}:${nowMs}`,
       )
-    })
+      const expiresAt = new Date(nowMs + siteConfig.paymentExpiryMinutes * 60_000).toISOString()
 
-    if (existingActive) {
       const providerDetails = await adapter.createPayment({
-        paymentId: existingActive.id,
-        paymentReference: String(existingActive.reference ?? existingActive.id),
-        providerPaymentRef: String(
-          existingActive.providerPaymentRef ?? existingActive.reference ?? existingActive.id,
-        ),
+        paymentId: reference,
+        paymentReference: reference,
+        providerPaymentRef,
         bookingKey: String(booking.bookingKey ?? booking.id),
         amount: authoritativeAmount,
-        description:
-          `${existingActive.providerPaymentRef ?? existingActive.reference} ${booking.bookingKey ?? ''}`.trim(),
-        expiresAt:
-          existingActive.expiresAt ??
-          new Date(nowMs + siteConfig.paymentExpiryMinutes * 60_000).toISOString(),
-        environment: (existingActive.environment as PaymentEnvironment) ?? siteConfig.environment,
+        description: `${providerPaymentRef}`,
+        expiresAt,
+        environment: siteConfig.environment,
         bankConfig: siteConfig.bankConfig,
       })
 
+      const created = await payload.create({
+        collection: 'payments',
+        overrideAccess: true,
+        ...txReqOptions(tx.req),
+        data: {
+          reference,
+          booking: booking.id,
+          customer: user.id,
+          paymentType: requestedType,
+          method: resolvedMethod,
+          provider: requestedProvider,
+          environment: siteConfig.environment,
+          currency: 'VND',
+          amount: authoritativeAmount,
+          expectedAmount: authoritativeAmount,
+          receivedAmount: 0,
+          refundedAmount: 0,
+          overpaidAmount: 0,
+          status: 'PENDING',
+          reconciliationStatus: 'NONE',
+          providerPaymentRef,
+          qrImageUrl: providerDetails.qrImageUrl,
+          paymentUrl: providerDetails.paymentUrl ?? undefined,
+          bankCode: providerDetails.bankCode,
+          bankAccountNumber: providerDetails.bankAccountNumber,
+          bankAccountName: providerDetails.bankAccountName,
+          transferContent: providerDetails.transferContent,
+          expiresAt,
+          idempotencyKey:
+            params.idempotencyKey || `${booking.id}:${requestedType}:${authoritativeAmount}`,
+          recordedBy: user.email ?? 'Khách hàng',
+          note: `Khởi tạo thanh toán ${paymentTypeLabels[requestedType] ?? requestedType} qua ${requestedProvider} (${providerPaymentRef})`,
+        },
+      })
+
+      tx.afterCommit(async () => {
+        await payload.create({
+          collection: 'audit-logs',
+          overrideAccess: true,
+          data: {
+            action: 'payment.create_intent',
+            entity: 'payment',
+            entityId: created.id,
+            entityLabel: reference,
+            summary: `Khách hàng tạo yêu cầu thanh toán ${paymentTypeLabels[requestedType] ?? requestedType} (${formatVnd(authoritativeAmount)}) cho đơn ${booking.bookingKey}`,
+            fromStatus: 'NONE',
+            toStatus: 'PENDING',
+            actorType: 'CUSTOMER',
+            actorId: user.id,
+            actorEmail: user.email ?? undefined,
+          },
+        })
+      })
+
+      const refreshedFinancial = await computeBookingFinancialsFromDb(payload, booking, {
+        siteConfig,
+        req: tx.req,
+      })
+
       return {
-        reused: true,
-        payment: existingActive,
+        reused: false,
+        payment: created,
         providerDetails,
-        financial,
+        financial: refreshedFinancial.financial,
+      }
+    })
+  } catch (err) {
+    if (isUniqueConstraintError(err)) {
+      const retryRes = await payload.find({
+        collection: 'payments',
+        overrideAccess: true,
+        depth: 0,
+        limit: 1,
+        sort: '-createdAt',
+        where: {
+          and: [{ booking: { equals: bookingId } }, { status: { equals: 'PENDING' } }],
+        },
+      })
+      const existingPending = retryRes.docs[0]
+      if (existingPending) {
+        const [siteConfig, booking] = await Promise.all([
+          getSitePaymentConfig(payload),
+          payload.findByID({
+            collection: 'bookings',
+            id: bookingId,
+            overrideAccess: true,
+            depth: 0,
+          }),
+        ])
+        const adapter = getPaymentProviderAdapter(existingPending.provider)
+        const providerDetails = await adapter.createPayment({
+          paymentId: existingPending.id,
+          paymentReference: String(existingPending.reference ?? existingPending.id),
+          providerPaymentRef: String(
+            existingPending.providerPaymentRef ?? existingPending.reference ?? existingPending.id,
+          ),
+          bookingKey: String(booking.bookingKey ?? booking.id),
+          amount: Number(existingPending.amount),
+          description:
+            `${existingPending.providerPaymentRef ?? existingPending.reference} ${booking.bookingKey ?? ''}`.trim(),
+          expiresAt:
+            existingPending.expiresAt ??
+            new Date(Date.now() + siteConfig.paymentExpiryMinutes * 60_000).toISOString(),
+          environment:
+            (existingPending.environment as PaymentEnvironment) ?? siteConfig.environment,
+          bankConfig: siteConfig.bankConfig,
+        })
+        const refreshed = await computeBookingFinancialsFromDb(payload, booking, { siteConfig })
+        return {
+          reused: true,
+          payment: existingPending,
+          providerDetails,
+          financial: refreshed.financial,
+        }
       }
     }
-
-    // Cancel any other open PENDING payment intents on this booking (e.g., if user switched from DEPOSIT to FULL_PAYMENT)
-    for (const stalePending of payments.filter((p) => p.status === 'PENDING')) {
-      await payload.update({
-        collection: 'payments',
-        id: stalePending.id,
-        overrideAccess: true,
-        data: {
-          status: 'CANCELLED',
-          note: `${stalePending.note ? `${stalePending.note} · ` : ''}Tự động hủy do khách hàng chuyển sang yêu cầu thanh toán mới`,
-        },
-      })
-    }
-
-    const reference = `PAY-${crypto.randomUUID().slice(0, 8).toUpperCase()}`
-    const providerPaymentRef = generateProviderPaymentCode(
-      `${booking.id}:${requestedType}:${authoritativeAmount}:${nowMs}`,
-    )
-    const expiresAt = new Date(nowMs + siteConfig.paymentExpiryMinutes * 60_000).toISOString()
-
-    const providerDetails = await adapter.createPayment({
-      paymentId: reference,
-      paymentReference: reference,
-      providerPaymentRef,
-      bookingKey: String(booking.bookingKey ?? booking.id),
-      amount: authoritativeAmount,
-      description: `${providerPaymentRef}`,
-      expiresAt,
-      environment: siteConfig.environment,
-      bankConfig: siteConfig.bankConfig,
-    })
-
-    const created = await payload.create({
-      collection: 'payments',
-      overrideAccess: true,
-      data: {
-        reference,
-        booking: booking.id,
-        customer: user.id,
-        paymentType: requestedType,
-        method: resolvedMethod,
-        provider: requestedProvider,
-        environment: siteConfig.environment,
-        currency: 'VND',
-        amount: authoritativeAmount,
-        expectedAmount: authoritativeAmount,
-        receivedAmount: 0,
-        refundedAmount: 0,
-        overpaidAmount: 0,
-        status: 'PENDING',
-        reconciliationStatus: 'NONE',
-        providerPaymentRef,
-        qrImageUrl: providerDetails.qrImageUrl,
-        paymentUrl: providerDetails.paymentUrl ?? undefined,
-        bankCode: providerDetails.bankCode,
-        bankAccountNumber: providerDetails.bankAccountNumber,
-        bankAccountName: providerDetails.bankAccountName,
-        transferContent: providerDetails.transferContent,
-        expiresAt,
-        idempotencyKey:
-          params.idempotencyKey || `${booking.id}:${requestedType}:${authoritativeAmount}`,
-        recordedBy: user.email ?? 'Khách hàng',
-        note: `Khởi tạo thanh toán ${paymentTypeLabels[requestedType] ?? requestedType} qua ${requestedProvider} (${providerPaymentRef})`,
-      },
-    })
-
-    try {
-      await payload.create({
-        collection: 'audit-logs',
-        overrideAccess: true,
-        data: {
-          action: 'payment.create_intent',
-          entity: 'payment',
-          entityId: created.id,
-          entityLabel: reference,
-          summary: `Khách hàng tạo yêu cầu thanh toán ${paymentTypeLabels[requestedType] ?? requestedType} (${formatVnd(authoritativeAmount)}) cho đơn ${booking.bookingKey}`,
-          fromStatus: 'NONE',
-          toStatus: 'PENDING',
-          actorType: 'CUSTOMER',
-          actorId: user.id,
-          actorEmail: user.email ?? undefined,
-        },
-      })
-    } catch {
-      // Non-blocking audit log
-    }
-
-    const refreshedFinancial = await computeBookingFinancialsFromDb(payload, booking, {
-      siteConfig,
-    })
-
-    return {
-      reused: false,
-      payment: created,
-      providerDetails,
-      financial: refreshedFinancial.financial,
-    }
-  })
+    throw err
+  }
 }
 
 export type ProcessWebhookParams = {
@@ -836,105 +901,15 @@ export async function processProviderWebhook(params: ProcessWebhookParams): Prom
     }
   }
 
-  // Step 3: Execute financial mutation inside serialized write lock
-  return await withBookingWriteLock(async () => {
-    // Check if this exact eventId has already been processed (PAY-013 Webhook Idempotency)
-    const existingEventRes = await payload.find({
-      collection: 'payment-events',
-      overrideAccess: true,
-      depth: 0,
-      limit: 1,
-      where: { eventId: { equals: normalized.eventId } },
-    })
-
-    if (existingEventRes.docs.length > 0) {
-      const existingEvt = existingEventRes.docs[0]
-      if (
-        existingEvt.processingStatus === 'PROCESSED' ||
-        existingEvt.processingStatus === 'REVIEW_REQUIRED' ||
-        existingEvt.processingStatus === 'IGNORED_DUPLICATE'
-      ) {
-        await payload.update({
-          collection: 'payment-events',
-          id: existingEvt.id,
-          overrideAccess: true,
-          data: {
-            retryCount: Number(existingEvt.retryCount ?? 0) + 1,
-          },
-        })
-        return {
-          httpStatus: 200,
-          body: {
-            success: true,
-            duplicate: true,
-            eventId: normalized.eventId,
-            message: 'Sự kiện Webhook trùng lặp đã được bỏ qua an toàn.',
-          },
-        }
-      }
-    }
-
-    // Also check if another event already used the same externalTransactionId in the same provider & environment
-    const existingTxPaymentRes = await payload.find({
-      collection: 'payments',
-      overrideAccess: true,
-      depth: 0,
-      limit: 1,
-      where: {
-        and: [
-          { providerTransactionId: { equals: normalized.externalTransactionId } },
-          { environment: { equals: siteConfig.environment } },
-        ],
-      },
-    })
-    if (existingTxPaymentRes.docs.length > 0) {
-      const alreadyLinked = existingTxPaymentRes.docs[0]
-      await payload
-        .create({
-          collection: 'payment-events',
-          overrideAccess: true,
-          data: {
-            eventId: normalized.eventId,
-            provider: providerName,
-            environment: siteConfig.environment,
-            externalTransactionId: normalized.externalTransactionId,
-            paymentReference: normalized.paymentReference ?? alreadyLinked.reference ?? undefined,
-            eventType: normalized.eventType,
-            transferAmount: normalized.transferAmount,
-            verificationResult: 'DUPLICATE',
-            processingStatus: 'IGNORED_DUPLICATE',
-            retryCount: 1,
-            receivedAt: nowIso,
-            processedAt: nowIso,
-            payment: alreadyLinked.id,
-            booking: relationId(alreadyLinked.booking),
-            errorReason: 'Mã giao dịch ngân hàng đã được đối soát trước đó.',
-            sanitizedPayload: normalized.sanitizedPayload,
-          },
-        })
-        .catch(() => null)
-
-      return {
-        httpStatus: 200,
-        body: {
-          success: true,
-          duplicate: true,
-          paymentId: alreadyLinked.id,
-          message: 'Giao dịch đã được ghi nhận trước đó.',
-        },
-      }
-    }
-
-    // Locate target Payment by providerPaymentRef or reference, or fallback to Booking by bookingKeyCandidate
-    let targetPayment: Payment | null = null
-    let targetBooking: Booking | null = null
-
+  // Step 3: Resolve booking lock key when linkable and serialize inside cross-process atomic lock
+  let preLockBookingId: string | null = null
+  try {
     if (normalized.paymentReference) {
-      const paySearch = await payload.find({
+      const refLookup = await payload.find({
         collection: 'payments',
         overrideAccess: true,
         depth: 0,
-        limit: 5,
+        limit: 1,
         sort: '-createdAt',
         where: {
           or: [
@@ -943,122 +918,356 @@ export async function processProviderWebhook(params: ProcessWebhookParams): Prom
           ],
         },
       })
-      targetPayment = paySearch.docs[0] ?? null
+      preLockBookingId = relationId(refLookup.docs[0]?.booking) ?? null
     }
-
-    if (!targetPayment && normalized.bookingKeyCandidate) {
-      const bookingSearch = await payload.find({
+    if (!preLockBookingId && normalized.bookingKeyCandidate) {
+      const bookingLookup = await payload.find({
         collection: 'bookings',
         overrideAccess: true,
         depth: 0,
         limit: 1,
         where: { bookingKey: { equals: normalized.bookingKeyCandidate } },
       })
-      targetBooking = bookingSearch.docs[0] ?? null
-      if (targetBooking) {
-        const bookingPaySearch = await payload.find({
+      preLockBookingId = bookingLookup.docs[0]?.id ? String(bookingLookup.docs[0].id) : null
+    }
+  } catch {
+    preLockBookingId = null
+  }
+
+  const webhookLockKey = preLockBookingId
+    ? `payment-booking:${preLockBookingId}`
+    : `payment-webhook:${normalized.externalTransactionId || normalized.eventId}`
+
+  try {
+    return await withAtomicResourceLock(payload, webhookLockKey, async (tx) => {
+      // Check if this exact eventId has already been processed (PAY-013 Webhook Idempotency)
+      const existingEventRes = await payload.find({
+        collection: 'payment-events',
+        overrideAccess: true,
+        depth: 0,
+        limit: 1,
+        ...txReqOptions(tx.req),
+        where: { eventId: { equals: normalized.eventId } },
+      })
+
+      if (existingEventRes.docs.length > 0) {
+        const existingEvt = existingEventRes.docs[0]
+        if (
+          existingEvt.processingStatus === 'PROCESSED' ||
+          existingEvt.processingStatus === 'REVIEW_REQUIRED' ||
+          existingEvt.processingStatus === 'IGNORED_DUPLICATE'
+        ) {
+          await payload.update({
+            collection: 'payment-events',
+            id: existingEvt.id,
+            overrideAccess: true,
+            ...txReqOptions(tx.req),
+            data: {
+              retryCount: Number(existingEvt.retryCount ?? 0) + 1,
+            },
+          })
+          return {
+            httpStatus: 200,
+            body: {
+              success: true,
+              duplicate: true,
+              eventId: normalized.eventId,
+              message: 'Sự kiện Webhook trùng lặp đã được bỏ qua an toàn.',
+            },
+          }
+        }
+      }
+
+      // Also check if another event already used the same externalTransactionId in the same provider & environment
+      const existingTxPaymentRes = await payload.find({
+        collection: 'payments',
+        overrideAccess: true,
+        depth: 0,
+        limit: 1,
+        ...txReqOptions(tx.req),
+        where: {
+          and: [
+            { providerTransactionId: { equals: normalized.externalTransactionId } },
+            { environment: { equals: siteConfig.environment } },
+          ],
+        },
+      })
+      if (existingTxPaymentRes.docs.length > 0) {
+        const alreadyLinked = existingTxPaymentRes.docs[0]
+        await runBestEffortSafe(payload, tx.req, async () => {
+          await payload.create({
+            collection: 'payment-events',
+            overrideAccess: true,
+            ...txReqOptions(tx.req),
+            data: {
+              eventId: normalized.eventId,
+              provider: providerName,
+              environment: siteConfig.environment,
+              externalTransactionId: normalized.externalTransactionId,
+              paymentReference: normalized.paymentReference ?? alreadyLinked.reference ?? undefined,
+              eventType: normalized.eventType,
+              transferAmount: normalized.transferAmount,
+              verificationResult: 'DUPLICATE',
+              processingStatus: 'IGNORED_DUPLICATE',
+              retryCount: 1,
+              receivedAt: nowIso,
+              processedAt: nowIso,
+              payment: alreadyLinked.id,
+              booking: relationId(alreadyLinked.booking),
+              errorReason: 'Mã giao dịch ngân hàng đã được đối soát trước đó.',
+              sanitizedPayload: normalized.sanitizedPayload,
+            },
+          })
+        })
+
+        return {
+          httpStatus: 200,
+          body: {
+            success: true,
+            duplicate: true,
+            paymentId: alreadyLinked.id,
+            message: 'Giao dịch đã được ghi nhận trước đó.',
+          },
+        }
+      }
+
+      // Locate target Payment by providerPaymentRef or reference, or fallback to Booking by bookingKeyCandidate
+      let targetPayment: Payment | null = null
+      let targetBooking: Booking | null = null
+
+      if (normalized.paymentReference) {
+        const paySearch = await payload.find({
           collection: 'payments',
           overrideAccess: true,
           depth: 0,
           limit: 5,
           sort: '-createdAt',
+          ...txReqOptions(tx.req),
           where: {
-            and: [
-              { booking: { equals: targetBooking.id } },
-              { status: { in: ['PENDING', 'PROCESSING', 'PARTIALLY_PAID'] } },
+            or: [
+              { providerPaymentRef: { equals: normalized.paymentReference } },
+              { reference: { equals: normalized.paymentReference } },
             ],
           },
         })
-        targetPayment = bookingPaySearch.docs[0] ?? null
+        targetPayment = paySearch.docs[0] ?? null
       }
-    }
 
-    if (targetPayment && !targetBooking) {
-      const bId = relationId(targetPayment.booking)
-      if (bId) {
-        targetBooking = await payload
-          .findByID({
-            collection: 'bookings',
-            id: bId,
+      if (!targetPayment && normalized.bookingKeyCandidate) {
+        const bookingSearch = await payload.find({
+          collection: 'bookings',
+          overrideAccess: true,
+          depth: 0,
+          limit: 1,
+          ...txReqOptions(tx.req),
+          where: { bookingKey: { equals: normalized.bookingKeyCandidate } },
+        })
+        targetBooking = bookingSearch.docs[0] ?? null
+        if (targetBooking) {
+          const bookingPaySearch = await payload.find({
+            collection: 'payments',
             overrideAccess: true,
             depth: 0,
+            limit: 5,
+            sort: '-createdAt',
+            ...txReqOptions(tx.req),
+            where: {
+              and: [
+                { booking: { equals: targetBooking.id } },
+                { status: { in: ['PENDING', 'PROCESSING', 'PARTIALLY_PAID'] } },
+              ],
+            },
           })
-          .catch(() => null)
+          targetPayment = bookingPaySearch.docs[0] ?? null
+        }
       }
-    }
 
-    // Case A: Unmatched transfer (neither Payment nor Booking identified) -> record in REVIEW_REQUIRED (UNMATCHED)
-    if (!targetPayment && !targetBooking) {
-      const unmatchedPayment = await payload.create({
-        collection: 'payments',
-        overrideAccess: true,
-        context: { allowLateWebhookRecord: true },
-        data: {
-          reference: `PAY-UNM-${crypto.randomUUID().slice(0, 6).toUpperCase()}`,
-          paymentType: 'DEPOSIT',
-          method: providerName === 'SEPAY' ? 'VIETQR_SEPAY' : 'ONLINE_MOCK',
-          provider: providerName,
-          environment: siteConfig.environment,
-          currency: 'VND',
-          amount: normalized.transferAmount,
-          expectedAmount: normalized.transferAmount,
-          receivedAmount: normalized.transferAmount,
-          status: 'REVIEW_REQUIRED',
-          reconciliationStatus: 'UNMATCHED',
-          providerTransactionId: normalized.externalTransactionId,
-          providerPaymentRef: normalized.paymentReference ?? undefined,
-          transferContent: normalized.content,
-          paidAt: normalized.transactionDate,
-          verifiedAt: nowIso,
-          recordedBy: `Webhook ${providerName}`,
-          failureReason: 'Không tìm thấy đơn thuê hoặc mã thanh toán khớp nội dung chuyển khoản.',
-          note: `Giao dịch chuyển khoản chưa xác định được đơn thuê: ${normalized.content}`,
-        },
-      })
-
-      await payload.create({
-        collection: 'payment-events',
-        overrideAccess: true,
-        data: {
-          eventId: normalized.eventId,
-          provider: providerName,
-          environment: siteConfig.environment,
-          externalTransactionId: normalized.externalTransactionId,
-          paymentReference: unmatchedPayment.reference ?? undefined,
-          eventType: normalized.eventType,
-          transferAmount: normalized.transferAmount,
-          verificationResult: 'VERIFIED',
-          processingStatus: 'REVIEW_REQUIRED',
-          retryCount: 0,
-          receivedAt: nowIso,
-          processedAt: nowIso,
-          payment: unmatchedPayment.id,
-          errorReason: 'Không tìm thấy đơn thuê khớp mã chuyển khoản — Đã đưa vào Cần đối soát.',
-          sanitizedPayload: normalized.sanitizedPayload,
-        },
-      })
-
-      return {
-        httpStatus: 200,
-        body: {
-          success: true,
-          status: 'REVIEW_REQUIRED',
-          reconciliationStatus: 'UNMATCHED',
-          paymentId: unmatchedPayment.id,
-        },
+      if (targetPayment && !targetBooking) {
+        const bId = relationId(targetPayment.booking)
+        if (bId) {
+          targetBooking = await payload
+            .findByID({
+              collection: 'bookings',
+              id: bId,
+              overrideAccess: true,
+              depth: 0,
+              ...txReqOptions(tx.req),
+            })
+            .catch(() => null)
+        }
       }
-    }
 
-    // Case B: Out-of-order / stale failure or expiry event arriving after payment was already CONFIRMED (PAY-015)
-    if (
-      targetPayment &&
-      (normalized.eventType === 'PAYMENT_FAILED' || normalized.eventType === 'PAYMENT_EXPIRED')
-    ) {
-      const incomingTargetStatus = normalized.eventType === 'PAYMENT_EXPIRED' ? 'EXPIRED' : 'FAILED'
-      if (isPaymentEventStale(targetPayment.status, incomingTargetStatus)) {
+      // Case A: Unmatched transfer (neither Payment nor Booking identified) -> record in REVIEW_REQUIRED (UNMATCHED)
+      if (!targetPayment && !targetBooking) {
+        const unmatchedPayment = await payload.create({
+          collection: 'payments',
+          overrideAccess: true,
+          ...txReqOptions(tx.req, { allowLateWebhookRecord: true }),
+          data: {
+            reference: `PAY-UNM-${crypto.randomUUID().slice(0, 6).toUpperCase()}`,
+            paymentType: 'DEPOSIT',
+            method: providerName === 'SEPAY' ? 'VIETQR_SEPAY' : 'ONLINE_MOCK',
+            provider: providerName,
+            environment: siteConfig.environment,
+            currency: 'VND',
+            amount: normalized.transferAmount,
+            expectedAmount: normalized.transferAmount,
+            receivedAmount: normalized.transferAmount,
+            status: 'REVIEW_REQUIRED',
+            reconciliationStatus: 'UNMATCHED',
+            providerTransactionId: normalized.externalTransactionId,
+            providerPaymentRef: normalized.paymentReference ?? undefined,
+            transferContent: normalized.content,
+            paidAt: normalized.transactionDate,
+            verifiedAt: nowIso,
+            recordedBy: `Webhook ${providerName}`,
+            failureReason: 'Không tìm thấy đơn thuê hoặc mã thanh toán khớp nội dung chuyển khoản.',
+            note: `Giao dịch chuyển khoản chưa xác định được đơn thuê: ${normalized.content}`,
+          },
+        })
+
         await payload.create({
           collection: 'payment-events',
           overrideAccess: true,
+          ...txReqOptions(tx.req),
+          data: {
+            eventId: normalized.eventId,
+            provider: providerName,
+            environment: siteConfig.environment,
+            externalTransactionId: normalized.externalTransactionId,
+            paymentReference: unmatchedPayment.reference ?? undefined,
+            eventType: normalized.eventType,
+            transferAmount: normalized.transferAmount,
+            verificationResult: 'VERIFIED',
+            processingStatus: 'REVIEW_REQUIRED',
+            retryCount: 0,
+            receivedAt: nowIso,
+            processedAt: nowIso,
+            payment: unmatchedPayment.id,
+            errorReason: 'Không tìm thấy đơn thuê khớp mã chuyển khoản — Đã đưa vào Cần đối soát.',
+            sanitizedPayload: normalized.sanitizedPayload,
+          },
+        })
+
+        return {
+          httpStatus: 200,
+          body: {
+            success: true,
+            status: 'REVIEW_REQUIRED',
+            reconciliationStatus: 'UNMATCHED',
+            paymentId: unmatchedPayment.id,
+          },
+        }
+      }
+
+      // Case B: Out-of-order / stale failure or expiry event arriving after payment was already CONFIRMED (PAY-015)
+      if (
+        targetPayment &&
+        (normalized.eventType === 'PAYMENT_FAILED' || normalized.eventType === 'PAYMENT_EXPIRED')
+      ) {
+        const incomingTargetStatus =
+          normalized.eventType === 'PAYMENT_EXPIRED' ? 'EXPIRED' : 'FAILED'
+        if (isPaymentEventStale(targetPayment.status, incomingTargetStatus)) {
+          await payload.create({
+            collection: 'payment-events',
+            overrideAccess: true,
+            ...txReqOptions(tx.req),
+            data: {
+              eventId: normalized.eventId,
+              provider: providerName,
+              environment: siteConfig.environment,
+              externalTransactionId: normalized.externalTransactionId,
+              paymentReference: targetPayment.reference ?? undefined,
+              eventType: normalized.eventType,
+              transferAmount: normalized.transferAmount,
+              verificationResult: 'VERIFIED',
+              processingStatus: 'IGNORED_DUPLICATE',
+              retryCount: 0,
+              receivedAt: nowIso,
+              processedAt: nowIso,
+              payment: targetPayment.id,
+              booking: targetBooking?.id,
+              errorReason: `Bỏ qua sự kiện cũ (${incomingTargetStatus}) do giao dịch đã ở trạng thái ${targetPayment.status}.`,
+              sanitizedPayload: normalized.sanitizedPayload,
+            },
+          })
+          return {
+            httpStatus: 200,
+            body: {
+              success: true,
+              ignoredStaleEvent: true,
+              paymentId: targetPayment.id,
+              status: targetPayment.status,
+            },
+          }
+        }
+
+        const updatedFailed = await payload.update({
+          collection: 'payments',
+          id: targetPayment.id,
+          overrideAccess: true,
+          ...txReqOptions(tx.req),
+          data: {
+            status: incomingTargetStatus,
+            failureReason: `Provider thông báo ${incomingTargetStatus}: ${normalized.content}`,
+          },
+        })
+        await payload.create({
+          collection: 'payment-events',
+          overrideAccess: true,
+          ...txReqOptions(tx.req),
+          data: {
+            eventId: normalized.eventId,
+            provider: providerName,
+            environment: siteConfig.environment,
+            externalTransactionId: normalized.externalTransactionId,
+            paymentReference: targetPayment.reference ?? undefined,
+            eventType: normalized.eventType,
+            transferAmount: 0,
+            verificationResult: 'VERIFIED',
+            processingStatus: 'PROCESSED',
+            retryCount: 0,
+            receivedAt: nowIso,
+            processedAt: nowIso,
+            payment: targetPayment.id,
+            booking: targetBooking?.id,
+            sanitizedPayload: normalized.sanitizedPayload,
+          },
+        })
+        return {
+          httpStatus: 200,
+          body: {
+            success: true,
+            paymentId: updatedFailed.id,
+            status: updatedFailed.status,
+          },
+        }
+      }
+
+      // Case C: Admin already confirmed this exact payment manually before the Webhook arrived (PAY-026)
+      if (
+        targetPayment &&
+        targetPayment.status === 'CONFIRMED' &&
+        targetPayment.reconciliationStatus === 'MANUAL_OVERRIDE' &&
+        Number(targetPayment.receivedAmount ?? targetPayment.amount) === normalized.transferAmount
+      ) {
+        await payload.update({
+          collection: 'payments',
+          id: targetPayment.id,
+          overrideAccess: true,
+          ...txReqOptions(tx.req),
+          data: {
+            providerTransactionId:
+              targetPayment.providerTransactionId || normalized.externalTransactionId,
+            reconciliationStatus: 'MATCHED',
+            reconciliationNote: `${targetPayment.reconciliationNote ? `${targetPayment.reconciliationNote} · ` : ''}Webhook ${providerName} (${normalized.externalTransactionId}) đã khớp với xác nhận thủ công, không cộng tiền lần hai.`,
+          },
+        })
+
+        await payload.create({
+          collection: 'payment-events',
+          overrideAccess: true,
+          ...txReqOptions(tx.req),
           data: {
             eventId: normalized.eventId,
             provider: providerName,
@@ -1074,398 +1283,323 @@ export async function processProviderWebhook(params: ProcessWebhookParams): Prom
             processedAt: nowIso,
             payment: targetPayment.id,
             booking: targetBooking?.id,
-            errorReason: `Bỏ qua sự kiện cũ (${incomingTargetStatus}) do giao dịch đã ở trạng thái ${targetPayment.status}.`,
+            errorReason:
+              'Đã khớp với giao dịch Admin xác nhận thủ công trước đó (không cộng trùng).',
             sanitizedPayload: normalized.sanitizedPayload,
           },
         })
+
         return {
           httpStatus: 200,
           body: {
             success: true,
-            ignoredStaleEvent: true,
+            matchedManualConfirm: true,
             paymentId: targetPayment.id,
-            status: targetPayment.status,
-          },
-        }
-      }
-
-      const updatedFailed = await payload.update({
-        collection: 'payments',
-        id: targetPayment.id,
-        overrideAccess: true,
-        data: {
-          status: incomingTargetStatus,
-          failureReason: `Provider thông báo ${incomingTargetStatus}: ${normalized.content}`,
-        },
-      })
-      await payload.create({
-        collection: 'payment-events',
-        overrideAccess: true,
-        data: {
-          eventId: normalized.eventId,
-          provider: providerName,
-          environment: siteConfig.environment,
-          externalTransactionId: normalized.externalTransactionId,
-          paymentReference: targetPayment.reference ?? undefined,
-          eventType: normalized.eventType,
-          transferAmount: 0,
-          verificationResult: 'VERIFIED',
-          processingStatus: 'PROCESSED',
-          retryCount: 0,
-          receivedAt: nowIso,
-          processedAt: nowIso,
-          payment: targetPayment.id,
-          booking: targetBooking?.id,
-          sanitizedPayload: normalized.sanitizedPayload,
-        },
-      })
-      return {
-        httpStatus: 200,
-        body: {
-          success: true,
-          paymentId: updatedFailed.id,
-          status: updatedFailed.status,
-        },
-      }
-    }
-
-    // Case C: Admin already confirmed this exact payment manually before the Webhook arrived (PAY-026)
-    if (
-      targetPayment &&
-      targetPayment.status === 'CONFIRMED' &&
-      targetPayment.reconciliationStatus === 'MANUAL_OVERRIDE' &&
-      Number(targetPayment.receivedAmount ?? targetPayment.amount) === normalized.transferAmount
-    ) {
-      await payload.update({
-        collection: 'payments',
-        id: targetPayment.id,
-        overrideAccess: true,
-        data: {
-          providerTransactionId:
-            targetPayment.providerTransactionId || normalized.externalTransactionId,
-          reconciliationStatus: 'MATCHED',
-          reconciliationNote: `${targetPayment.reconciliationNote ? `${targetPayment.reconciliationNote} · ` : ''}Webhook ${providerName} (${normalized.externalTransactionId}) đã khớp với xác nhận thủ công, không cộng tiền lần hai.`,
-        },
-      })
-
-      await payload.create({
-        collection: 'payment-events',
-        overrideAccess: true,
-        data: {
-          eventId: normalized.eventId,
-          provider: providerName,
-          environment: siteConfig.environment,
-          externalTransactionId: normalized.externalTransactionId,
-          paymentReference: targetPayment.reference ?? undefined,
-          eventType: normalized.eventType,
-          transferAmount: normalized.transferAmount,
-          verificationResult: 'VERIFIED',
-          processingStatus: 'IGNORED_DUPLICATE',
-          retryCount: 0,
-          receivedAt: nowIso,
-          processedAt: nowIso,
-          payment: targetPayment.id,
-          booking: targetBooking?.id,
-          errorReason: 'Đã khớp với giao dịch Admin xác nhận thủ công trước đó (không cộng trùng).',
-          sanitizedPayload: normalized.sanitizedPayload,
-        },
-      })
-
-      return {
-        httpStatus: 200,
-        body: {
-          success: true,
-          matchedManualConfirm: true,
-          paymentId: targetPayment.id,
-          status: 'CONFIRMED',
-        },
-      }
-    }
-
-    // Case D: Target payment is already CONFIRMED by a previous bank transfer, AND a second distinct transfer arrives!
-    // Record the second transfer separately as OVERPAID / REVIEW_REQUIRED so no real money is lost or silently dropped.
-    if (targetPayment && targetPayment.status === 'CONFIRMED') {
-      const duplicateTransferPayment = await payload.create({
-        collection: 'payments',
-        overrideAccess: true,
-        context: { allowLateWebhookRecord: true },
-        data: {
-          reference: `PAY-DUP-${crypto.randomUUID().slice(0, 6).toUpperCase()}`,
-          booking: targetBooking?.id,
-          customer: relationId(targetPayment.customer) ?? relationId(targetBooking?.customer),
-          paymentType: targetPayment.paymentType,
-          method: providerName === 'SEPAY' ? 'VIETQR_SEPAY' : 'ONLINE_MOCK',
-          provider: providerName,
-          environment: siteConfig.environment,
-          currency: 'VND',
-          amount: normalized.transferAmount,
-          expectedAmount: 0,
-          receivedAmount: normalized.transferAmount,
-          overpaidAmount: normalized.transferAmount,
-          status: 'REVIEW_REQUIRED',
-          reconciliationStatus: 'OVERPAID',
-          providerTransactionId: normalized.externalTransactionId,
-          providerPaymentRef: normalized.paymentReference ?? undefined,
-          transferContent: normalized.content,
-          paidAt: normalized.transactionDate,
-          verifiedAt: nowIso,
-          recordedBy: `Webhook ${providerName}`,
-          failureReason: `Khách hàng chuyển khoản thêm lần thứ hai (${formatVnd(normalized.transferAmount)}) cho mã ${targetPayment.reference} đã hoàn tất.`,
-          note: `Khoản chuyển thừa cần đối soát hoàn tiền (Mã GD NH: ${normalized.externalTransactionId})`,
-        },
-      })
-
-      await payload.create({
-        collection: 'payment-events',
-        overrideAccess: true,
-        data: {
-          eventId: normalized.eventId,
-          provider: providerName,
-          environment: siteConfig.environment,
-          externalTransactionId: normalized.externalTransactionId,
-          paymentReference: duplicateTransferPayment.reference ?? undefined,
-          eventType: normalized.eventType,
-          transferAmount: normalized.transferAmount,
-          verificationResult: 'VERIFIED',
-          processingStatus: 'REVIEW_REQUIRED',
-          retryCount: 0,
-          receivedAt: nowIso,
-          processedAt: nowIso,
-          payment: duplicateTransferPayment.id,
-          booking: targetBooking?.id,
-          errorReason: 'Khách chuyển khoản thừa lần 2 sau khi giao dịch gốc đã thanh toán đủ.',
-          sanitizedPayload: normalized.sanitizedPayload,
-        },
-      })
-
-      return {
-        httpStatus: 200,
-        body: {
-          success: true,
-          status: 'REVIEW_REQUIRED',
-          reconciliationStatus: 'OVERPAID',
-          paymentId: duplicateTransferPayment.id,
-        },
-      }
-    }
-
-    // Case E: Standard or Late/Partial/Overpaid transfer evaluation against targetPayment (or targetBooking)
-    if (!targetPayment && targetBooking) {
-      targetPayment = await payload.create({
-        collection: 'payments',
-        overrideAccess: true,
-        context: { allowLateWebhookRecord: true },
-        data: {
-          reference: `PAY-WH-${crypto.randomUUID().slice(0, 6).toUpperCase()}`,
-          booking: targetBooking.id,
-          customer: relationId(targetBooking.customer),
-          paymentType: 'DEPOSIT',
-          method: providerName === 'SEPAY' ? 'VIETQR_SEPAY' : 'ONLINE_MOCK',
-          provider: providerName,
-          environment: siteConfig.environment,
-          currency: 'VND',
-          amount: normalized.transferAmount,
-          expectedAmount: Number(
-            targetBooking.initialPaymentDue ||
-              targetBooking.depositSnapshot ||
-              targetBooking.totalPrice ||
-              normalized.transferAmount,
-          ),
-          receivedAmount: 0,
-          status: 'PENDING',
-          reconciliationStatus: 'NONE',
-        },
-      })
-    }
-
-    const expectedAmt = roundVndInteger(targetPayment!.expectedAmount ?? targetPayment!.amount)
-    const prevReceived =
-      targetPayment!.status === 'PARTIALLY_PAID'
-        ? roundVndInteger(targetPayment!.receivedAmount)
-        : 0
-
-    const evalResult = evaluateIncomingTransfer({
-      expectedAmount: expectedAmt,
-      previouslyReceivedAmount: prevReceived,
-      incomingAmount: normalized.transferAmount,
-      paymentStatus: targetPayment!.status,
-      bookingStatus: targetBooking?.status ?? 'CONFIRMED',
-      expiresAt: targetPayment!.expiresAt ?? null,
-      now,
-    })
-
-    const updatedPayment = await payload.update({
-      collection: 'payments',
-      id: targetPayment!.id,
-      overrideAccess: true,
-      context: { allowLateWebhookRecord: true },
-      data: {
-        status: evalResult.nextPaymentStatus,
-        reconciliationStatus: evalResult.reconciliationStatus,
-        receivedAmount: evalResult.newReceivedAmount,
-        overpaidAmount: evalResult.overpaidAmount,
-        providerTransactionId: normalized.externalTransactionId,
-        verifiedAt: nowIso,
-        paidAt: normalized.transactionDate || nowIso,
-        recordedBy: `Webhook ${providerName}`,
-        failureReason:
-          evalResult.reconciliationStatus !== 'MATCHED' ? evalResult.summaryMessage : undefined,
-        note: `${targetPayment!.note ? `${targetPayment!.note} · ` : ''}${evalResult.summaryMessage} (GD: ${normalized.externalTransactionId})`,
-      },
-    })
-
-    // Record durable payment-event
-    const createdEvent = await payload.create({
-      collection: 'payment-events',
-      overrideAccess: true,
-      data: {
-        eventId: normalized.eventId,
-        provider: providerName,
-        environment: siteConfig.environment,
-        externalTransactionId: normalized.externalTransactionId,
-        paymentReference: updatedPayment.reference ?? undefined,
-        eventType: normalized.eventType,
-        transferAmount: normalized.transferAmount,
-        verificationResult: 'VERIFIED',
-        processingStatus:
-          evalResult.nextPaymentStatus === 'REVIEW_REQUIRED' ? 'REVIEW_REQUIRED' : 'PROCESSED',
-        retryCount: 0,
-        receivedAt: nowIso,
-        processedAt: nowIso,
-        payment: updatedPayment.id,
-        booking: targetBooking?.id,
-        errorReason:
-          evalResult.reconciliationStatus !== 'MATCHED' ? evalResult.summaryMessage : undefined,
-        sanitizedPayload: normalized.sanitizedPayload,
-      },
-    })
-
-    // If booking exists and obligation is confirmed (and not late/closed), synchronize Booking state & Notifications
-    let bookingTransitionedTo: string | null = null
-    if (targetBooking) {
-      const { financial } = await computeBookingFinancialsFromDb(payload, targetBooking, {
-        siteConfig,
-      })
-
-      if (
-        evalResult.shouldConfirmBookingObligation &&
-        targetBooking.status === 'DEPOSIT_PENDING' &&
-        financial.remainingDepositDue === 0
-      ) {
-        const updatedBooking = await payload.update({
-          collection: 'bookings',
-          id: targetBooking.id,
-          overrideAccess: true,
-          context: {
-            noriSystemPaymentSync: true,
-            noriSystemActorLabel: `Hệ thống thanh toán (${providerName})`,
-          },
-          data: {
             status: 'CONFIRMED',
-            handoverNote: `${targetBooking.handoverNote ? `${targetBooking.handoverNote} · ` : ''}Đã xác minh tự động khoản thanh toán ${formatVnd(evalResult.newReceivedAmount)} qua ${providerName} (${normalized.externalTransactionId}).`,
           },
-        })
-        bookingTransitionedTo = updatedBooking.status ?? 'CONFIRMED'
-      } else if (evalResult.shouldConfirmBookingObligation) {
-        // Update existing BOOKING_CONFIRMED notifications so popup knows payment is confirmed
-        const existingNotifs = await payload.find({
-          collection: 'notifications',
-          overrideAccess: true,
-          depth: 0,
-          limit: 5,
-          where: {
-            and: [
-              { booking: { equals: targetBooking.id } },
-              { type: { equals: 'BOOKING_CONFIRMED' } },
-            ],
-          },
-        })
-        for (const n of existingNotifs.docs) {
-          await payload.update({
-            collection: 'notifications',
-            id: n.id,
-            overrideAccess: true,
-            data: { paymentConfirmed: true },
-          })
         }
       }
 
-      // Send customer notification for payment verification outcome (once per eventId)
-      const customerId = relationId(targetBooking.customer)
-      if (customerId) {
-        const notifType =
-          evalResult.nextPaymentStatus === 'CONFIRMED' ? 'PAYMENT_CONFIRMED' : 'PAYMENT_FAILED'
-        const notifTitle =
-          evalResult.nextPaymentStatus === 'CONFIRMED'
-            ? evalResult.overpaidAmount > 0
-              ? 'Đã nhận thanh toán (Đang đối soát khoản tiền thừa)'
-              : 'Thanh toán trực tuyến thành công!'
-            : evalResult.nextPaymentStatus === 'PARTIALLY_PAID'
-              ? 'Đã ghi nhận một phần thanh toán — Vẫn còn thiếu số dư'
-              : 'Giao dịch thanh toán đang chờ chuyên viên đối soát'
+      // Case D: Target payment is already CONFIRMED by a previous bank transfer, AND a second distinct transfer arrives!
+      // Record the second transfer separately as OVERPAID / REVIEW_REQUIRED so no real money is lost or silently dropped.
+      if (targetPayment && targetPayment.status === 'CONFIRMED') {
+        const duplicateTransferPayment = await payload.create({
+          collection: 'payments',
+          overrideAccess: true,
+          ...txReqOptions(tx.req, { allowLateWebhookRecord: true }),
+          data: {
+            reference: `PAY-DUP-${crypto.randomUUID().slice(0, 6).toUpperCase()}`,
+            booking: targetBooking?.id,
+            customer: relationId(targetPayment.customer) ?? relationId(targetBooking?.customer),
+            paymentType: targetPayment.paymentType,
+            method: providerName === 'SEPAY' ? 'VIETQR_SEPAY' : 'ONLINE_MOCK',
+            provider: providerName,
+            environment: siteConfig.environment,
+            currency: 'VND',
+            amount: normalized.transferAmount,
+            expectedAmount: 0,
+            receivedAmount: normalized.transferAmount,
+            overpaidAmount: normalized.transferAmount,
+            status: 'REVIEW_REQUIRED',
+            reconciliationStatus: 'OVERPAID',
+            providerTransactionId: normalized.externalTransactionId,
+            providerPaymentRef: normalized.paymentReference ?? undefined,
+            transferContent: normalized.content,
+            paidAt: normalized.transactionDate,
+            verifiedAt: nowIso,
+            recordedBy: `Webhook ${providerName}`,
+            failureReason: `Khách hàng chuyển khoản thêm lần thứ hai (${formatVnd(normalized.transferAmount)}) cho mã ${targetPayment.reference} đã hoàn tất.`,
+            note: `Khoản chuyển thừa cần đối soát hoàn tiền (Mã GD NH: ${normalized.externalTransactionId})`,
+          },
+        })
 
-        try {
-          await payload.create({
-            collection: 'notifications',
+        await payload.create({
+          collection: 'payment-events',
+          overrideAccess: true,
+          ...txReqOptions(tx.req),
+          data: {
+            eventId: normalized.eventId,
+            provider: providerName,
+            environment: siteConfig.environment,
+            externalTransactionId: normalized.externalTransactionId,
+            paymentReference: duplicateTransferPayment.reference ?? undefined,
+            eventType: normalized.eventType,
+            transferAmount: normalized.transferAmount,
+            verificationResult: 'VERIFIED',
+            processingStatus: 'REVIEW_REQUIRED',
+            retryCount: 0,
+            receivedAt: nowIso,
+            processedAt: nowIso,
+            payment: duplicateTransferPayment.id,
+            booking: targetBooking?.id,
+            errorReason: 'Khách chuyển khoản thừa lần 2 sau khi giao dịch gốc đã thanh toán đủ.',
+            sanitizedPayload: normalized.sanitizedPayload,
+          },
+        })
+
+        return {
+          httpStatus: 200,
+          body: {
+            success: true,
+            status: 'REVIEW_REQUIRED',
+            reconciliationStatus: 'OVERPAID',
+            paymentId: duplicateTransferPayment.id,
+          },
+        }
+      }
+
+      // Case E: Standard or Late/Partial/Overpaid transfer evaluation against targetPayment (or targetBooking)
+      if (!targetPayment && targetBooking) {
+        targetPayment = await payload.create({
+          collection: 'payments',
+          overrideAccess: true,
+          ...txReqOptions(tx.req, { allowLateWebhookRecord: true }),
+          data: {
+            reference: `PAY-WH-${crypto.randomUUID().slice(0, 6).toUpperCase()}`,
+            booking: targetBooking.id,
+            customer: relationId(targetBooking.customer),
+            paymentType: 'DEPOSIT',
+            method: providerName === 'SEPAY' ? 'VIETQR_SEPAY' : 'ONLINE_MOCK',
+            provider: providerName,
+            environment: siteConfig.environment,
+            currency: 'VND',
+            amount: normalized.transferAmount,
+            expectedAmount: Number(
+              targetBooking.initialPaymentDue ||
+                targetBooking.depositSnapshot ||
+                targetBooking.totalPrice ||
+                normalized.transferAmount,
+            ),
+            receivedAmount: 0,
+            status: 'PENDING',
+            reconciliationStatus: 'NONE',
+          },
+        })
+      }
+
+      const expectedAmt = roundVndInteger(targetPayment!.expectedAmount ?? targetPayment!.amount)
+      const prevReceived =
+        targetPayment!.status === 'PARTIALLY_PAID'
+          ? roundVndInteger(targetPayment!.receivedAmount)
+          : 0
+
+      const evalResult = evaluateIncomingTransfer({
+        expectedAmount: expectedAmt,
+        previouslyReceivedAmount: prevReceived,
+        incomingAmount: normalized.transferAmount,
+        paymentStatus: targetPayment!.status,
+        bookingStatus: targetBooking?.status ?? 'CONFIRMED',
+        expiresAt: targetPayment!.expiresAt ?? null,
+        now,
+      })
+
+      const updatedPayment = await payload.update({
+        collection: 'payments',
+        id: targetPayment!.id,
+        overrideAccess: true,
+        ...txReqOptions(tx.req, { allowLateWebhookRecord: true }),
+        data: {
+          status: evalResult.nextPaymentStatus,
+          reconciliationStatus: evalResult.reconciliationStatus,
+          receivedAmount: evalResult.newReceivedAmount,
+          overpaidAmount: evalResult.overpaidAmount,
+          providerTransactionId: normalized.externalTransactionId,
+          verifiedAt: nowIso,
+          paidAt: normalized.transactionDate || nowIso,
+          recordedBy: `Webhook ${providerName}`,
+          failureReason:
+            evalResult.reconciliationStatus !== 'MATCHED' ? evalResult.summaryMessage : undefined,
+          note: `${targetPayment!.note ? `${targetPayment!.note} · ` : ''}${evalResult.summaryMessage} (GD: ${normalized.externalTransactionId})`,
+        },
+      })
+
+      // Record durable payment-event
+      const createdEvent = await payload.create({
+        collection: 'payment-events',
+        overrideAccess: true,
+        ...txReqOptions(tx.req),
+        data: {
+          eventId: normalized.eventId,
+          provider: providerName,
+          environment: siteConfig.environment,
+          externalTransactionId: normalized.externalTransactionId,
+          paymentReference: updatedPayment.reference ?? undefined,
+          eventType: normalized.eventType,
+          transferAmount: normalized.transferAmount,
+          verificationResult: 'VERIFIED',
+          processingStatus:
+            evalResult.nextPaymentStatus === 'REVIEW_REQUIRED' ? 'REVIEW_REQUIRED' : 'PROCESSED',
+          retryCount: 0,
+          receivedAt: nowIso,
+          processedAt: nowIso,
+          payment: updatedPayment.id,
+          booking: targetBooking?.id,
+          errorReason:
+            evalResult.reconciliationStatus !== 'MATCHED' ? evalResult.summaryMessage : undefined,
+          sanitizedPayload: normalized.sanitizedPayload,
+        },
+      })
+
+      // If booking exists and obligation is confirmed (and not late/closed), synchronize Booking state & Notifications
+      let bookingTransitionedTo: string | null = null
+      if (targetBooking) {
+        const { financial } = await computeBookingFinancialsFromDb(payload, targetBooking, {
+          siteConfig,
+          req: tx.req,
+        })
+
+        if (
+          evalResult.shouldConfirmBookingObligation &&
+          targetBooking.status === 'DEPOSIT_PENDING' &&
+          financial.remainingDepositDue === 0
+        ) {
+          const updatedBooking = await payload.update({
+            collection: 'bookings',
+            id: targetBooking.id,
             overrideAccess: true,
+            ...txReqOptions(tx.req, {
+              noriSystemPaymentSync: true,
+              noriSystemActorLabel: `Hệ thống thanh toán (${providerName})`,
+            }),
             data: {
-              eventKey: `WEBHOOK_PAY:${normalized.eventId}`,
-              customer: customerId,
-              booking: targetBooking.id,
-              type: notifType,
-              title: notifTitle,
-              message: `Đơn thuê ${targetBooking.bookingKey}: ${evalResult.summaryMessage}`,
-              bookingKey: String(targetBooking.bookingKey ?? targetBooking.id),
-              vehicleName: targetBooking.vehicleNameSnapshot ?? 'Phương tiện NORI',
-              startDate: targetBooking.startDate,
-              endDate: targetBooking.endDate,
-              paymentConfirmed: evalResult.nextPaymentStatus === 'CONFIRMED',
-              superseded: false,
-              isRead: false,
-              popupDismissed: true,
+              status: 'CONFIRMED',
+              handoverNote: `${targetBooking.handoverNote ? `${targetBooking.handoverNote} · ` : ''}Đã xác minh tự động khoản thanh toán ${formatVnd(evalResult.newReceivedAmount)} qua ${providerName} (${normalized.externalTransactionId}).`,
             },
           })
-        } catch {
-          // Ignore duplicate notification
+          bookingTransitionedTo = updatedBooking.status ?? 'CONFIRMED'
+        } else if (evalResult.shouldConfirmBookingObligation) {
+          // Update existing BOOKING_CONFIRMED notifications so popup knows payment is confirmed
+          const existingNotifs = await payload.find({
+            collection: 'notifications',
+            overrideAccess: true,
+            depth: 0,
+            limit: 5,
+            ...txReqOptions(tx.req),
+            where: {
+              and: [
+                { booking: { equals: targetBooking.id } },
+                { type: { equals: 'BOOKING_CONFIRMED' } },
+              ],
+            },
+          })
+          for (const n of existingNotifs.docs) {
+            await payload.update({
+              collection: 'notifications',
+              id: n.id,
+              overrideAccess: true,
+              ...txReqOptions(tx.req),
+              data: { paymentConfirmed: true },
+            })
+          }
+        }
+
+        // Send customer notification for payment verification outcome (once per eventId)
+        const customerId = relationId(targetBooking.customer)
+        if (customerId) {
+          const notifType =
+            evalResult.nextPaymentStatus === 'CONFIRMED' ? 'PAYMENT_CONFIRMED' : 'PAYMENT_FAILED'
+          const notifTitle =
+            evalResult.nextPaymentStatus === 'CONFIRMED'
+              ? evalResult.overpaidAmount > 0
+                ? 'Đã nhận thanh toán (Đang đối soát khoản tiền thừa)'
+                : 'Thanh toán trực tuyến thành công!'
+              : evalResult.nextPaymentStatus === 'PARTIALLY_PAID'
+                ? 'Đã ghi nhận một phần thanh toán — Vẫn còn thiếu số dư'
+                : 'Giao dịch thanh toán đang chờ chuyên viên đối soát'
+          const notifBooking = targetBooking
+          tx.afterCommit(async () => {
+            await payload.create({
+              collection: 'notifications',
+              overrideAccess: true,
+              data: {
+                eventKey: `WEBHOOK_PAY:${normalized.eventId}`,
+                customer: customerId,
+                booking: notifBooking.id,
+                type: notifType,
+                title: notifTitle,
+                message: `Đơn thuê ${notifBooking.bookingKey}: ${evalResult.summaryMessage}`,
+                bookingKey: String(notifBooking.bookingKey ?? notifBooking.id),
+                vehicleName: notifBooking.vehicleNameSnapshot ?? 'Phương tiện NORI',
+                startDate: notifBooking.startDate,
+                endDate: notifBooking.endDate,
+                paymentConfirmed: evalResult.nextPaymentStatus === 'CONFIRMED',
+                superseded: false,
+                isRead: false,
+                popupDismissed: true,
+              },
+            })
+          })
         }
       }
-    }
 
-    try {
-      await payload.create({
-        collection: 'audit-logs',
-        overrideAccess: true,
-        data: {
-          action: 'payment.webhook_processed',
-          entity: 'payment',
-          entityId: updatedPayment.id,
-          entityLabel: String(updatedPayment.reference ?? updatedPayment.id),
-          summary: `Webhook ${providerName} (${normalized.externalTransactionId}): ${evalResult.summaryMessage}`,
-          fromStatus: targetPayment!.status,
-          toStatus: updatedPayment.status,
-          actorType: 'SYSTEM',
-        },
+      const priorPayStatus = targetPayment!.status
+      tx.afterCommit(async () => {
+        await payload.create({
+          collection: 'audit-logs',
+          overrideAccess: true,
+          data: {
+            action: 'payment.webhook_processed',
+            entity: 'payment',
+            entityId: updatedPayment.id,
+            entityLabel: String(updatedPayment.reference ?? updatedPayment.id),
+            summary: `Webhook ${providerName} (${normalized.externalTransactionId}): ${evalResult.summaryMessage}`,
+            fromStatus: priorPayStatus,
+            toStatus: updatedPayment.status,
+            actorType: 'SYSTEM',
+          },
+        })
       })
-    } catch {
-      // Non-blocking audit log
-    }
 
-    return {
-      httpStatus: 200,
-      body: {
-        success: true,
-        eventId: createdEvent.eventId,
-        paymentId: updatedPayment.id,
-        paymentReference: updatedPayment.reference,
-        status: updatedPayment.status,
-        reconciliationStatus: updatedPayment.reconciliationStatus,
-        receivedAmount: updatedPayment.receivedAmount,
-        overpaidAmount: updatedPayment.overpaidAmount,
-        bookingTransitionedTo,
-        message: evalResult.summaryMessage,
-      },
+      return {
+        httpStatus: 200,
+        body: {
+          success: true,
+          eventId: createdEvent.eventId,
+          paymentId: updatedPayment.id,
+          paymentReference: updatedPayment.reference,
+          status: updatedPayment.status,
+          reconciliationStatus: updatedPayment.reconciliationStatus,
+          receivedAmount: updatedPayment.receivedAmount,
+          overpaidAmount: updatedPayment.overpaidAmount,
+          bookingTransitionedTo,
+          message: evalResult.summaryMessage,
+        },
+      }
+    })
+  } catch (err) {
+    if (isUniqueConstraintError(err)) {
+      return {
+        httpStatus: 200,
+        body: {
+          success: true,
+          duplicate: true,
+          eventId: normalized.eventId,
+          message: 'Giao dịch đã được ghi nhận đồng thời (idempotent).',
+        },
+      }
     }
-  })
+    throw err
+  }
 }
 
 export async function confirmPaymentManuallyByAdmin(params: {
@@ -1487,13 +1621,25 @@ export async function confirmPaymentManuallyByAdmin(params: {
     throw new APIError('Vui lòng cung cấp mã giao dịch ngân hàng hoặc bằng chứng đối soát.', 400)
   }
 
-  return await withBookingWriteLock(async () => {
+  const initialPayment = await payload
+    .findByID({
+      collection: 'payments',
+      id: paymentId,
+      overrideAccess: true,
+      depth: 0,
+    })
+    .catch(() => null)
+  const initialBookingId = relationId(initialPayment?.booking)
+  const lockKey = initialBookingId ? `payment-booking:${initialBookingId}` : `payment:${paymentId}`
+
+  return await withAtomicResourceLock(payload, lockKey, async (tx) => {
     const payment = await payload
       .findByID({
         collection: 'payments',
         id: paymentId,
         overrideAccess: true,
         depth: 0,
+        ...txReqOptions(tx.req),
       })
       .catch(() => null)
 
@@ -1522,6 +1668,7 @@ export async function confirmPaymentManuallyByAdmin(params: {
           id: bookingId,
           overrideAccess: true,
           depth: 0,
+          ...txReqOptions(tx.req),
         })
         .catch(() => null)
       if (booking && ['CANCELLED', 'REJECTED'].includes(String(booking.status ?? ''))) {
@@ -1556,6 +1703,7 @@ export async function confirmPaymentManuallyByAdmin(params: {
       collection: 'payments',
       id: payment.id,
       overrideAccess: true,
+      ...txReqOptions(tx.req),
       data: {
         status: nextStatus,
         reconciliationStatus: nextRecon,
@@ -1570,16 +1718,16 @@ export async function confirmPaymentManuallyByAdmin(params: {
     })
 
     if (booking && nextStatus === 'CONFIRMED') {
-      const { financial } = await computeBookingFinancialsFromDb(payload, booking)
+      const { financial } = await computeBookingFinancialsFromDb(payload, booking, { req: tx.req })
       if (booking.status === 'DEPOSIT_PENDING' && financial.remainingDepositDue === 0) {
         await payload.update({
           collection: 'bookings',
           id: booking.id,
           overrideAccess: true,
-          context: {
+          ...txReqOptions(tx.req, {
             noriSystemPaymentSync: true,
             noriSystemActorLabel: admin.email,
-          },
+          }),
           data: {
             status: 'CONFIRMED',
             handoverNote: `${booking.handoverNote ? `${booking.handoverNote} · ` : ''}Admin (${admin.email}) xác nhận đã nhận cọc (${cleanEvidence}).`,
@@ -1588,31 +1736,32 @@ export async function confirmPaymentManuallyByAdmin(params: {
       }
       const customerId = relationId(booking.customer)
       if (customerId) {
-        await payload
-          .create({
+        const notifBooking = booking
+        tx.afterCommit(async () => {
+          await payload.create({
             collection: 'notifications',
             overrideAccess: true,
             data: {
               eventKey: `MANUAL_CONFIRM:${payment.id}:${nowIso.slice(0, 16)}`,
               customer: customerId,
-              booking: booking.id,
+              booking: notifBooking.id,
               type: 'PAYMENT_CONFIRMED',
               title: 'Đã xác nhận thanh toán đơn thuê',
-              message: `Khoản thanh toán ${formatVnd(verifiedReceived)} (Mã phiếu ${payment.reference}) của đơn ${booking.bookingKey} đã được chuyên viên NORI đối soát và xác nhận.`,
-              bookingKey: String(booking.bookingKey ?? booking.id),
-              vehicleName: booking.vehicleNameSnapshot ?? 'Phương tiện NORI',
+              message: `Khoản thanh toán ${formatVnd(verifiedReceived)} (Mã phiếu ${payment.reference}) của đơn ${notifBooking.bookingKey} đã được chuyên viên NORI đối soát và xác nhận.`,
+              bookingKey: String(notifBooking.bookingKey ?? notifBooking.id),
+              vehicleName: notifBooking.vehicleNameSnapshot ?? 'Phương tiện NORI',
               paymentConfirmed: true,
               superseded: false,
               isRead: false,
               popupDismissed: true,
             },
           })
-          .catch(() => null)
+        })
       }
     }
 
-    await payload
-      .create({
+    tx.afterCommit(async () => {
+      await payload.create({
         collection: 'audit-logs',
         overrideAccess: true,
         data: {
@@ -1628,7 +1777,7 @@ export async function confirmPaymentManuallyByAdmin(params: {
           actorEmail: admin.email,
         },
       })
-      .catch(() => null)
+    })
 
     return {
       alreadyConfirmed: false,
@@ -1659,7 +1808,20 @@ export async function createOrProcessAdminRefund(params: {
 }) {
   const { payload, admin } = params
 
-  return await withBookingWriteLock(async () => {
+  let resolvedLockBookingId = params.bookingId || null
+  if (!resolvedLockBookingId && params.refundId) {
+    const refDoc = await payload
+      .findByID({ collection: 'refunds', id: params.refundId, overrideAccess: true, depth: 0 })
+      .catch(() => null)
+    resolvedLockBookingId = relationId(refDoc?.booking) ?? null
+  }
+  const lockKey = resolvedLockBookingId
+    ? `payment-booking:${resolvedLockBookingId}`
+    : params.refundId
+      ? `refund:${params.refundId}`
+      : 'refund:global'
+
+  return await withAtomicResourceLock(payload, lockKey, async (tx) => {
     const nowIso = new Date().toISOString()
 
     if (params.action === 'create') {
@@ -1671,6 +1833,7 @@ export async function createOrProcessAdminRefund(params: {
           id: bookingId,
           overrideAccess: true,
           depth: 0,
+          ...txReqOptions(tx.req),
         })
         .catch(() => null)
       if (!booking) throw new APIError('Không tìm thấy đơn thuê.', 404)
@@ -1678,6 +1841,7 @@ export async function createOrProcessAdminRefund(params: {
       const { financial, payments, refunds } = await computeBookingFinancialsFromDb(
         payload,
         booking,
+        { req: tx.req },
       )
 
       let targetPayment: Payment | null = null
@@ -1742,6 +1906,7 @@ export async function createOrProcessAdminRefund(params: {
       const createdRefund = await payload.create({
         collection: 'refunds',
         overrideAccess: true,
+        ...txReqOptions(tx.req),
         data: {
           reference: refundRef,
           booking: booking.id,
@@ -1768,6 +1933,7 @@ export async function createOrProcessAdminRefund(params: {
           collection: 'payments',
           id: targetPayment.id,
           overrideAccess: true,
+          ...txReqOptions(tx.req),
           data: {
             status: 'REFUND_PENDING',
           },
@@ -1776,8 +1942,8 @@ export async function createOrProcessAdminRefund(params: {
 
       const customerId = relationId(booking.customer)
       if (customerId) {
-        await payload
-          .create({
+        tx.afterCommit(async () => {
+          await payload.create({
             collection: 'notifications',
             overrideAccess: true,
             data: {
@@ -1794,7 +1960,7 @@ export async function createOrProcessAdminRefund(params: {
               popupDismissed: true,
             },
           })
-          .catch(() => null)
+        })
       }
 
       return {
@@ -1814,6 +1980,7 @@ export async function createOrProcessAdminRefund(params: {
         id: params.refundId,
         overrideAccess: true,
         depth: 0,
+        ...txReqOptions(tx.req),
       })
       .catch(() => null)
     if (!existingRefund) {
@@ -1831,6 +1998,7 @@ export async function createOrProcessAdminRefund(params: {
             id: bookingId,
             overrideAccess: true,
             depth: 0,
+            ...txReqOptions(tx.req),
           })
           .catch(() => null)
       : null
@@ -1840,6 +2008,7 @@ export async function createOrProcessAdminRefund(params: {
         collection: 'refunds',
         id: existingRefund.id,
         overrideAccess: true,
+        ...txReqOptions(tx.req),
         data: {
           status: 'REJECTED',
           reconciliationNote:
@@ -1849,13 +2018,20 @@ export async function createOrProcessAdminRefund(params: {
       const pId = relationId(existingRefund.payment)
       if (pId) {
         const origPay = await payload
-          .findByID({ collection: 'payments', id: pId, overrideAccess: true, depth: 0 })
+          .findByID({
+            collection: 'payments',
+            id: pId,
+            overrideAccess: true,
+            depth: 0,
+            ...txReqOptions(tx.req),
+          })
           .catch(() => null)
         if (origPay && origPay.status === 'REFUND_PENDING') {
           await payload.update({
             collection: 'payments',
             id: origPay.id,
             overrideAccess: true,
+            ...txReqOptions(tx.req),
             data: {
               status: Number(origPay.refundedAmount ?? 0) > 0 ? 'PARTIALLY_REFUNDED' : 'CONFIRMED',
             },
@@ -1870,6 +2046,7 @@ export async function createOrProcessAdminRefund(params: {
       collection: 'refunds',
       id: existingRefund.id,
       overrideAccess: true,
+      ...txReqOptions(tx.req),
       data: {
         status: 'REFUNDED',
         completedBy: admin.email,
@@ -1888,7 +2065,13 @@ export async function createOrProcessAdminRefund(params: {
     const pId = relationId(existingRefund.payment)
     if (pId) {
       const origPay = await payload
-        .findByID({ collection: 'payments', id: pId, overrideAccess: true, depth: 0 })
+        .findByID({
+          collection: 'payments',
+          id: pId,
+          overrideAccess: true,
+          depth: 0,
+          ...txReqOptions(tx.req),
+        })
         .catch(() => null)
       if (origPay) {
         const origReceived = roundVndInteger(origPay.receivedAmount ?? origPay.amount)
@@ -1903,6 +2086,7 @@ export async function createOrProcessAdminRefund(params: {
           collection: 'payments',
           id: origPay.id,
           overrideAccess: true,
+          ...txReqOptions(tx.req),
           data: {
             refundedAmount: nextRefundedTotal,
             status: nextPayStatus,
@@ -1914,8 +2098,8 @@ export async function createOrProcessAdminRefund(params: {
 
     const customerId = relationId(existingRefund.customer) ?? relationId(booking?.customer)
     if (customerId && booking) {
-      await payload
-        .create({
+      tx.afterCommit(async () => {
+        await payload.create({
           collection: 'notifications',
           overrideAccess: true,
           data: {
@@ -1932,11 +2116,11 @@ export async function createOrProcessAdminRefund(params: {
             popupDismissed: true,
           },
         })
-        .catch(() => null)
+      })
     }
 
-    await payload
-      .create({
+    tx.afterCommit(async () => {
+      await payload.create({
         collection: 'audit-logs',
         overrideAccess: true,
         data: {
@@ -1952,7 +2136,7 @@ export async function createOrProcessAdminRefund(params: {
           actorEmail: admin.email,
         },
       })
-      .catch(() => null)
+    })
 
     return {
       refund: completedRefund,

@@ -35,6 +35,10 @@ function resolveCacheDir(): string {
   if (process.env.NORI_IMAGE_CACHE_DIR?.trim()) {
     return path.resolve(/*turbopackIgnore: true*/ process.env.NORI_IMAGE_CACHE_DIR.trim())
   }
+  // Vercel serverless filesystem (/var/task) is read-only outside /tmp
+  if (process.env.VERCEL === '1' || process.env.VERCEL_ENV?.trim()) {
+    return path.join(/*turbopackIgnore: true*/ os.tmpdir(), 'nori-media-opt')
+  }
   return path.resolve(/*turbopackIgnore: true*/ cwd, '.next', 'cache', 'nori-media-opt')
 }
 
@@ -105,7 +109,9 @@ export async function resolveValidMediaSource(
     if (cloudBuffer && cloudBuffer.byteLength > 0) {
       const cacheDir = resolveCacheDir()
       const cachedFilePath = path.join(cacheDir, 'cloud-cache', cleanFilename)
-      await fsPromises.mkdir(path.dirname(cachedFilePath), { recursive: true }).catch(() => undefined)
+      await fsPromises
+        .mkdir(path.dirname(cachedFilePath), { recursive: true })
+        .catch(() => undefined)
       await fsPromises.writeFile(cachedFilePath, cloudBuffer).catch(() => undefined)
 
       return {

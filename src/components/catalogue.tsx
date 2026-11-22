@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import type { Category, ModelView } from '@/lib/catalogue'
-import { api } from '@/lib/client-api'
+import { getSharedPublicLocations, getWithRetry } from '@/lib/client-api'
 import type { PublicLocationsPayload } from '@/lib/domain-types'
 import { formatDate, subCategoryLabels } from '@/lib/rental-rules'
 import { Button, EmptyState, Heading, IconButton, Input, Notice, Select, Text, cn } from './ui'
@@ -79,7 +79,7 @@ export function Catalogue({ models }: { models: ModelView[] }) {
   useEffect(() => setLocation(queryLocation), [queryLocation])
   useEffect(() => {
     let active = true
-    api<PublicLocationsPayload>('/locations')
+    getSharedPublicLocations()
       .then((res) => {
         if (active) setPublicLocs(res)
       })
@@ -94,7 +94,7 @@ export function Catalogue({ models }: { models: ModelView[] }) {
       setBranchAvailNotice('')
       return
     }
-    let active = true
+    const controller = new AbortController()
     const sp = new URLSearchParams({ mode: 'catalogue', pickupBranchId })
     if (returnBranchId && returnBranchId !== pickupBranchId) {
       sp.set('returnBranchId', returnBranchId)
@@ -103,11 +103,12 @@ export function Catalogue({ models }: { models: ModelView[] }) {
       sp.set('startDate', startDate)
       sp.set('endDate', endDate)
     }
-    api<{ availableModelIds: string[]; availableVehicleCount: number }>(
+    getWithRetry<{ availableModelIds: string[]; availableVehicleCount: number }>(
       `/availability?${sp.toString()}`,
+      { signal: controller.signal, retries: 1 },
     )
       .then((res) => {
-        if (!active) return
+        if (controller.signal.aborted) return
         setBranchAvailModelIds(res.availableModelIds ?? [])
         setBranchAvailNotice(
           res.availableVehicleCount === 0
@@ -116,10 +117,10 @@ export function Catalogue({ models }: { models: ModelView[] }) {
         )
       })
       .catch(() => {
-        if (active) setBranchAvailModelIds(null)
+        if (!controller.signal.aborted) setBranchAvailModelIds(null)
       })
     return () => {
-      active = false
+      controller.abort()
     }
   }, [intent, pickupBranchId, returnBranchId, startDate, endDate])
   useEffect(() => {

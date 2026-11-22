@@ -7,25 +7,27 @@ on:
   pull_request:
     branches:
       - main
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  NODE_ENV: test
+  NODE_OPTIONS: '--experimental-strip-types'
+  PAYLOAD_SECRET: ci-test-payload-secret-at-least-32-chars-long-for-testing
+  NORI_SESSION_SECRET: ci-test-session-secret-at-least-32-chars-long-for-testing
+  PAYMENT_MODE: MOCK
+  PAYMENT_ENABLED: 'true'
+
 jobs:
-  validate-and-test:
-    name: Typecheck, Lint, Test & Build
+  quality-and-tests:
+    name: Quality, Security, Unit & SQLite Parity
     runs-on: ubuntu-latest
     timeout-minutes: 15
-
     env:
-      NODE_ENV: test
-      NODE_OPTIONS: '--experimental-strip-types'
-      PAYLOAD_SECRET: ci-test-payload-secret-at-least-32-chars-long-for-testing
-      NORI_SESSION_SECRET: ci-test-session-secret-at-least-32-chars-long-for-testing
       DATABASE_URI: file:./nori.db
-      PAYMENT_MODE: MOCK
-      PAYMENT_ENABLED: true
 
     steps:
       - name: Checkout Code
@@ -45,50 +47,126 @@ jobs:
       - name: Validate Environment Config
         run: pnpm env:check
 
+      - name: Code Formatting Check
+        run: pnpm format:check
+
       - name: TypeScript Typecheck
         run: pnpm typecheck
 
-      - name: Static Code Lint
+      - name: Static Code & Security Lint
         run: pnpm lint
 
-      - name: Initialize Database For Tests
-        run: |
-          node scripts/init-ci.mjs 2>&1 | tee /tmp/init-db.log || {
-            echo "### Database Init Failed" >> $GITHUB_STEP_SUMMARY
-            echo '```' >> $GITHUB_STEP_SUMMARY
-            cat /tmp/init-db.log >> $GITHUB_STEP_SUMMARY
-            echo '```' >> $GITHUB_STEP_SUMMARY
-            exit 1
-          }
+      - name: Media Integrity Audit
+        run: pnpm media:audit
 
-      - name: Run Test Suite
-        run: |
-          pnpm test 2>&1 | tee /tmp/test-suite.log || {
-            echo "### Test Suite Failed" >> $GITHUB_STEP_SUMMARY
-            echo '```' >> $GITHUB_STEP_SUMMARY
-            tail -n 120 /tmp/test-suite.log >> $GITHUB_STEP_SUMMARY
-            echo '```' >> $GITHUB_STEP_SUMMARY
-            exit 1
-          }
+      - name: Initialize SQLite DB For Tests
+        run: node scripts/init-ci.mjs
 
-      - name: Verify Database Migrations Idempotency
-        run: |
-          pnpm db:check 2>&1 | tee /tmp/db-check.log || {
-            echo "### DB Check Failed" >> $GITHUB_STEP_SUMMARY
-            echo '```' >> $GITHUB_STEP_SUMMARY
-            cat /tmp/db-check.log >> $GITHUB_STEP_SUMMARY
-            echo '```' >> $GITHUB_STEP_SUMMARY
-            exit 1
-          }
+      - name: Run Unit & Integration Test Suite
+        run: pnpm test
 
-      - name: Production Build Check
-        run: |
-          pnpm build 2>&1 | tee /tmp/build.log || {
-            echo "### Build Failed" >> $GITHUB_STEP_SUMMARY
-            echo '```' >> $GITHUB_STEP_SUMMARY
-            tail -n 120 /tmp/build.log >> $GITHUB_STEP_SUMMARY
-            echo '```' >> $GITHUB_STEP_SUMMARY
-            exit 1
-          }
+      - name: Run Isolated Admin Security Tests
+        run: pnpm test:admin
+
+      - name: Verify SQLite Migrations Idempotency
+        run: pnpm db:check
+
+  postgres-parity:
+    name: PostgreSQL Migration, Rollback & Concurrency Parity
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: nori_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres -d nori_ci"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=10
+
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/nori_ci
+      NORI_PG_PARITY_URL: postgresql://postgres:postgres@127.0.0.1:5432/nori_ci
+      NORI_REQUIRE_POSTGRES: '1'
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Install pnpm 10
+        run: npm install -g pnpm@10
+
+      - name: Install Dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Validate PostgreSQL Env Config
+        run: pnpm env:check
+
+      - name: Apply PostgreSQL Migrations From Clean State
+        run: echo "y" | pnpm payload migrate
+
+      - name: Audit PostgreSQL Schema Parity (109 Tables & Pending Check)
+        run: pnpm db:pg:audit
+
+      - name: Validate Safe Rollback & Re-apply of Latest Parity Migration
+        run: pnpm payload migrate:down && echo "y" | pnpm payload migrate && pnpm db:pg:audit
+
+      - name: Run Live PostgreSQL Concurrency & Constraint Suite
+        run: node --test tests/postgres-parity.test.mjs
+
+  build-and-e2e:
+    name: Production Build & Isolated Playwright E2E
+    needs:
+      - quality-and-tests
+      - postgres-parity
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DATABASE_URI: file:./nori.db
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Install pnpm 10
+        run: npm install -g pnpm@10
+
+      - name: Install Dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Initialize DB & Verify Production Build
         env:
           NODE_ENV: production
+        run: node scripts/init-ci.mjs && pnpm build
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Run Isolated Playwright E2E Suite
+        run: pnpm test:e2e:isolated
+
+      - name: Upload Playwright Report on Failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-failure-artifacts
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7

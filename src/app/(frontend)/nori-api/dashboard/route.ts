@@ -1,7 +1,7 @@
 import { adminHasPermission } from '@/access/nori'
 import { requireAdmin, resolveCustomerDisplayNames } from '@/lib/admin-api'
 import { apiError, assertOrigin, body, fail, json, text } from '@/lib/api-utils'
-import { withBookingWriteLock } from '@/lib/promo-service'
+import { txReqOptions, withAtomicResourceLock } from '@/lib/db-tx'
 import { HOLD_STATUSES, isDepositExpired, type BookingStatus } from '@/lib/rental-rules'
 
 const VALID_BOOKING_STATUSES = [
@@ -723,15 +723,35 @@ export async function PATCH(request: Request) {
     ) {
       return fail('Phiên bản đơn thuê đối chiếu không hợp lệ.')
     }
-    const result = await withBookingWriteLock(() =>
-      payload.update({
+    const targetBookingId = text(data.id, 100)
+    const preBooking = await payload
+      .findByID({
         collection: 'bookings',
-        id: text(data.id, 100),
+        id: targetBookingId,
         user,
         overrideAccess: false,
-        context: {
-          ...(expectedRevision !== undefined ? { expectedRevision } : {}),
-        },
+        depth: 0,
+      })
+      .catch(() => null)
+    const preVehicleId =
+      preBooking && typeof preBooking.vehicle === 'object' && preBooking.vehicle
+        ? String(preBooking.vehicle.id)
+        : typeof preBooking?.vehicle === 'string'
+          ? preBooking.vehicle
+          : null
+    const lockKey = preVehicleId ? `vehicle-booking:${preVehicleId}` : `booking:${targetBookingId}`
+
+    const result = await withAtomicResourceLock(payload, lockKey, (tx) =>
+      payload.update({
+        collection: 'bookings',
+        id: targetBookingId,
+        user,
+        overrideAccess: false,
+        ...txReqOptions(
+          tx.req,
+          expectedRevision !== undefined ? { expectedRevision } : undefined,
+          user,
+        ),
         data: {
           status: status as BookingStatus,
           ...(handoverNote ? { handoverNote } : {}),

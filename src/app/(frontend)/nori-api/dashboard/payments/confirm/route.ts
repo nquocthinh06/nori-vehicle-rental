@@ -1,11 +1,22 @@
 import { requireAdmin } from '@/lib/admin-api'
-import { apiError, assertOrigin, body, fail, json, text } from '@/lib/api-utils'
+import {
+  apiError,
+  assertOrigin,
+  body,
+  createRequestLogger,
+  fail,
+  json,
+  text,
+} from '@/lib/api-utils'
 import { confirmPaymentManuallyByAdmin } from '@/lib/payment-service'
 
 export async function POST(request: Request) {
+  const logger = createRequestLogger('nori-api/dashboard/payments/confirm', request)
   try {
     assertOrigin(request)
-    const auth = await requireAdmin({ permission: ['payments', 'update'] })
+    const auth = await logger.time('auth', () =>
+      requireAdmin({ permission: ['payments', 'update'] }),
+    )
     if (!auth.ok) return auth.response
     const { payload, admin } = auth
 
@@ -35,25 +46,35 @@ export async function POST(request: Request) {
       receivedAmount = parsed
     }
 
-    const result = await confirmPaymentManuallyByAdmin({
-      payload,
-      admin: { id: admin.id, email: admin.email },
-      paymentId,
-      reason,
-      transactionEvidence,
-      receivedAmount,
-    })
+    const result = await logger.time('manual_confirm', () =>
+      confirmPaymentManuallyByAdmin({
+        payload,
+        admin: { id: admin.id, email: admin.email },
+        paymentId,
+        reason,
+        transactionEvidence,
+        receivedAmount,
+      }),
+    )
 
-    return json({
+    logger.logSuccess(200, {
       alreadyConfirmed: result.alreadyConfirmed,
-      id: result.payment.id,
-      reference: result.payment.reference,
       status: result.payment.status,
-      reconciliationStatus: result.payment.reconciliationStatus,
-      receivedAmount: result.payment.receivedAmount,
-      message: result.message,
     })
+    return json(
+      {
+        alreadyConfirmed: result.alreadyConfirmed,
+        id: result.payment.id,
+        reference: result.payment.reference,
+        status: result.payment.status,
+        reconciliationStatus: result.payment.reconciliationStatus,
+        receivedAmount: result.payment.receivedAmount,
+        message: result.message,
+      },
+      200,
+      logger.responseHeaders(),
+    )
   } catch (error) {
-    return apiError(error)
+    return apiError(error, { logger, route: 'nori-api/dashboard/payments/confirm' })
   }
 }

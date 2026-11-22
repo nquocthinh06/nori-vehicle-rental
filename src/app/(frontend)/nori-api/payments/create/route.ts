@@ -1,5 +1,14 @@
 import { appAuth } from '@/lib/app-auth'
-import { apiError, assertOrigin, assertRateLimit, body, fail, json, text } from '@/lib/api-utils'
+import {
+  apiError,
+  assertOrigin,
+  assertRateLimit,
+  body,
+  createRequestLogger,
+  fail,
+  json,
+  text,
+} from '@/lib/api-utils'
 import { getPayloadClient } from '@/lib/payload'
 import { createOrReuseCustomerPayment } from '@/lib/payment-service'
 import {
@@ -12,15 +21,18 @@ import {
 } from '@/lib/rental-rules'
 
 export async function POST(request: Request) {
+  const logger = createRequestLogger('nori-api/payments/create', request)
   try {
     assertOrigin(request)
     assertRateLimit(request, 'payments-create', 40, 60_000)
 
-    const auth = await appAuth.requireCustomer({
-      unauthMessage: 'Vui lòng đăng nhập để tạo giao dịch thanh toán.',
-      adminForbiddenMessage:
-        'Bạn đang đăng nhập bằng tài khoản quản trị. Vui lòng sử dụng tài khoản khách hàng để thanh toán đơn thuê cá nhân.',
-    })
+    const auth = await logger.time('auth', () =>
+      appAuth.requireCustomer({
+        unauthMessage: 'Vui lòng đăng nhập để tạo giao dịch thanh toán.',
+        adminForbiddenMessage:
+          'Bạn đang đăng nhập bằng tài khoản quản trị. Vui lòng sử dụng tài khoản khách hàng để thanh toán đơn thuê cá nhân.',
+      }),
+    )
     if (!auth.ok) return auth.response
     const user = auth.user
 
@@ -68,24 +80,28 @@ export async function POST(request: Request) {
     }
 
     const idempotencyKey = text(data.idempotencyKey, 120) || undefined
-    const payload = await getPayloadClient()
+    const payload = await logger.time('payload', () => getPayloadClient())
 
-    const result = await createOrReuseCustomerPayment({
-      payload,
-      user: {
-        id: user.id,
-        email: user.email,
-        collection: 'users',
-        status: user.status ?? 'ACTIVE',
-      },
-      bookingId,
-      paymentType,
-      method,
-      provider,
-      clientExpectedAmount,
-      idempotencyKey,
-    })
+    const result = await logger.time('create_or_reuse_payment', () =>
+      createOrReuseCustomerPayment({
+        payload,
+        user: {
+          id: user.id,
+          email: user.email,
+          collection: 'users',
+          status: user.status ?? 'ACTIVE',
+        },
+        bookingId,
+        paymentType,
+        method,
+        provider,
+        clientExpectedAmount,
+        idempotencyKey,
+      }),
+    )
 
+    const status = result.reused ? 200 : 201
+    logger.logSuccess(status, { reused: result.reused, paymentType: result.payment.paymentType })
     return json(
       {
         reused: result.reused,
@@ -119,9 +135,10 @@ export async function POST(request: Request) {
         },
         financial: result.financial,
       },
-      result.reused ? 200 : 201,
+      status,
+      logger.responseHeaders(),
     )
   } catch (error) {
-    return apiError(error)
+    return apiError(error, { logger, route: 'nori-api/payments/create' })
   }
 }

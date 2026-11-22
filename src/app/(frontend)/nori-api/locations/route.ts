@@ -1,6 +1,6 @@
 import { unstable_cache } from 'next/cache'
 import { getPayloadClient } from '@/lib/payload'
-import { apiError, json } from '@/lib/api-utils'
+import { apiError, createRequestLogger } from '@/lib/api-utils'
 import { relationId } from '@/lib/rental-rules'
 import type { PublicLocationsPayload } from '@/lib/domain-types'
 
@@ -149,24 +149,38 @@ const getPublicLocationsCached = unstable_cache(
 )
 
 export async function GET(request: Request) {
+  const logger = createRequestLogger('nori-api/locations', request)
   try {
     const sp = new URL(request.url).searchParams
     const branchId = sp.get('branchId')?.trim() || ''
     const province = sp.get('province')?.trim().toLowerCase() || ''
-    const data = await getPublicLocationsCached()
+    const data = await logger.time('locations_cache', () => getPublicLocationsCached())
     const branches = data.branches.filter(
       (b) =>
         (!branchId || b.id === branchId) &&
         (!province || b.province.toLowerCase().includes(province)),
     )
     const allowedIds = new Set(branches.map((b) => b.id))
-    return json({
-      branches,
-      locations: data.locations.filter((l) => allowedIds.has(l.branchId)),
-      deliveryZones: data.deliveryZones.filter((z) => allowedIds.has(z.branchId)),
-      oneWayRules: data.oneWayRules,
-    })
+    logger.logSuccess(200, { branches: branches.length })
+    return Response.json(
+      {
+        success: true,
+        data: {
+          branches,
+          locations: data.locations.filter((l) => allowedIds.has(l.branchId)),
+          deliveryZones: data.deliveryZones.filter((z) => allowedIds.has(z.branchId)),
+          oneWayRules: data.oneWayRules,
+        },
+      },
+      {
+        status: 200,
+        headers: {
+          'Cache-Control': 'public, max-age=60, s-maxage=300, stale-while-revalidate=600',
+          ...logger.responseHeaders(),
+        },
+      },
+    )
   } catch (error) {
-    return apiError(error)
+    return apiError(error, { logger, route: 'nori-api/locations' })
   }
 }

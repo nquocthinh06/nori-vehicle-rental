@@ -2,7 +2,7 @@
 
 import { useEffect, useState, type FormEvent } from 'react'
 import { useRouter } from 'next/navigation'
-import { api } from '@/lib/client-api'
+import { getSharedPublicLocations } from '@/lib/client-api'
 import type { PublicLocationsPayload } from '@/lib/domain-types'
 import { addDays, businessToday, validateRentalDates } from '@/lib/rental-rules'
 import { Button, Checkbox, Notice, Select, Input, Text, TabButton } from './ui'
@@ -25,7 +25,7 @@ export function SearchBar({ locations = [] }: { locations?: string[] }) {
   useEffect(() => {
     setToday(businessToday())
     let active = true
-    api<PublicLocationsPayload>('/locations')
+    getSharedPublicLocations()
       .then((res) => {
         if (active) setPublicLocs(res)
       })

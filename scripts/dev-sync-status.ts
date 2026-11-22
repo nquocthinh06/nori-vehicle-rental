@@ -22,7 +22,7 @@ console.log('========================================================\n')
 
 const isPostgres = Boolean(
   process.env.DATABASE_URL?.startsWith('postgresql:') ||
-  process.env.DATABASE_URL?.startsWith('postgres:')
+  process.env.DATABASE_URL?.startsWith('postgres:'),
 )
 
 console.log('1. Chế độ Cơ sở dữ liệu:')
@@ -37,7 +37,9 @@ if (isPostgres) {
 console.log('\n2. Trạng thái Snapshot Git (dev-data/):')
 console.log(`   - Snapshot Database:   ${report.snapshotExists ? 'TỒN TẠI' : 'THIẾU'}`)
 console.log(`   - Manifest:            ${report.manifestExists ? 'TỒN TẠI' : 'THIẾU'}`)
-console.log(`   - Checksum DB:         ${report.snapshotDbSha ? report.snapshotDbSha.slice(0, 16) + '...' : 'N/A'}`)
+console.log(
+  `   - Checksum DB:         ${report.snapshotDbSha ? report.snapshotDbSha.slice(0, 16) + '...' : 'N/A'}`,
+)
 
 console.log('\n3. Trạng thái Đồng bộ Cục bộ:')
 const statusMap: Record<string, string> = {
@@ -48,7 +50,11 @@ const statusMap: Record<string, string> = {
   NO_LOCAL_DB: 'CHƯA CÓ DATABASE CỤC BỘ (Cần chạy `pnpm dev:sync:import`)',
 }
 console.log(`   - Đánh giá:            ${statusMap[report.localStatus] || report.localStatus}`)
-console.log(`   - Media vật lý:        ${report.mediaOk ? 'OK (100% đầy đủ)' : `THIẾU ${report.missingMediaFiles.length} file`}`)
-console.log(`   - File tạm/Lock:       ${report.noTempFilesOk ? 'Sạch sẽ (Không có lock)' : 'CÓ FILE TẠM'}`)
+console.log(
+  `   - Media vật lý:        ${report.mediaOk ? 'OK (100% đầy đủ)' : `THIẾU ${report.missingMediaFiles.length} file`}`,
+)
+console.log(
+  `   - File tạm/Lock:       ${report.noTempFilesOk ? 'Sạch sẽ (Không có lock)' : 'CÓ FILE TẠM'}`,
+)
 
 console.log('\n========================================================')

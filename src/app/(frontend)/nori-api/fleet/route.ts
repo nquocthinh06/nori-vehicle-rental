@@ -3,7 +3,7 @@ import type { Where } from 'payload'
 import { getPayloadClient } from '@/lib/payload'
 import { photo } from '@/lib/catalogue'
 import type { FleetView } from '@/lib/domain-types'
-import { apiError, fail, json } from '@/lib/api-utils'
+import { apiError, createRequestLogger, fail, json } from '@/lib/api-utils'
 
 async function queryFleetData(params: {
   id: string | null
@@ -269,6 +269,7 @@ function getCachedFleetData(params: {
 }
 
 export async function GET(request: Request) {
+  const logger = createRequestLogger('nori-api/fleet', request)
   try {
     const query = new URL(request.url).searchParams
     const model = query.get('model')
@@ -276,9 +277,15 @@ export async function GET(request: Request) {
     const modelSlug = query.get('modelSlug')
     const branchId = query.get('branchId')
     if (!model && !id && !modelSlug && !branchId) return fail('Vui lòng chọn dòng xe.')
-    const data = await getCachedFleetData({ id, model, modelSlug, branchId })
-    return json(data)
+    const data = await logger.time('fleet_cache', () =>
+      getCachedFleetData({ id, model, modelSlug, branchId }),
+    )
+    logger.logSuccess(200, { count: data.length })
+    return json(data, 200, {
+      'Cache-Control': 'public, max-age=60, s-maxage=300, stale-while-revalidate=600',
+      ...logger.responseHeaders(),
+    })
   } catch (error) {
-    return apiError(error)
+    return apiError(error, { logger, route: 'nori-api/fleet' })
   }
 }

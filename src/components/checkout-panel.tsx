@@ -3,7 +3,13 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import type { BookingView, FleetView, PublicLocationsPayload, Quote } from '@/lib/domain-types'
-import { api, RequestError } from '@/lib/client-api'
+import {
+  api,
+  formatApiErrorDetail,
+  getSharedPublicLocations,
+  getWithRetry,
+  RequestError,
+} from '@/lib/client-api'
 import {
   PROMO_REMOVED_MESSAGE,
   RENTAL_ADDONS,
@@ -59,6 +65,12 @@ export function CheckoutPanel({ address }: { address: string | null }) {
   const [loadedQuoteKey, setLoadedQuoteKey] = useState('')
   const [loading, setLoading] = useState(true)
   const [quoteBusy, setQuoteBusy] = useState(false)
+  const [quoteErrorDetail, setQuoteErrorDetail] = useState<{
+    category: string
+    retryable: boolean
+    message: string
+  } | null>(null)
+  const [vehicleLoadError, setVehicleLoadError] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [switchingRole, setSwitchingRole] = useState(false)
@@ -101,10 +113,16 @@ export function CheckoutPanel({ address }: { address: string | null }) {
 
   const quoteSeqRef = useRef(0)
   const quoteAbortRef = useRef<AbortController | null>(null)
+  const quoteDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const quoteRef = useRef<Quote | null>(null)
+  const confirmedPromoRef = useRef('')
   const submittingRef = useRef(false)
   const idempotencyKeyRef = useRef<string>('')
   const hydratedDraftKeyRef = useRef('')
   const hadCustomerSessionRef = useRef(false)
+
+  quoteRef.current = quote
+  confirmedPromoRef.current = confirmedPromoCode
 
   const anonDraftKey =
     id && startDate && endDate ? `nori_checkout_draft:anon:${id}:${startDate}:${endDate}` : ''
@@ -144,10 +162,10 @@ export function CheckoutPanel({ address }: { address: string | null }) {
     confirmedPromoCode,
   ])
 
-  // Load active public branches / service locations / delivery zones
+  // Load active public branches / service locations / delivery zones via shared client cache
   useEffect(() => {
     let active = true
-    api<PublicLocationsPayload>('/locations')
+    getSharedPublicLocations()
       .then((res) => {
         if (active) setPublicLocs(res)
       })
@@ -157,9 +175,9 @@ export function CheckoutPanel({ address }: { address: string | null }) {
     }
   }, [])
 
-  // Always verify live backend session when entering Checkout
+  // Sync live session on entering Checkout without repeating a just-completed mount fetch
   useEffect(() => {
-    void refresh()
+    void refresh({ maxAgeMs: 15_000 })
   }, [refresh])
 
   useEffect(() => {
@@ -185,6 +203,15 @@ export function CheckoutPanel({ address }: { address: string | null }) {
         returnTime?: string
         pickupLocation?: string
         deliveryRequested?: boolean
+        pickupBranchId?: string
+        differentReturn?: boolean
+        returnBranchId?: string
+        pickupServiceLocationId?: string
+        returnServiceLocationId?: string
+        returnMethod?: 'BRANCH_RETURN' | 'HOME_PICKUP'
+        deliveryZoneId?: string
+        deliveryAddress?: string
+        deliveryDirections?: string
         addonKeys?: string[]
         customerPhone?: string
         driverLicenseNumber?: string
@@ -201,6 +228,20 @@ export function CheckoutPanel({ address }: { address: string | null }) {
         setPickupLocation(draft.pickupLocation)
       if (typeof draft.deliveryRequested === 'boolean')
         setDeliveryRequested(draft.deliveryRequested)
+      if (typeof draft.pickupBranchId === 'string' && draft.pickupBranchId)
+        setPickupBranchId(draft.pickupBranchId)
+      if (typeof draft.differentReturn === 'boolean') setDifferentReturn(draft.differentReturn)
+      if (typeof draft.returnBranchId === 'string') setReturnBranchId(draft.returnBranchId)
+      if (typeof draft.pickupServiceLocationId === 'string')
+        setPickupServiceLocationId(draft.pickupServiceLocationId)
+      if (typeof draft.returnServiceLocationId === 'string')
+        setReturnServiceLocationId(draft.returnServiceLocationId)
+      if (draft.returnMethod === 'BRANCH_RETURN' || draft.returnMethod === 'HOME_PICKUP')
+        setReturnMethod(draft.returnMethod)
+      if (typeof draft.deliveryZoneId === 'string') setDeliveryZoneId(draft.deliveryZoneId)
+      if (typeof draft.deliveryAddress === 'string') setDeliveryAddress(draft.deliveryAddress)
+      if (typeof draft.deliveryDirections === 'string')
+        setDeliveryDirections(draft.deliveryDirections)
       if (Array.isArray(draft.addonKeys)) setAddonKeys(parseAddonKeys(draft.addonKeys.join(',')))
       if (isCustomer) {
         if (typeof draft.customerPhone === 'string' && draft.customerPhone)
@@ -213,6 +254,7 @@ export function CheckoutPanel({ address }: { address: string | null }) {
         const restored = draft.confirmedPromoCode.trim().toUpperCase()
         setPromoDraft(restored)
         setConfirmedPromoCode(restored)
+        confirmedPromoRef.current = restored
         setDraftRestoredTick((n) => n + 1)
       }
     } catch {
@@ -231,31 +273,35 @@ export function CheckoutPanel({ address }: { address: string | null }) {
       return
     }
     try {
+      const commonDraft = {
+        pickupTime,
+        returnTime,
+        pickupLocation,
+        deliveryRequested,
+        pickupBranchId,
+        differentReturn,
+        returnBranchId,
+        pickupServiceLocationId,
+        returnServiceLocationId,
+        returnMethod,
+        deliveryZoneId,
+        deliveryAddress,
+        deliveryDirections,
+        addonKeys,
+        confirmedPromoCode,
+        paymentOption,
+      }
       window.sessionStorage.setItem(
         activeDraftKey,
         JSON.stringify(
           isCustomer
             ? {
-                pickupTime,
-                returnTime,
-                pickupLocation,
-                deliveryRequested,
-                addonKeys,
+                ...commonDraft,
                 customerPhone,
                 driverLicenseNumber,
                 note,
-                confirmedPromoCode,
-                paymentOption,
               }
-            : {
-                pickupTime,
-                returnTime,
-                pickupLocation,
-                deliveryRequested,
-                addonKeys,
-                confirmedPromoCode,
-                paymentOption,
-              },
+            : commonDraft,
         ),
       )
     } catch {
@@ -270,6 +316,15 @@ export function CheckoutPanel({ address }: { address: string | null }) {
     returnTime,
     pickupLocation,
     deliveryRequested,
+    pickupBranchId,
+    differentReturn,
+    returnBranchId,
+    pickupServiceLocationId,
+    returnServiceLocationId,
+    returnMethod,
+    deliveryZoneId,
+    deliveryAddress,
+    deliveryDirections,
     addonKeys,
     customerPhone,
     driverLicenseNumber,
@@ -289,17 +344,25 @@ export function CheckoutPanel({ address }: { address: string | null }) {
     }
     const validation = validateRentalDates(startDate, endDate)
     if (validation.error) {
+      setVehicleLoadError(validation.error)
       setError(validation.error)
       setLoading(false)
       return
     }
-    let active = true
+    const controller = new AbortController()
     setLoading(true)
+    setVehicleLoadError('')
     setError('')
-    api<FleetView[]>(`/fleet?id=${encodeURIComponent(id)}`)
+    getWithRetry<FleetView[]>(`/fleet?id=${encodeURIComponent(id)}`, {
+      signal: controller.signal,
+      retries: 2,
+    })
       .then((fleet) => {
-        if (!active) return
-        if (!fleet[0]) throw new Error('Xe không còn được công bố.')
+        if (controller.signal.aborted) return
+        if (!fleet[0]) {
+          setVehicleLoadError('Xe không còn được công bố.')
+          return
+        }
         setVehicle(fleet[0])
         setPickupBranchId(
           (prev) => prev || fleet[0].currentBranchId || fleet[0].managingBranchId || '',
@@ -309,25 +372,44 @@ export function CheckoutPanel({ address }: { address: string | null }) {
         )
       })
       .catch((e) => {
-        if (active) setError((e as Error).message)
+        if (controller.signal.aborted || (e instanceof Error && e.name === 'AbortError')) return
+        const msg = formatApiErrorDetail(e, 'Chưa thể tải thông tin xe thực tế.').message
+        setVehicleLoadError(msg)
+        setError(msg)
       })
       .finally(() => {
-        if (active) setLoading(false)
+        if (!controller.signal.aborted) setLoading(false)
       })
     return () => {
-      active = false
+      controller.abort()
     }
   }, [id, startDate, endDate, retry, address])
 
   const requestQuote = useCallback(
     async (
       promoToEvaluate: string,
-      options?: { explicitPromoAction?: boolean; preserveSubmitError?: boolean },
+      options?: {
+        explicitPromoAction?: boolean
+        preserveSubmitError?: boolean
+        manualRetry?: boolean
+      },
     ) => {
       if (!id || !vehicle) return
       const validation = validateRentalDates(startDate, endDate)
-      if (validation.error) return
+      if (validation.error) {
+        setQuoteErrorDetail({
+          category: 'validation',
+          retryable: false,
+          message: validation.error,
+        })
+        setError(validation.error)
+        return
+      }
 
+      if (quoteDebounceRef.current) {
+        clearTimeout(quoteDebounceRef.current)
+        quoteDebounceRef.current = null
+      }
       quoteAbortRef.current?.abort()
       const controller = new AbortController()
       quoteAbortRef.current = controller
@@ -335,6 +417,10 @@ export function CheckoutPanel({ address }: { address: string | null }) {
 
       const normalizedCandidate = promoToEvaluate.trim().toUpperCase()
       setQuoteBusy(true)
+      if (options?.manualRetry) {
+        setQuoteErrorDetail(null)
+        setError('')
+      }
       if (options?.explicitPromoAction && normalizedCandidate) {
         setCheckingPromoCode(normalizedCandidate)
       }
@@ -358,19 +444,28 @@ export function CheckoutPanel({ address }: { address: string | null }) {
           ...(addonKeys.length ? { addons: addonKeys.join(',') } : {}),
           ...(normalizedCandidate ? { promoCode: normalizedCandidate } : {}),
         })
-        const result = await api<Quote>(`/availability?${sp.toString()}`, {
+        const result = await getWithRetry<Quote>(`/availability?${sp.toString()}`, {
           signal: controller.signal,
+          retries: 2,
+          timeoutMs: 15_000,
         })
         if (seq !== quoteSeqRef.current || controller.signal.aborted) return
 
         setQuote(result)
         if (!result.available) {
-          setError(
-            result.reason ||
-              'Xe đã có lịch trong khoảng ngày này. Vui lòng chọn ngày hoặc xe khác.',
-          )
-        } else if (!options?.preserveSubmitError) {
-          setError('')
+          const unavailableMsg =
+            result.reason || 'Xe đã có lịch trong khoảng ngày này. Vui lòng chọn ngày hoặc xe khác.'
+          setQuoteErrorDetail({
+            category: 'unavailable',
+            retryable: false,
+            message: unavailableMsg,
+          })
+          setError(unavailableMsg)
+        } else {
+          setQuoteErrorDetail(null)
+          if (!options?.preserveSubmitError) {
+            setError('')
+          }
         }
 
         const baseKey = `${id}|${startDate}|${endDate}|${pickupTime}|${returnTime}|${pickupBranchId}|${effectiveReturnBranchId}|${pickupServiceLocationId}|${returnServiceLocationId}|${deliveryRequested ? '1' : '0'}|${returnMethod}|${deliveryZoneId}|${[...addonKeys].sort().join(',')}`
@@ -378,6 +473,7 @@ export function CheckoutPanel({ address }: { address: string | null }) {
           if (result.promoCode && !result.promoError) {
             const validCode = result.promoCode.trim().toUpperCase()
             setConfirmedPromoCode(validCode)
+            confirmedPromoRef.current = validCode
             setPromoFeedback({
               tone: 'success',
               message: result.promoMessage || 'Mã đã được áp dụng thành công.',
@@ -386,6 +482,7 @@ export function CheckoutPanel({ address }: { address: string | null }) {
           } else {
             // Promo rejected by Backend: result is already calculated without promo discount
             setConfirmedPromoCode('')
+            confirmedPromoRef.current = ''
             setPromoFeedback({
               tone: 'error',
               message: result.promoError || 'Mã khuyến mãi không đủ điều kiện áp dụng.',
@@ -394,6 +491,7 @@ export function CheckoutPanel({ address }: { address: string | null }) {
           }
         } else {
           setConfirmedPromoCode('')
+          confirmedPromoRef.current = ''
           setLoadedQuoteKey(`${baseKey}|`)
         }
       } catch (e) {
@@ -404,8 +502,13 @@ export function CheckoutPanel({ address }: { address: string | null }) {
         ) {
           return
         }
+        const detail = formatApiErrorDetail(
+          e,
+          'Chưa thể lấy báo giá của xe lúc này. Vui lòng thử lại.',
+        )
         setLoadedQuoteKey('')
-        setError((e as Error).message)
+        setQuoteErrorDetail(detail)
+        setError(detail.message)
       } finally {
         if (seq === quoteSeqRef.current) {
           setQuoteBusy(false)
@@ -434,11 +537,23 @@ export function CheckoutPanel({ address }: { address: string | null }) {
   // Recalculate quote automatically whenever vehicle, dates, location, delivery, addons, draft restore, or retry change
   useEffect(() => {
     if (!id || !vehicle || authLoading) return
-    void requestQuote(confirmedPromoCode)
+    const delayMs = quoteRef.current ? 180 : 0
+    if (delayMs === 0) {
+      void requestQuote(confirmedPromoRef.current)
+      return () => {
+        quoteAbortRef.current?.abort()
+      }
+    }
+    const timer = setTimeout(() => {
+      quoteDebounceRef.current = null
+      void requestQuote(confirmedPromoRef.current)
+    }, delayMs)
+    quoteDebounceRef.current = timer
     return () => {
+      clearTimeout(timer)
+      if (quoteDebounceRef.current === timer) quoteDebounceRef.current = null
       quoteAbortRef.current?.abort()
     }
-    // Intentionally excludes confirmedPromoCode from direct loop on same value; triggered via explicit actions, draft restore, or schedule changes
   }, [
     id,
     vehicle,
@@ -457,6 +572,7 @@ export function CheckoutPanel({ address }: { address: string | null }) {
     retry,
     authLoading,
     draftRestoredTick,
+    requestQuote,
   ])
 
   function handlePromoInputChange(rawValue: string) {
@@ -467,6 +583,7 @@ export function CheckoutPanel({ address }: { address: string | null }) {
     if (confirmedPromoCode && trimmed !== confirmedPromoCode) {
       // Customer edited or cleared the input after applying a promo -> immediately clear applied state & recalculate clean quote
       setConfirmedPromoCode('')
+      confirmedPromoRef.current = ''
       setPromoFeedback(trimmed === '' ? { tone: 'info', message: PROMO_REMOVED_MESSAGE } : null)
       void requestQuote('')
       return
@@ -495,10 +612,15 @@ export function CheckoutPanel({ address }: { address: string | null }) {
   }
 
   function handleRemovePromo() {
+    if (quoteDebounceRef.current) {
+      clearTimeout(quoteDebounceRef.current)
+      quoteDebounceRef.current = null
+    }
     quoteAbortRef.current?.abort()
     setPromoDraft('')
     setCheckingPromoCode('')
     setConfirmedPromoCode('')
+    confirmedPromoRef.current = ''
     setPromoFeedback({ tone: 'info', message: PROMO_REMOVED_MESSAGE })
     if (activeDraftKey && typeof window !== 'undefined') {
       try {
@@ -538,6 +660,10 @@ export function CheckoutPanel({ address }: { address: string | null }) {
         endDate,
         pickupTime,
         returnTime,
+        ...(pickupBranchId ? { pickupBranchId } : {}),
+        ...(effectiveReturnBranchId && effectiveReturnBranchId !== pickupBranchId
+          ? { returnBranchId: effectiveReturnBranchId }
+          : {}),
         ...(deliveryRequested ? { delivery: '1' } : {}),
         ...(addonKeys.length ? { addons: addonKeys.join(',') } : {}),
       })}`
@@ -560,7 +686,16 @@ export function CheckoutPanel({ address }: { address: string | null }) {
   async function confirm(e: FormEvent) {
     e.preventDefault()
     if (submittingRef.current || busy) return
-    if (!isCustomer || !user || !quote?.available || !agreed || !vehicle || !isQuoteFresh) return
+    if (
+      !isCustomer ||
+      !user ||
+      !quote?.available ||
+      !agreed ||
+      !vehicle ||
+      !isQuoteFresh ||
+      quoteErrorDetail
+    )
+      return
 
     const cleanPhone = customerPhone.trim()
     if (!cleanPhone || !/^[0-9+\s()-]{8,16}$/.test(cleanPhone)) {
@@ -582,11 +717,21 @@ export function CheckoutPanel({ address }: { address: string | null }) {
             returnTime,
             pickupLocation,
             deliveryRequested,
+            pickupBranchId,
+            differentReturn,
+            returnBranchId,
+            pickupServiceLocationId,
+            returnServiceLocationId,
+            returnMethod,
+            deliveryZoneId,
+            deliveryAddress,
+            deliveryDirections,
             addonKeys,
             customerPhone: cleanPhone,
             driverLicenseNumber: driverLicenseNumber.trim(),
             note: note.trim(),
             confirmedPromoCode: promoToSubmit ?? '',
+            paymentOption,
           }),
         )
       } catch {
@@ -760,18 +905,31 @@ export function CheckoutPanel({ address }: { address: string | null }) {
       </section>
     )
 
-  if (!vehicle || !quote)
+  if (vehicleLoadError || !vehicle)
     return (
       <div className="mx-auto max-w-reading">
-        <Notice tone="error">{error || 'Chưa thể lấy báo giá của xe.'}</Notice>
+        <Notice tone="error">{vehicleLoadError || error || 'Chưa thể tải thông tin xe.'}</Notice>
         <div className="mt-5 flex gap-3">
-          <Button onClick={() => setRetry(retry + 1)}>Kiểm tra lại</Button>
+          <Button onClick={() => setRetry((n) => n + 1)}>Kiểm tra lại</Button>
           <ButtonLink variant="secondary" href="/vehicles">
             Chọn xe khác
           </ButtonLink>
         </div>
       </div>
     )
+
+  const verifiedTotal = quote && isQuoteFresh ? quote.estimatedTotal : null
+  const verifiedDepositDue =
+    verifiedTotal !== null
+      ? calculateReservationDeposit(verifiedTotal, {
+          policyMode: 'PERCENT_OF_RENTAL',
+          depositPercent: 30,
+        })
+      : null
+  const verifiedRemainingAtPickup =
+    verifiedTotal !== null && verifiedDepositDue !== null
+      ? Math.max(0, verifiedTotal - verifiedDepositDue)
+      : null
 
   return (
     <form onSubmit={confirm} className="grid items-start gap-7 lg:grid-cols-3">
@@ -1170,27 +1328,15 @@ export function CheckoutPanel({ address }: { address: string | null }) {
                     <div className="flex justify-between">
                       <span className="text-muted">Cọc giữ xe cần trả:</span>
                       <strong className="text-brand">
-                        {formatVnd(
-                          calculateReservationDeposit(quote.estimatedTotal, {
-                            policyMode: 'PERCENT_OF_RENTAL',
-                            depositPercent: 30,
-                          }),
-                        )}
+                        {verifiedDepositDue !== null ? formatVnd(verifiedDepositDue) : 'Đang tính…'}
                       </strong>
                     </div>
                     <div className="flex justify-between mt-1">
                       <span className="text-muted">Còn lại khi nhận xe:</span>
                       <span className="font-medium text-ink">
-                        {formatVnd(
-                          Math.max(
-                            0,
-                            quote.estimatedTotal -
-                              calculateReservationDeposit(quote.estimatedTotal, {
-                                policyMode: 'PERCENT_OF_RENTAL',
-                                depositPercent: 30,
-                              }),
-                          ),
-                        )}
+                        {verifiedRemainingAtPickup !== null
+                          ? formatVnd(verifiedRemainingAtPickup)
+                          : '—'}
                       </span>
                     </div>
                   </div>
@@ -1223,7 +1369,9 @@ export function CheckoutPanel({ address }: { address: string | null }) {
                   <div className="mt-3 border-t border-line/60 pt-2 text-caption">
                     <div className="flex justify-between">
                       <span className="text-muted">Số tiền thanh toán:</span>
-                      <strong className="text-brand">{formatVnd(quote.estimatedTotal)}</strong>
+                      <strong className="text-brand">
+                        {verifiedTotal !== null ? formatVnd(verifiedTotal) : 'Đang tính…'}
+                      </strong>
                     </div>
                     <div className="flex justify-between mt-1">
                       <span className="text-muted">Còn lại khi nhận xe:</span>
@@ -1262,14 +1410,9 @@ export function CheckoutPanel({ address }: { address: string | null }) {
                 <Text className="mt-1 text-muted">
                   Thanh toán {paymentOption === 'FULL' ? 'toàn bộ tiền thuê' : 'cọc giữ xe (30%)'}:{' '}
                   <strong className="text-brand">
-                    {formatVnd(
-                      paymentOption === 'FULL'
-                        ? quote.estimatedTotal
-                        : calculateReservationDeposit(quote.estimatedTotal, {
-                            policyMode: 'PERCENT_OF_RENTAL',
-                            depositPercent: 30,
-                          }),
-                    )}
+                    {verifiedTotal !== null && verifiedDepositDue !== null
+                      ? formatVnd(paymentOption === 'FULL' ? verifiedTotal : verifiedDepositDue)
+                      : 'Đang cập nhật'}
                   </strong>{' '}
                   qua VietQR / SePay.
                 </Text>
@@ -1279,9 +1422,11 @@ export function CheckoutPanel({ address }: { address: string | null }) {
                 <Text className="mt-1 text-muted">
                   {paymentOption === 'FULL'
                     ? 'Không còn tiền thuê phải trả. '
-                    : `Thanh toán ${formatVnd(Math.max(0, quote.estimatedTotal - calculateReservationDeposit(quote.estimatedTotal, { policyMode: 'PERCENT_OF_RENTAL', depositPercent: 30 })))} tiền thuê còn lại. `}
-                  Ký quỹ tài sản bảo đảm {formatMoney(quote.depositAmount)} khi nhận xe (hoàn trả
-                  sau khi trả xe).
+                    : verifiedRemainingAtPickup !== null
+                      ? `Thanh toán ${formatVnd(verifiedRemainingAtPickup)} tiền thuê còn lại. `
+                      : 'Thanh toán phần tiền thuê còn lại theo báo giá. '}
+                  Ký quỹ tài sản bảo đảm {quote ? formatMoney(quote.depositAmount) : 'theo xe'} khi
+                  nhận xe (hoàn trả sau khi trả xe).
                 </Text>
               </div>
             </div>
@@ -1293,80 +1438,102 @@ export function CheckoutPanel({ address }: { address: string | null }) {
         <Heading as="h2" size="subtitle">
           Chi tiết chi phí thuê xe
         </Heading>
-        <div className="my-5 space-y-2.5 border-y border-line py-5 text-small">
-          <div className="flex justify-between gap-3">
-            <Text className="text-muted">Đơn giá / ngày</Text>
-            <Text>{formatMoney(quote.dailyPrice)}</Text>
+        {!quote ? (
+          <div className="my-5 space-y-3 border-y border-line py-5">
+            {quoteBusy || !quoteErrorDetail ? (
+              <>
+                <div
+                  className="flex items-center justify-between text-small text-muted"
+                  role="status"
+                >
+                  <span>Đang tính báo giá &amp; kiểm tra lịch xe…</span>
+                </div>
+                <Skeleton className="h-5 w-full" />
+                <Skeleton className="h-5 w-4/5" />
+                <Skeleton className="h-5 w-3/4" />
+              </>
+            ) : (
+              <Text className="text-small text-muted">
+                Chưa có báo giá hợp lệ. Thông tin bạn đã nhập vẫn được giữ nguyên.
+              </Text>
+            )}
           </div>
-          <div className="flex justify-between gap-3">
-            <Text className="text-muted">Số ngày thuê</Text>
-            <Text>{quote.totalDays} ngày</Text>
+        ) : (
+          <div className="my-5 space-y-2.5 border-y border-line py-5 text-small">
+            <div className="flex justify-between gap-3">
+              <Text className="text-muted">Đơn giá / ngày</Text>
+              <Text>{formatMoney(quote.dailyPrice)}</Text>
+            </div>
+            <div className="flex justify-between gap-3">
+              <Text className="text-muted">Số ngày thuê</Text>
+              <Text>{quote.totalDays} ngày</Text>
+            </div>
+            <div className="flex justify-between gap-3">
+              <Text className="text-muted">Tiền thuê cơ bản</Text>
+              <Text>{formatVnd(quote.basePrice)}</Text>
+            </div>
+            {quote.weekendSurchargeTotal > 0 && (
+              <div className="flex justify-between gap-3">
+                <Text className="text-muted">Phụ phí cuối tuần ({quote.weekendDays} ngày)</Text>
+                <Text>+{formatVnd(quote.weekendSurchargeTotal)}</Text>
+              </div>
+            )}
+            {(quote.holidaySurchargeTotal ?? 0) > 0 && (
+              <div className="flex justify-between gap-3">
+                <Text className="text-muted">Phụ phí ngày lễ ({quote.holidayDays} ngày)</Text>
+                <Text>+{formatVnd(quote.holidaySurchargeTotal)}</Text>
+              </div>
+            )}
+            {quote.deliveryFee > 0 && (
+              <div className="flex justify-between gap-3">
+                <Text className="text-muted">Phí giao xe tận nơi</Text>
+                <Text>+{formatVnd(quote.deliveryFee)}</Text>
+              </div>
+            )}
+            {(quote.pickupFee ?? 0) > 0 && (
+              <div className="flex justify-between gap-3">
+                <Text className="text-muted">Phí thu hồi xe tận nơi</Text>
+                <Text>+{formatVnd(quote.pickupFee ?? 0)}</Text>
+              </div>
+            )}
+            {(quote.locationSurcharge ?? 0) > 0 && (
+              <div className="flex justify-between gap-3">
+                <Text className="text-muted">Phụ phí địa điểm</Text>
+                <Text>+{formatVnd(quote.locationSurcharge ?? 0)}</Text>
+              </div>
+            )}
+            {(quote.oneWayFee ?? 0) > 0 && (
+              <div className="flex justify-between gap-3">
+                <Text className="text-muted">Phí trả xe khác chi nhánh</Text>
+                <Text>+{formatVnd(quote.oneWayFee ?? 0)}</Text>
+              </div>
+            )}
+            {(quote.afterHoursFee ?? 0) > 0 && (
+              <div className="flex justify-between gap-3">
+                <Text className="text-muted">Phí giao nhận ngoài giờ</Text>
+                <Text>+{formatVnd(quote.afterHoursFee ?? 0)}</Text>
+              </div>
+            )}
+            {quote.addonFee > 0 && (
+              <div className="flex justify-between gap-3">
+                <Text className="text-muted">Dịch vụ bổ sung</Text>
+                <Text>+{formatVnd(quote.addonFee)}</Text>
+              </div>
+            )}
+            {quote.discountAmount > 0 && (
+              <div className="flex justify-between gap-3 text-brand">
+                <Text>Ưu đãi thuê dài ngày ({Math.round(quote.discountRate * 100)}%)</Text>
+                <Text>-{formatVnd(quote.discountAmount)}</Text>
+              </div>
+            )}
+            {confirmedPromoCode && (quote.promoDiscountAmount ?? 0) > 0 && (
+              <div className="flex justify-between gap-3 text-brand">
+                <Text>Mã khuyến mãi ({quote.promoName || confirmedPromoCode})</Text>
+                <Text>-{formatVnd(quote.promoDiscountAmount)}</Text>
+              </div>
+            )}
           </div>
-          <div className="flex justify-between gap-3">
-            <Text className="text-muted">Tiền thuê cơ bản</Text>
-            <Text>{formatVnd(quote.basePrice)}</Text>
-          </div>
-          {quote.weekendSurchargeTotal > 0 && (
-            <div className="flex justify-between gap-3">
-              <Text className="text-muted">Phụ phí cuối tuần ({quote.weekendDays} ngày)</Text>
-              <Text>+{formatVnd(quote.weekendSurchargeTotal)}</Text>
-            </div>
-          )}
-          {(quote.holidaySurchargeTotal ?? 0) > 0 && (
-            <div className="flex justify-between gap-3">
-              <Text className="text-muted">Phụ phí ngày lễ ({quote.holidayDays} ngày)</Text>
-              <Text>+{formatVnd(quote.holidaySurchargeTotal)}</Text>
-            </div>
-          )}
-          {quote.deliveryFee > 0 && (
-            <div className="flex justify-between gap-3">
-              <Text className="text-muted">Phí giao xe tận nơi</Text>
-              <Text>+{formatVnd(quote.deliveryFee)}</Text>
-            </div>
-          )}
-          {(quote.pickupFee ?? 0) > 0 && (
-            <div className="flex justify-between gap-3">
-              <Text className="text-muted">Phí thu hồi xe tận nơi</Text>
-              <Text>+{formatVnd(quote.pickupFee ?? 0)}</Text>
-            </div>
-          )}
-          {(quote.locationSurcharge ?? 0) > 0 && (
-            <div className="flex justify-between gap-3">
-              <Text className="text-muted">Phụ phí địa điểm</Text>
-              <Text>+{formatVnd(quote.locationSurcharge ?? 0)}</Text>
-            </div>
-          )}
-          {(quote.oneWayFee ?? 0) > 0 && (
-            <div className="flex justify-between gap-3">
-              <Text className="text-muted">Phí trả xe khác chi nhánh</Text>
-              <Text>+{formatVnd(quote.oneWayFee ?? 0)}</Text>
-            </div>
-          )}
-          {(quote.afterHoursFee ?? 0) > 0 && (
-            <div className="flex justify-between gap-3">
-              <Text className="text-muted">Phí giao nhận ngoài giờ</Text>
-              <Text>+{formatVnd(quote.afterHoursFee ?? 0)}</Text>
-            </div>
-          )}
-          {quote.addonFee > 0 && (
-            <div className="flex justify-between gap-3">
-              <Text className="text-muted">Dịch vụ bổ sung</Text>
-              <Text>+{formatVnd(quote.addonFee)}</Text>
-            </div>
-          )}
-          {quote.discountAmount > 0 && (
-            <div className="flex justify-between gap-3 text-brand">
-              <Text>Ưu đãi thuê dài ngày ({Math.round(quote.discountRate * 100)}%)</Text>
-              <Text>-{formatVnd(quote.discountAmount)}</Text>
-            </div>
-          )}
-          {confirmedPromoCode && (quote.promoDiscountAmount ?? 0) > 0 && (
-            <div className="flex justify-between gap-3 text-brand">
-              <Text>Mã khuyến mãi ({quote.promoName || confirmedPromoCode})</Text>
-              <Text>-{formatVnd(quote.promoDiscountAmount)}</Text>
-            </div>
-          )}
-        </div>
+        )}
 
         <div className="mb-4 space-y-2">
           <div className="flex items-end gap-2">
@@ -1443,11 +1610,16 @@ export function CheckoutPanel({ address }: { address: string | null }) {
         <div className="flex flex-wrap items-end justify-between gap-3">
           <Text className="font-semibold">Tổng tiền thuê dự kiến</Text>
           <Text className="text-title font-semibold text-brand">
-            {!isQuoteFresh ? 'Đang tính…' : formatVnd(quote.estimatedTotal)}
+            {quote && isQuoteFresh
+              ? formatVnd(quote.estimatedTotal)
+              : quoteErrorDetail
+                ? 'Chưa cập nhật'
+                : 'Đang tính…'}
           </Text>
         </div>
 
-        {isQuoteFresh &&
+        {quote &&
+          isQuoteFresh &&
           (() => {
             const reservationDeposit = calculateReservationDeposit(quote.estimatedTotal, {
               policyMode: 'PERCENT_OF_RENTAL',
@@ -1491,7 +1663,7 @@ export function CheckoutPanel({ address }: { address: string | null }) {
             )
           })()}
 
-        {(quote.kmLimitPerDay || quote.lateReturnFeePerHour) && (
+        {quote && (quote.kmLimitPerDay || quote.lateReturnFeePerHour) && (
           <Text className="mt-3 text-micro text-muted">
             {quote.kmLimitPerDay ? `Giới hạn ${quote.kmLimitPerDay} km/ngày` : ''}
             {quote.kmLimitPerDay && quote.overKmFee
@@ -1523,13 +1695,25 @@ export function CheckoutPanel({ address }: { address: string | null }) {
             </>
           }
         />
-        {error && (
+        {(error || quoteErrorDetail) && (
           <div className="my-4 space-y-2">
-            <Notice tone="error">{error}</Notice>
+            <Notice tone="error">{error || quoteErrorDetail?.message}</Notice>
+            {quoteErrorDetail?.retryable && (
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                loading={quoteBusy}
+                className="w-full text-small"
+                onClick={() => void requestQuote(confirmedPromoRef.current, { manualRetry: true })}
+              >
+                Thử lấy báo giá lại
+              </Button>
+            )}
             {(confirmedPromoCode ||
               trimmedDraft ||
-              error.toLowerCase().includes('mã') ||
-              error.toLowerCase().includes('khuyến mãi')) && (
+              (error || quoteErrorDetail?.message || '').toLowerCase().includes('mã') ||
+              (error || quoteErrorDetail?.message || '').toLowerCase().includes('khuyến mãi')) && (
               <Button
                 type="button"
                 variant="secondary"
@@ -1548,7 +1732,14 @@ export function CheckoutPanel({ address }: { address: string | null }) {
         <Button
           type="submit"
           loading={busy}
-          disabled={!isCustomer || !agreed || !quote.available || !isQuoteFresh || busy}
+          disabled={
+            !isCustomer ||
+            !agreed ||
+            !quote?.available ||
+            !isQuoteFresh ||
+            Boolean(quoteErrorDetail) ||
+            busy
+          }
           className="mt-4 w-full"
         >
           Xác nhận đặt thuê <Icon name="arrow-right" className="size-4" />

@@ -5,6 +5,7 @@ import type {
   Payload,
   PayloadRequest,
 } from 'payload'
+import { runBestEffortSafe } from '../lib/db-tx.ts'
 
 type Actor =
   | {
@@ -48,30 +49,38 @@ export async function recordAudit(
       : actor?.collection === 'users'
         ? 'CUSTOMER'
         : 'SYSTEM'
-  try {
-    await payload.create({
-      collection: 'audit-logs',
-      overrideAccess: true,
-      ...(req ? { req } : {}),
-      data: {
-        action: entry.action.slice(0, 80),
-        entity: entry.entity.slice(0, 60),
-        entityId: entry.entityId ? String(entry.entityId).slice(0, 120) : undefined,
-        entityLabel: entry.entityLabel ? String(entry.entityLabel).slice(0, 200) : undefined,
-        summary: entry.summary.slice(0, 500),
-        fromStatus: entry.fromStatus ?? undefined,
-        toStatus: entry.toStatus ?? undefined,
-        actorType,
-        actorId: actor?.id != null ? String(actor.id) : undefined,
-        actorEmail: actor?.email ? String(actor.email) : undefined,
-        actorRole,
-        branchId: entry.branchId ? String(entry.branchId).slice(0, 60) : undefined,
-        outcome: entry.outcome ?? 'SUCCESS',
-      },
-    })
-  } catch (error) {
-    console.error('[NORI] Audit log failed:', error instanceof Error ? error.name : 'UnknownError')
-  }
+  await runBestEffortSafe(
+    payload,
+    req,
+    async () => {
+      await payload.create({
+        collection: 'audit-logs',
+        overrideAccess: true,
+        ...(req ? { req } : {}),
+        data: {
+          action: entry.action.slice(0, 80),
+          entity: entry.entity.slice(0, 60),
+          entityId: entry.entityId ? String(entry.entityId).slice(0, 120) : undefined,
+          entityLabel: entry.entityLabel ? String(entry.entityLabel).slice(0, 200) : undefined,
+          summary: entry.summary.slice(0, 500),
+          fromStatus: entry.fromStatus ?? undefined,
+          toStatus: entry.toStatus ?? undefined,
+          actorType,
+          actorId: actor?.id != null ? String(actor.id) : undefined,
+          actorEmail: actor?.email ? String(actor.email) : undefined,
+          actorRole,
+          branchId: entry.branchId ? String(entry.branchId).slice(0, 60) : undefined,
+          outcome: entry.outcome ?? 'SUCCESS',
+        },
+      })
+    },
+    (error) => {
+      console.error(
+        '[NORI] Audit log failed:',
+        error instanceof Error ? error.name : 'UnknownError',
+      )
+    },
+  )
 }
 
 const SENSITIVE_AUDIT_KEYS = new Set([

@@ -1,6 +1,7 @@
-import type { CollectionConfig } from 'payload'
+import { APIError, type CollectionConfig } from 'payload'
 import { adminBranchPermission, adminHasAnyPermission, branchScopedWhere } from '@/access/nori'
 import { auditCollection } from '@/hooks/audit-nori'
+import { relationId } from '@/lib/rental-rules'
 
 const maintAudit = auditCollection({
   entity: 'maintenance',
@@ -38,6 +39,53 @@ export const MaintenanceSchedules: CollectionConfig = {
     delete: adminBranchPermission('maintenance', 'delete', ['branch']),
   },
   hooks: {
+    beforeChange: [
+      async ({ data, originalDoc, req }) => {
+        const startDate = String(data?.startDate ?? originalDoc?.startDate ?? '').trim()
+        const endDate = String(data?.endDate ?? originalDoc?.endDate ?? '').trim()
+        const status = String(data?.status ?? originalDoc?.status ?? 'SCHEDULED')
+        const vehicleId = relationId(data?.vehicle ?? originalDoc?.vehicle)
+
+        if (
+          !/^\d{4}-\d{2}-\d{2}$/.test(startDate) ||
+          !/^\d{4}-\d{2}-\d{2}$/.test(endDate) ||
+          endDate < startDate
+        ) {
+          throw new APIError(
+            'Ngày kết thúc bảo trì phải lớn hơn hoặc bằng ngày bắt đầu (YYYY-MM-DD).',
+            400,
+          )
+        }
+
+        if (vehicleId && (status === 'SCHEDULED' || status === 'IN_PROGRESS')) {
+          const overlappingBookings = await req.payload.find({
+            collection: 'bookings',
+            req,
+            overrideAccess: true,
+            depth: 0,
+            limit: 10,
+            where: {
+              and: [
+                { vehicle: { equals: vehicleId } },
+                { status: { in: ['CONFIRMED', 'READY_FOR_HANDOVER', 'ONGOING'] } },
+                { startDate: { less_than_equal: endDate } },
+                { endDate: { greater_than_equal: startDate } },
+              ],
+            },
+          })
+
+          if (overlappingBookings.docs.length > 0) {
+            const first = overlappingBookings.docs[0]
+            throw new APIError(
+              `Không thể lên lịch bảo trì trùng với đơn thuê đang giữ xe (${first.bookingKey ?? first.id}: ${first.startDate} → ${first.endDate}).`,
+              409,
+            )
+          }
+        }
+
+        return data
+      },
+    ],
     afterChange: [maintAudit.afterChange],
     afterDelete: [maintAudit.afterDelete],
   },

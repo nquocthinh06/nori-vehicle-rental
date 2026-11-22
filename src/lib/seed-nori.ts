@@ -163,7 +163,19 @@ function buildModelPayloadData(spec: SeedModelSpec, mediaIds: Map<string, string
   }
 }
 
+export function isProtectedProductionRuntime(): boolean {
+  const vercelEnv = (process.env.VERCEL_ENV || '').trim().toLowerCase()
+  const appEnv = (process.env.APP_ENV || process.env.NORI_ENV || '').trim().toLowerCase()
+  return vercelEnv === 'production' || appEnv === 'production'
+}
+
 async function ensureOfficialAdmin(payload: Payload): Promise<void> {
+  if (
+    process.env.NORI_SKIP_ADMIN_BOOTSTRAP === '1' ||
+    (isProtectedProductionRuntime() && process.env.NORI_ALLOW_STARTUP_BOOTSTRAP !== '1')
+  ) {
+    return
+  }
   const email = (process.env.NORI_ADMIN_EMAIL?.trim() || 'admin@nori.vn').toLowerCase()
   const password = process.env.NORI_ADMIN_PASSWORD || ''
   if (
@@ -181,6 +193,7 @@ async function ensureOfficialAdmin(payload: Payload): Promise<void> {
     limit: 1,
     overrideAccess: true,
     depth: 0,
+    select: { id: true, adminRole: true, fullName: true },
   })
   if (existing.docs.length > 0) {
     const doc = existing.docs[0]
@@ -204,8 +217,26 @@ async function ensureOfficialAdmin(payload: Payload): Promise<void> {
 }
 
 let ensuredPaymentSchemaOnce = false
+let seedBootstrappedOnce = false
+let seedBootInFlight: Promise<void> | null = null
 
 export async function seedNoriIfEmpty(payload: Payload): Promise<void> {
+  if (seedBootstrappedOnce) return
+  if (seedBootInFlight) return seedBootInFlight
+
+  seedBootInFlight = (async () => {
+    try {
+      await runSeedNoriIfEmpty(payload)
+      seedBootstrappedOnce = true
+    } finally {
+      seedBootInFlight = null
+    }
+  })()
+
+  return seedBootInFlight
+}
+
+async function runSeedNoriIfEmpty(payload: Payload): Promise<void> {
   if (!ensuredPaymentSchemaOnce) {
     try {
       const dbAdapter = payload.db as unknown as { drizzle?: unknown; name?: string }
@@ -227,7 +258,14 @@ export async function seedNoriIfEmpty(payload: Payload): Promise<void> {
     }
   }
   await ensureOfficialAdmin(payload)
-  if (process.env.NORI_DISABLE_DEMO_SEED === '1') {
+  const dbAdapter = payload.db as unknown as { name?: string }
+  const isPostgresProduction =
+    process.env.NODE_ENV === 'production' && dbAdapter?.name === 'postgres'
+  if (
+    process.env.NORI_DISABLE_DEMO_SEED === '1' ||
+    (isProtectedProductionRuntime() && process.env.NORI_ALLOW_STARTUP_BOOTSTRAP !== '1') ||
+    (isPostgresProduction && process.env.NORI_ALLOW_STARTUP_BOOTSTRAP !== '1')
+  ) {
     return
   }
   const [modelCount, vehicleCount, siteDoc] = await Promise.all([

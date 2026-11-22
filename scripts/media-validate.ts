@@ -128,7 +128,9 @@ if (fs.existsSync(paths.dbPath)) {
     const runtimePath = candidatePaths.find((p) => fs.existsSync(p))
     if (!runtimePath) {
       auditSummary.missingOnDisk.push(fn)
-      errors.push(`Thiếu file vật lý trong media/ hoặc public/media/ cho bản ghi DB "${fn}" (id=${row.id})`)
+      errors.push(
+        `Thiếu file vật lý trong media/ hoặc public/media/ cho bản ghi DB "${fn}" (id=${row.id})`,
+      )
       continue
     }
     const info = inspectImageMagic(runtimePath)
