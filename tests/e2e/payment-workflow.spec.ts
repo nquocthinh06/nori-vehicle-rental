@@ -26,8 +26,8 @@ function getDbPath(): string {
 
 function getAdminCredentials() {
   const envPath = path.resolve(process.cwd(), '.env')
-  let email = 'admin@nori.vn'
-  let password = ''
+  let email = process.env.NORI_ADMIN_EMAIL || 'admin@nori.vn'
+  let password = process.env.NORI_ADMIN_PASSWORD || ''
   if (fs.existsSync(envPath)) {
     for (const raw of fs.readFileSync(envPath, 'utf8').split(/\r?\n/)) {
       const line = raw.trim()
@@ -45,7 +45,10 @@ function getAdminCredentials() {
       if (k === 'NORI_ADMIN_PASSWORD') password = val
     }
   }
-  return { email, password }
+  return {
+    email: process.env.NORI_ADMIN_EMAIL || email,
+    password: process.env.NORI_ADMIN_PASSWORD || password,
+  }
 }
 
 async function pickAvailableVehicle(request: APIRequestContext, offsetStart = 62) {

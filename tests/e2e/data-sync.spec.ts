@@ -22,14 +22,19 @@ function getDbPath(): string {
 
 function getAdminCredentials() {
   const envPath = path.resolve(process.cwd(), '.env')
-  const envContent = fs.readFileSync(envPath, 'utf8')
-  let email = 'admin@nori.vn'
-  let password = ''
-  for (const line of envContent.split(/\r?\n/)) {
-    if (line.startsWith('NORI_ADMIN_EMAIL=')) email = line.split('=')[1].trim()
-    if (line.startsWith('NORI_ADMIN_PASSWORD=')) password = line.split('=')[1].trim()
+  let email = process.env.NORI_ADMIN_EMAIL || 'admin@nori.vn'
+  let password = process.env.NORI_ADMIN_PASSWORD || ''
+  if (fs.existsSync(envPath)) {
+    const envContent = fs.readFileSync(envPath, 'utf8')
+    for (const line of envContent.split(/\r?\n/)) {
+      if (line.startsWith('NORI_ADMIN_EMAIL=')) email = line.split('=')[1].trim()
+      if (line.startsWith('NORI_ADMIN_PASSWORD=')) password = line.split('=')[1].trim()
+    }
   }
-  return { email, password }
+  return {
+    email: process.env.NORI_ADMIN_EMAIL || email,
+    password: process.env.NORI_ADMIN_PASSWORD || password,
+  }
 }
 
 const ORIGIN = process.env.NORI_TEST_BASE_URL || `http://localhost:${process.env.PORT || 3000}`

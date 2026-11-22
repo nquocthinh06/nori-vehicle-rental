@@ -54,18 +54,20 @@ try {
   const now = new Date().toISOString()
 
   // Ensure Admin
+  const adminEmail = (process.env.NORI_ADMIN_EMAIL || 'admin@nori.vn').trim().toLowerCase()
+  const adminPassword = process.env.NORI_ADMIN_PASSWORD?.trim() || 'Admin@12345678'
   const adminRow = db.prepare('SELECT id FROM admins LIMIT 1').get()
   if (!adminRow) {
     const adminId = 'adm-ci-test-super-admin'
     const salt = crypto.randomBytes(16).toString('hex')
-    const hash = crypto.pbkdf2Sync('Admin@12345678', salt, 600_000, 32, 'sha256').toString('hex')
+    const hash = crypto.pbkdf2Sync(adminPassword, salt, 600_000, 32, 'sha256').toString('hex')
     db.prepare(`
       INSERT INTO admins (
         id, email, hash, salt, admin_role, staff_title, branch_scope_mode, account_status, updated_at, created_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       adminId,
-      'admin@nori.vn',
+      adminEmail,
       `pbkdf2-sha256-v1:${hash}`,
       salt,
       'SUPER_ADMIN',
@@ -75,7 +77,7 @@ try {
       now,
       now,
     )
-    console.log('[CI-INIT] Created baseline test admin: admin@nori.vn')
+    console.log(`[CI-INIT] Created baseline test admin: ${adminEmail}`)
   }
 
   // Ensure Customer User

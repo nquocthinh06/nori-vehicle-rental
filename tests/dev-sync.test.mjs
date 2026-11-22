@@ -440,4 +440,32 @@ describe('NORI Dev Synchronization via GitHub & Multi-Machine Workflow (DEV-SYNC
       } catch {}
     }
   })
+
+  it('DEV-SYNC-07: prepareTestDatabaseBaseline ignores unsmudged Git LFS pointers and seeds a valid fallback DB', () => {
+    const lfsRepoDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nori-lfs-baseline-'))
+    const isolatedDbPath = path.join(lfsRepoDir, 'target.db')
+
+    try {
+      fs.mkdirSync(path.join(lfsRepoDir, 'dev-data', 'database'), { recursive: true })
+      fs.mkdirSync(path.join(lfsRepoDir, 'data', 'seed'), { recursive: true })
+      fs.writeFileSync(
+        path.join(lfsRepoDir, 'dev-data', 'database', 'nori-dev.db'),
+        'version https://git-lfs.github.com/spec/v1\noid sha256:0000000000000000000000000000000000000000000000000000000000000000\nsize 1000\n',
+        'utf8',
+      )
+      fs.copyFileSync(
+        path.join(projectRoot, 'data', 'seed', 'schema.sql'),
+        path.join(lfsRepoDir, 'data', 'seed', 'schema.sql'),
+      )
+
+      const res = prepareTestDatabaseBaseline(isolatedDbPath, lfsRepoDir)
+      assert.equal(res.source, 'fresh-seeded-baseline')
+      assert.equal(res.vehiclesCount, 1)
+      assert.equal(res.usersCount, 1)
+    } finally {
+      try {
+        fs.rmSync(lfsRepoDir, { recursive: true, force: true })
+      } catch {}
+    }
+  })
 })
