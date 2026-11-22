@@ -59,6 +59,18 @@ assertVercelBlobStorageReady()
 
 const rawDbUrl = (process.env.DATABASE_URL || process.env.DATABASE_URI || '').trim()
 const isPostgres = rawDbUrl.startsWith('postgresql:') || rawDbUrl.startsWith('postgres:')
+const requirePostgresRuntime =
+  process.env.VERCEL === '1' ||
+  Boolean(process.env.VERCEL_ENV?.trim()) ||
+  process.env.NORI_ENV === 'production' ||
+  process.env.APP_ENV === 'production' ||
+  process.env.NORI_REQUIRE_POSTGRES === '1'
+
+if (requirePostgresRuntime && !isPostgres) {
+  throw new Error(
+    `[NORI DB CONFIG ERROR] PostgreSQL DATABASE_URL is required in Vercel/Production runtime (${process.env.VERCEL_ENV || process.env.APP_ENV || process.env.NORI_ENV || 'server'}). SQLite local fallback is strictly disabled.`,
+  )
+}
 
 const dbAdapter = isPostgres
   ? postgresAdapter({

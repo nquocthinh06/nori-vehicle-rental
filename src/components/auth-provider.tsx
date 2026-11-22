@@ -30,7 +30,7 @@ type AuthState = {
   isCustomer: boolean
   isAdmin: boolean
   loading: boolean
-  refresh: () => Promise<AppUser | null>
+  refresh: (options?: { maxAgeMs?: number }) => Promise<AppUser | null>
   logout: () => Promise<void>
 }
 
@@ -62,11 +62,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true)
   const refreshSeqRef = useRef(0)
   const lastFocusSyncRef = useRef(0)
+  const lastCompletedSyncRef = useRef(0)
+  const latestUserRef = useRef<AppUser | null>(null)
   const inFlightRefreshRef = useRef<Promise<AppUser | null> | null>(null)
 
-  const refresh = useCallback(async (): Promise<AppUser | null> => {
+  const refresh = useCallback(async (options?: { maxAgeMs?: number }): Promise<AppUser | null> => {
     if (inFlightRefreshRef.current) {
       return inFlightRefreshRef.current
+    }
+    if (
+      options?.maxAgeMs &&
+      lastCompletedSyncRef.current > 0 &&
+      Date.now() - lastCompletedSyncRef.current < options.maxAgeMs
+    ) {
+      return latestUserRef.current
     }
     const seq = ++refreshSeqRef.current
     const task = (async (): Promise<AppUser | null> => {
@@ -81,6 +90,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const result = await response.json()
         const nextUser: AppUser | null =
           response.ok && result?.success && result.data ? (result.data as AppUser) : null
+        latestUserRef.current = nextUser
+        lastCompletedSyncRef.current = Date.now()
         if (seq === refreshSeqRef.current) {
           setUser(nextUser)
         }

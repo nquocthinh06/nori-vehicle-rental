@@ -90,13 +90,14 @@ const nextConfig: NextConfig = {
     root: path.resolve(dirname),
   },
   output: 'standalone',
-  outputFileTracingIncludes: {
-    '/api/**/*': [
-      './public/media/**/*',
-      './dev-data/media/**/*',
-      './public/seed-media/**/*',
-    ],
-  },
+  outputFileTracingIncludes:
+    process.env.VERCEL === '1' && Boolean(process.env.BLOB_READ_WRITE_TOKEN?.trim())
+      ? {
+          '/api/**/*': ['./public/seed-media/**/*'],
+        }
+      : {
+          '/api/**/*': ['./public/media/**/*', './dev-data/media/**/*', './public/seed-media/**/*'],
+        },
   images: {
     loader: 'custom',
     loaderFile: './figma-image-loader.ts',

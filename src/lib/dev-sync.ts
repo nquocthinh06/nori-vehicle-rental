@@ -112,6 +112,29 @@ export function resolveDevSyncPaths(options?: {
  * 4. root nori.db
  * If none exists, initializes a fresh schema and minimal test seed records.
  */
+const SQLITE_HEADER_MAGIC = 'SQLite format 3\0'
+
+/**
+ * Verifies a file exists and begins with the 16-byte SQLite header, rejecting empty files and unsmudged Git LFS pointers.
+ */
+function isValidSqliteFile(filePath: string): boolean {
+  if (!fs.existsSync(filePath)) return false
+  try {
+    const stat = fs.statSync(filePath)
+    if (!stat.isFile() || stat.size < 100) return false
+    const fd = fs.openSync(filePath, 'r')
+    try {
+      const header = Buffer.alloc(16)
+      const bytesRead = fs.readSync(fd, header, 0, 16, 0)
+      return bytesRead === 16 && header.toString('utf8') === SQLITE_HEADER_MAGIC
+    } finally {
+      fs.closeSync(fd)
+    }
+  } catch {
+    return false
+  }
+}
+
 export function prepareTestDatabaseBaseline(
   targetDbPath: string,
   rootDir = process.cwd(),
@@ -128,7 +151,7 @@ export function prepareTestDatabaseBaseline(
 
   let foundSource: string | null = null
   for (const candidate of candidatePaths) {
-    if (fs.existsSync(candidate) && fs.statSync(candidate).size > 0) {
+    if (isValidSqliteFile(candidate)) {
       foundSource = candidate
       break
     }
@@ -179,20 +202,10 @@ export function prepareTestDatabaseBaseline(
     fallbackDb
       .prepare(
         `INSERT OR IGNORE INTO vehicle_models (
-          id, name, slug, brand, category, body_style, status, updated_at, created_at
+          id, name, slug, brand, category, body_style, visible, updated_at, created_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
-      .run(
-        dummyModelId,
-        'NORI Test Model',
-        'nori-test-model',
-        'VinFast',
-        'CAR',
-        'SUV',
-        'ACTIVE',
-        now,
-        now,
-      )
+      .run(dummyModelId, 'NORI Test Model', 'nori-test-model', 'VinFast', 'CAR', 'SUV', 1, now, now)
 
     fallbackDb
       .prepare(

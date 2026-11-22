@@ -8,6 +8,7 @@ import {
   serverField,
 } from '@/access/nori'
 import { auditCollection } from '@/hooks/audit-nori'
+import { runBestEffortSafe } from '@/lib/db-tx'
 import {
   detectReturnScheduleConflicts,
   evaluateVehicleBookingAvailabilityAndPricing,
@@ -149,17 +150,37 @@ export const Bookings: CollectionConfig = {
             user: req.user,
             overrideAccess: false,
             depth: 0,
+            select: {
+              model: true,
+              status: true,
+              intent: true,
+              operationStatus: true,
+              currentBranch: true,
+              managingBranch: true,
+              pricePerDay: true,
+              pricePerWeek: true,
+              pricePerMonth: true,
+              weekendSurcharge: true,
+              holidaySurcharge: true,
+              depositAmount: true,
+              deliveryFee: true,
+              kmLimitPerDay: true,
+              overKmFee: true,
+              lateReturnFeePerHour: true,
+              pickupLocation: true,
+              location: true,
+              reference: true,
+            },
           })
           if (
             vehicle.status !== 'ACTIVE' ||
             vehicle.intent === 'SALE' ||
-            !vehicle.pricePerDay ||
             vehicle.operationStatus === 'SOLD' ||
             vehicle.operationStatus === 'MAINTENANCE' ||
             vehicle.operationStatus === 'INACTIVE' ||
             vehicle.operationStatus === 'RESERVED'
           )
-            throw new APIError('Xe chưa có giá thuê hoặc chưa sẵn sàng nhận đặt mới.', 409)
+            throw new APIError('Xe chưa sẵn sàng nhận đặt mới.', 409)
           const purchaseHoldCount = await req.payload.count({
             collection: 'sales-inquiries',
             overrideAccess: true,
@@ -177,35 +198,13 @@ export const Bookings: CollectionConfig = {
               409,
             )
           }
-          const maintenanceOverlap = await req.payload.find({
-            collection: 'maintenance-schedules',
-            overrideAccess: true,
-            req,
-            depth: 0,
-            limit: 50,
-            where: {
-              and: [
-                { vehicle: { equals: vehicle.id } },
-                { status: { in: ['SCHEDULED', 'IN_PROGRESS'] } },
-              ],
-            },
-          })
-          if (
-            maintenanceOverlap.docs.some(
-              (m) => m.startDate <= String(data.endDate) && m.endDate >= String(data.startDate),
-            )
-          ) {
-            throw new APIError(
-              'Xe đang có lịch bảo trì / bảo dưỡng trong khoảng ngày này. Vui lòng chọn ngày khác.',
-              409,
-            )
-          }
           let maxPending = 5
           try {
             const site = (await req.payload.findGlobal({
               slug: 'nori-site',
               overrideAccess: true,
               req,
+              depth: 0,
             })) as { maxPendingBookings?: number | null }
             const configured = Number(site?.maxPendingBookings)
             if (Number.isInteger(configured) && configured >= 1 && configured <= 50) {
@@ -235,6 +234,7 @@ export const Bookings: CollectionConfig = {
             user: req.user,
             overrideAccess: false,
             depth: 0,
+            select: { name: true, slug: true, visible: true, category: true },
           })
           if (!model.visible) throw new APIError('Dòng xe chưa được công bố.', 409)
           const transactionID = await req.transactionID
@@ -310,6 +310,8 @@ export const Bookings: CollectionConfig = {
             pickupAddress: pickupAddress || null,
             addonKeys,
             promoCode: rawPromo || null,
+            preloadedVehicle: vehicle as unknown as Record<string, unknown>,
+            preloadedModel: model as unknown as Record<string, unknown>,
             req,
             user: req.user,
           })
@@ -608,7 +610,6 @@ export const Bookings: CollectionConfig = {
             !vehicle ||
             vehicle.status !== 'ACTIVE' ||
             vehicle.intent === 'SALE' ||
-            !vehicle.pricePerDay ||
             vehicle.operationStatus === 'SOLD' ||
             vehicle.operationStatus === 'MAINTENANCE' ||
             vehicle.operationStatus === 'INACTIVE' ||
@@ -617,44 +618,19 @@ export const Bookings: CollectionConfig = {
             throw new APIError('Phương tiện chưa sẵn sàng nhận lịch thuê mới.', 409)
           }
 
-          const [purchaseHoldCount, maintenanceOverlap] = await Promise.all([
-            req.payload.count({
-              collection: 'sales-inquiries',
-              overrideAccess: true,
-              req,
-              where: {
-                and: [
-                  { vehicle: { equals: vehicle.id } },
-                  { status: { in: ['DEPOSIT_PENDING', 'CONTRACT_SIGNED', 'DELIVERED'] } },
-                ],
-              },
-            }),
-            req.payload.find({
-              collection: 'maintenance-schedules',
-              overrideAccess: true,
-              req,
-              depth: 0,
-              limit: 50,
-              where: {
-                and: [
-                  { vehicle: { equals: vehicle.id } },
-                  { status: { in: ['SCHEDULED', 'IN_PROGRESS'] } },
-                ],
-              },
-            }),
-          ])
+          const purchaseHoldCount = await req.payload.count({
+            collection: 'sales-inquiries',
+            overrideAccess: true,
+            req,
+            where: {
+              and: [
+                { vehicle: { equals: vehicle.id } },
+                { status: { in: ['DEPOSIT_PENDING', 'CONTRACT_SIGNED', 'DELIVERED'] } },
+              ],
+            },
+          })
           if (purchaseHoldCount.totalDocs > 0) {
             throw new APIError('Phương tiện đang được giữ hồ sơ mua, không thể chuyển lịch.', 409)
-          }
-          if (
-            maintenanceOverlap.docs.some(
-              (m) => m.startDate <= nextEndDate && m.endDate >= nextStartDate,
-            )
-          ) {
-            throw new APIError(
-              'Phương tiện có lịch bảo trì định kỳ trong khoảng thời gian mới. Vui lòng chọn ngày khác.',
-              409,
-            )
           }
 
           const modelID = relationId(vehicle.model)
@@ -914,6 +890,7 @@ export const Bookings: CollectionConfig = {
             excludeBookingId: String(originalDoc.id),
             excludeBookingKey: String(originalDoc.bookingKey),
             alreadyHeldPromoCode: isSamePromo ? oldPromo : null,
+            preloadedVehicle: vehicle as unknown as Record<string, unknown>,
             req,
             user: req.user,
           })
@@ -1536,7 +1513,7 @@ export const Bookings: CollectionConfig = {
           const latestMod = Array.isArray(doc.modificationHistory)
             ? doc.modificationHistory.at(-1)
             : null
-          try {
+          await runBestEffortSafe(req.payload, req, async () => {
             await req.payload.create({
               collection: 'audit-logs',
               req,
@@ -1554,9 +1531,7 @@ export const Bookings: CollectionConfig = {
                 actorEmail: req.user?.email ?? undefined,
               },
             })
-          } catch {
-            // Non-blocking audit write
-          }
+          })
         }
 
         if (operation === 'update' && previousDoc?.status !== doc.status) {
@@ -1565,7 +1540,7 @@ export const Bookings: CollectionConfig = {
 
           // Create Customer Notification when Admin requires Deposit (DEPOSIT_PENDING)
           if (doc.status === 'DEPOSIT_PENDING' && customerId) {
-            try {
+            await runBestEffortSafe(req.payload, req, async () => {
               const dueAmount = Number(
                 doc.initialPaymentDue || doc.depositSnapshot || doc.totalPrice || 0,
               )
@@ -1593,9 +1568,7 @@ export const Bookings: CollectionConfig = {
                   popupDismissed: true,
                 },
               })
-            } catch {
-              // Ignore duplicate eventKey or non-blocking notification error
-            }
+            })
           }
 
           // Create Customer Notification + Staff Consultation Request on Approval (CONFIRMED)
@@ -1702,30 +1675,32 @@ export const Bookings: CollectionConfig = {
             })
 
             if (existingConsult.docs.length === 0) {
-              await req.payload.create({
-                collection: 'consultations',
-                req,
-                overrideAccess: true,
-                data: {
-                  consultationKey: `BOOKING_APPROVAL:${doc.id}`,
-                  booking: doc.id,
-                  customer: customerId,
-                  branch: relationId(doc.pickupBranch) ?? undefined,
-                  bookingKeySnapshot: String(doc.bookingKey ?? doc.id),
-                  customerNameSnapshot: custName,
-                  customerPhoneSnapshot: rawPhone,
-                  customerEmailSnapshot: rawEmail,
-                  vehicleNameSnapshot: `${vehicleLabel}${doc.vehicleReferenceSnapshot ? ` (${doc.vehicleReferenceSnapshot})` : ''}`,
-                  startDateSnapshot: doc.startDate,
-                  endDateSnapshot: doc.endDate,
-                  approvedAt: new Date().toISOString(),
-                  approvedBy: req.user?.email ?? 'Admin NORI',
-                  expectedContactDate: expectedDate,
-                  workingHoursWindow: hoursLabel,
-                  isUrgent,
-                  status: 'PENDING_CONTACT',
-                  contactLogs: [],
-                },
+              await runBestEffortSafe(req.payload, req, async () => {
+                await req.payload.create({
+                  collection: 'consultations',
+                  req,
+                  overrideAccess: true,
+                  data: {
+                    consultationKey: `BOOKING_APPROVAL:${doc.id}`,
+                    booking: doc.id,
+                    customer: customerId,
+                    branch: relationId(doc.pickupBranch) ?? undefined,
+                    bookingKeySnapshot: String(doc.bookingKey ?? doc.id),
+                    customerNameSnapshot: custName,
+                    customerPhoneSnapshot: rawPhone,
+                    customerEmailSnapshot: rawEmail,
+                    vehicleNameSnapshot: `${vehicleLabel}${doc.vehicleReferenceSnapshot ? ` (${doc.vehicleReferenceSnapshot})` : ''}`,
+                    startDateSnapshot: doc.startDate,
+                    endDateSnapshot: doc.endDate,
+                    approvedAt: new Date().toISOString(),
+                    approvedBy: req.user?.email ?? 'Admin NORI',
+                    expectedContactDate: expectedDate,
+                    workingHoursWindow: hoursLabel,
+                    isUrgent,
+                    status: 'PENDING_CONTACT',
+                    contactLogs: [],
+                  },
+                })
               })
             }
           }
@@ -1810,7 +1785,7 @@ export const Bookings: CollectionConfig = {
               })
             }
             if (customerId) {
-              try {
+              await runBestEffortSafe(req.payload, req, async () => {
                 const vehicleLabel = doc.vehicleNameSnapshot || 'Phương tiện NORI'
                 await req.payload.create({
                   collection: 'notifications',
@@ -1835,14 +1810,12 @@ export const Bookings: CollectionConfig = {
                     popupDismissed: true,
                   },
                 })
-              } catch {
-                // Non-blocking notification
-              }
+              })
             }
           }
 
           if (doc.status === 'COMPLETED' && customerId) {
-            try {
+            await runBestEffortSafe(req.payload, req, async () => {
               const vehicleLabel = doc.vehicleNameSnapshot || 'Phương tiện NORI'
               await req.payload.create({
                 collection: 'notifications',
@@ -1865,9 +1838,7 @@ export const Bookings: CollectionConfig = {
                   popupDismissed: true,
                 },
               })
-            } catch {
-              // Non-blocking notification
-            }
+            })
           }
 
           if (doc.status === 'ONGOING' && vehicleId) {

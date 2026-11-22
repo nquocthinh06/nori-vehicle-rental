@@ -119,13 +119,23 @@ for (const dir of [
 const port = String(process.env.PORT || '3000')
 const hostname = String(process.env.HOST || process.env.HOSTNAME || '0.0.0.0')
 
+const resolvedDbUri = resolveSqliteUriFromStandalone(explicitDbUri, resolvedDbPath)
+const isSqliteTarget =
+  resolvedDbUri.startsWith('file:') ||
+  resolvedDbUri.startsWith('libsql:') ||
+  !process.env.DATABASE_URL?.trim()
+
 const childEnv = {
   ...process.env,
   NODE_ENV: 'production',
   PORT: port,
   HOST: hostname,
   HOSTNAME: hostname,
-  DATABASE_URI: resolveSqliteUriFromStandalone(explicitDbUri, resolvedDbPath),
+  // Clear DATABASE_URL when running SQLite standalone so copied .next/standalone/.env
+  // cannot silently override isolated/local SQLite with remote Neon PostgreSQL.
+  ...(isSqliteTarget ? { DATABASE_URL: '' } : {}),
+  DATABASE_URI: resolvedDbUri,
+  NORI_ROOT_DIR: rootDir,
   NORI_SQLITE_PATH: resolvedDbPath,
   NORI_MEDIA_DIR: resolvedMediaDir,
   NORI_IMAGE_CACHE_DIR: resolvedCacheDir,

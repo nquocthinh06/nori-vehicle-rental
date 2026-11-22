@@ -1,7 +1,16 @@
 import { appAuth } from '@/lib/app-auth'
+import { isUniqueConstraintError, txReqOptions, withAtomicResourceLock } from '@/lib/db-tx'
 import { getPayloadClient } from '@/lib/payload'
-import { withBookingWriteLock } from '@/lib/promo-service'
-import { apiError, assertOrigin, assertRateLimit, body, fail, json, text } from '@/lib/api-utils'
+import {
+  apiError,
+  assertOrigin,
+  assertRateLimit,
+  body,
+  createRequestLogger,
+  fail,
+  json,
+  text,
+} from '@/lib/api-utils'
 import {
   computeBookingFinancialsFromDb,
   computeBookingFinancialsSync,
@@ -390,14 +399,17 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  const logger = createRequestLogger('nori-api/bookings', request)
   try {
     assertOrigin(request)
     assertRateLimit(request, 'bookings-create', 40, 60_000)
-    const auth = await appAuth.requireCustomer({
-      unauthMessage: 'Vui lòng đăng nhập để đặt xe.',
-      adminForbiddenMessage:
-        'Bạn đang đăng nhập bằng tài khoản quản trị. Vui lòng sử dụng tài khoản khách hàng để thực hiện đặt thuê.',
-    })
+    const auth = await logger.time('auth', () =>
+      appAuth.requireCustomer({
+        unauthMessage: 'Vui lòng đăng nhập để đặt xe.',
+        adminForbiddenMessage:
+          'Bạn đang đăng nhập bằng tài khoản quản trị. Vui lòng sử dụng tài khoản khách hàng để thực hiện đặt thuê.',
+      }),
+    )
     if (!auth.ok) return auth.response
     const user = auth.user
     const data = await body(request, [
@@ -439,14 +451,101 @@ export async function POST(request: Request) {
       expectedTotalPrice !== undefined &&
       (!Number.isSafeInteger(expectedTotalPrice) || expectedTotalPrice < 0)
     ) {
-      return fail('Báo giá đối chiếu không hợp lệ.')
+      return fail(
+        'Báo giá đối chiếu không hợp lệ.',
+        400,
+        'VALIDATION_ERROR',
+        undefined,
+        logger.responseHeaders(),
+      )
     }
     const idempotencyKey = text(data.idempotencyKey, 120) || undefined
+    const targetVehicleId = text(data.vehicle, 100)
+    const lockKey = targetVehicleId
+      ? `vehicle-booking:${targetVehicleId}`
+      : `booking-create:${user.id}:${idempotencyKey ?? 'default'}`
 
-    const payload = await getPayloadClient()
-    return await withBookingWriteLock(async () => {
-      // Idempotency guard against Double Submit (BK-15)
-      if (idempotencyKey) {
+    const payload = await logger.time('payload', () => getPayloadClient())
+    try {
+      return await logger.time('create_booking', () =>
+        withAtomicResourceLock(payload, lockKey, async (tx) => {
+          // Idempotency guard against Double Submit (BK-15)
+          if (idempotencyKey) {
+            const existing = await payload.find({
+              collection: 'bookings',
+              user,
+              overrideAccess: false,
+              depth: 2,
+              limit: 1,
+              ...txReqOptions(tx.req, undefined, user),
+              where: {
+                and: [
+                  { customer: { equals: user.id } },
+                  { idempotencyKey: { equals: idempotencyKey } },
+                ],
+              },
+            })
+            if (existing.docs[0]) {
+              logger.logSuccess(200, { action: 'create', idempotent: true })
+              return json(bookingView(existing.docs[0]), 200, logger.responseHeaders())
+            }
+          }
+
+          const booking = await payload.create({
+            collection: 'bookings',
+            user,
+            overrideAccess: false,
+            depth: 2,
+            ...txReqOptions(
+              tx.req,
+              expectedTotalPrice !== undefined ? { expectedTotalPrice } : undefined,
+              user,
+            ),
+            data: {
+              vehicle: targetVehicleId,
+              startDate: text(data.startDate, 10),
+              endDate: text(data.endDate, 10),
+              pickupTime: text(data.pickupTime, 5) || undefined,
+              returnTime: text(data.returnTime, 5) || undefined,
+              pickupLocation: text(data.pickupLocation, 200) || undefined,
+              returnLocation: text(data.returnLocation, 200) || undefined,
+              pickupBranch: text(data.pickupBranch, 100) || undefined,
+              returnBranch: text(data.returnBranch, 100) || undefined,
+              pickupServiceLocation: text(data.pickupServiceLocation, 100) || undefined,
+              returnServiceLocation: text(data.returnServiceLocation, 100) || undefined,
+              pickupMethod:
+                data.pickupMethod === 'HOME_DELIVERY' || Boolean(data.deliveryRequested)
+                  ? 'HOME_DELIVERY'
+                  : 'BRANCH_PICKUP',
+              returnMethod: data.returnMethod === 'HOME_PICKUP' ? 'HOME_PICKUP' : 'BRANCH_RETURN',
+              deliveryZone: text(data.deliveryZone, 100) || undefined,
+              deliveryAddress: text(data.deliveryAddress, 300) || undefined,
+              pickupAddress: text(data.pickupAddress, 300) || undefined,
+              deliveryContactName: text(data.deliveryContactName, 120) || undefined,
+              deliveryContactPhone: text(data.deliveryContactPhone, 20) || undefined,
+              deliveryDirections: text(data.deliveryDirections, 500) || undefined,
+              deliveryRequested:
+                Boolean(data.deliveryRequested) || data.pickupMethod === 'HOME_DELIVERY',
+              addonServices: Array.isArray(data.addonServices)
+                ? data.addonServices.map((s) => text(s, 40)).join(',')
+                : text(data.addonServices, 200) || undefined,
+              customerPhone:
+                data.customerPhone !== undefined ? text(data.customerPhone, 16) : undefined,
+              customerEmail:
+                data.customerEmail !== undefined ? text(data.customerEmail, 254) : undefined,
+              driverLicenseNumber: text(data.driverLicenseNumber, 40) || undefined,
+              note: text(data.note, 500) || undefined,
+              promoCode: text(data.promoCode, 40) || undefined,
+              paymentOption: data.paymentOption === 'FULL' ? 'FULL' : 'DEPOSIT',
+              idempotencyKey,
+            },
+          })
+          logger.logSuccess(201, { action: 'create', idempotent: false })
+          return json(bookingView(booking), 201, logger.responseHeaders())
+        }),
+      )
+    } catch (err) {
+      if (idempotencyKey && isUniqueConstraintError(err)) {
         const existing = await payload.find({
           collection: 'bookings',
           user,
@@ -461,73 +560,29 @@ export async function POST(request: Request) {
           },
         })
         if (existing.docs[0]) {
-          return json(bookingView(existing.docs[0]), 200)
+          logger.logSuccess(200, { action: 'create', idempotent: true, dbRaceRecovered: true })
+          return json(bookingView(existing.docs[0]), 200, logger.responseHeaders())
         }
       }
-
-      const booking = await payload.create({
-        collection: 'bookings',
-        user,
-        overrideAccess: false,
-        depth: 2,
-        context: {
-          ...(expectedTotalPrice !== undefined ? { expectedTotalPrice } : {}),
-        },
-        data: {
-          vehicle: text(data.vehicle, 100),
-          startDate: text(data.startDate, 10),
-          endDate: text(data.endDate, 10),
-          pickupTime: text(data.pickupTime, 5) || undefined,
-          returnTime: text(data.returnTime, 5) || undefined,
-          pickupLocation: text(data.pickupLocation, 200) || undefined,
-          returnLocation: text(data.returnLocation, 200) || undefined,
-          pickupBranch: text(data.pickupBranch, 100) || undefined,
-          returnBranch: text(data.returnBranch, 100) || undefined,
-          pickupServiceLocation: text(data.pickupServiceLocation, 100) || undefined,
-          returnServiceLocation: text(data.returnServiceLocation, 100) || undefined,
-          pickupMethod:
-            data.pickupMethod === 'HOME_DELIVERY' || Boolean(data.deliveryRequested)
-              ? 'HOME_DELIVERY'
-              : 'BRANCH_PICKUP',
-          returnMethod: data.returnMethod === 'HOME_PICKUP' ? 'HOME_PICKUP' : 'BRANCH_RETURN',
-          deliveryZone: text(data.deliveryZone, 100) || undefined,
-          deliveryAddress: text(data.deliveryAddress, 300) || undefined,
-          pickupAddress: text(data.pickupAddress, 300) || undefined,
-          deliveryContactName: text(data.deliveryContactName, 120) || undefined,
-          deliveryContactPhone: text(data.deliveryContactPhone, 20) || undefined,
-          deliveryDirections: text(data.deliveryDirections, 500) || undefined,
-          deliveryRequested:
-            Boolean(data.deliveryRequested) || data.pickupMethod === 'HOME_DELIVERY',
-          addonServices: Array.isArray(data.addonServices)
-            ? data.addonServices.map((s) => text(s, 40)).join(',')
-            : text(data.addonServices, 200) || undefined,
-          customerPhone:
-            data.customerPhone !== undefined ? text(data.customerPhone, 16) : undefined,
-          customerEmail:
-            data.customerEmail !== undefined ? text(data.customerEmail, 254) : undefined,
-          driverLicenseNumber: text(data.driverLicenseNumber, 40) || undefined,
-          note: text(data.note, 500) || undefined,
-          promoCode: text(data.promoCode, 40) || undefined,
-          paymentOption: data.paymentOption === 'FULL' ? 'FULL' : 'DEPOSIT',
-          idempotencyKey,
-        },
-      })
-      return json(bookingView(booking), 201)
-    })
+      throw err
+    }
   } catch (error) {
-    return apiError(error)
+    return apiError(error, { logger, route: 'nori-api/bookings' })
   }
 }
 
 export async function PUT(request: Request) {
+  const logger = createRequestLogger('nori-api/bookings', request)
   try {
     assertOrigin(request)
     assertRateLimit(request, 'bookings-modify', 30, 60_000)
-    const auth = await appAuth.requireCustomer({
-      unauthMessage: 'Vui lòng đăng nhập để chỉnh sửa đơn thuê.',
-      adminForbiddenMessage:
-        'Bạn đang đăng nhập bằng tài khoản quản trị. Vui lòng sử dụng tài khoản khách hàng để chỉnh sửa đơn thuê.',
-    })
+    const auth = await logger.time('auth', () =>
+      appAuth.requireCustomer({
+        unauthMessage: 'Vui lòng đăng nhập để chỉnh sửa đơn thuê.',
+        adminForbiddenMessage:
+          'Bạn đang đăng nhập bằng tài khoản quản trị. Vui lòng sử dụng tài khoản khách hàng để chỉnh sửa đơn thuê.',
+      }),
+    )
     if (!auth.ok) return auth.response
     const user = auth.user
 
@@ -561,7 +616,15 @@ export async function PUT(request: Request) {
       'reason',
     ])
     const id = text(data.id, 100)
-    if (!id) return fail('Thiếu mã đơn thuê cần chỉnh sửa.')
+    if (!id) {
+      return fail(
+        'Thiếu mã đơn thuê cần chỉnh sửa.',
+        400,
+        'VALIDATION_ERROR',
+        undefined,
+        logger.responseHeaders(),
+      )
+    }
 
     const expectedRevision =
       data.expectedRevision !== undefined && data.expectedRevision !== null
@@ -571,7 +634,13 @@ export async function PUT(request: Request) {
       expectedRevision !== undefined &&
       (!Number.isSafeInteger(expectedRevision) || expectedRevision < 1)
     ) {
-      return fail('Phiên bản đơn thuê không hợp lệ.')
+      return fail(
+        'Phiên bản đơn thuê không hợp lệ.',
+        400,
+        'VALIDATION_ERROR',
+        undefined,
+        logger.responseHeaders(),
+      )
     }
 
     const expectedTotalPrice =
@@ -582,10 +651,16 @@ export async function PUT(request: Request) {
       expectedTotalPrice !== undefined &&
       (!Number.isSafeInteger(expectedTotalPrice) || expectedTotalPrice < 0)
     ) {
-      return fail('Báo giá đối chiếu không hợp lệ.')
+      return fail(
+        'Báo giá đối chiếu không hợp lệ.',
+        400,
+        'VALIDATION_ERROR',
+        undefined,
+        logger.responseHeaders(),
+      )
     }
 
-    const payload = await getPayloadClient()
+    const payload = await logger.time('payload', () => getPayloadClient())
     const modifyPayload: Record<string, unknown> = {}
     if (data.vehicle !== undefined) modifyPayload.vehicle = text(data.vehicle, 100)
     if (data.startDate !== undefined) modifyPayload.startDate = text(data.startDate, 10)
@@ -625,68 +700,114 @@ export async function PUT(request: Request) {
       modifyPayload.paymentOption = data.paymentOption === 'FULL' ? 'FULL' : 'DEPOSIT'
     if (data.reason !== undefined) modifyPayload.reason = text(data.reason, 300)
 
-    return await withBookingWriteLock(async () => {
-      const updated = await payload.update({
-        collection: 'bookings',
-        id,
-        user,
-        overrideAccess: false,
-        context: {
-          noriCustomerModify: true,
-          expectedRevision,
-          ...(expectedTotalPrice !== undefined ? { expectedTotalPrice } : {}),
-          noriModifyPayload: modifyPayload,
-        },
-        data: {},
-        depth: 2,
-      })
-
-      return json(bookingView(updated, { hasPaymentRecord: false, paymentConfirmed: false }))
-    })
-  } catch (error) {
-    return apiError(error)
-  }
-}
-
-export async function PATCH(request: Request) {
-  try {
-    assertOrigin(request)
-    const auth = await appAuth.requireCustomer({
-      unauthMessage: 'Vui lòng đăng nhập.',
-      adminForbiddenMessage:
-        'Bạn đang đăng nhập bằng tài khoản quản trị. Vui lòng sử dụng tài khoản khách hàng để hủy đơn thuê cá nhân.',
-    })
-    if (!auth.ok) return auth.response
-    const user = auth.user
-    const data = await body(request, ['id'])
-    const payload = await getPayloadClient()
-    const id = text(data.id, 100)
-    return await withBookingWriteLock(async () => {
-      const booking = await payload.findByID({
+    const preBooking = await payload
+      .findByID({
         collection: 'bookings',
         id,
         user,
         overrideAccess: false,
         depth: 0,
       })
-      if (!['PENDING', 'DEPOSIT_PENDING'].includes(booking.status ?? ''))
-        return fail(
-          'Chỉ có thể hủy đơn đang chờ xác nhận hoặc chờ đặt cọc.',
-          409,
-          'INVALID_BOOKING_TRANSITION',
+      .catch(() => null)
+    const lockVehicleId =
+      (typeof modifyPayload.vehicle === 'string' && modifyPayload.vehicle) ||
+      relationId(preBooking?.vehicle)
+    const lockKey = lockVehicleId ? `vehicle-booking:${lockVehicleId}` : `booking:${id}`
+
+    return await logger.time('modify_booking', () =>
+      withAtomicResourceLock(payload, lockKey, async (tx) => {
+        const updated = await payload.update({
+          collection: 'bookings',
+          id,
+          user,
+          overrideAccess: false,
+          ...txReqOptions(
+            tx.req,
+            {
+              noriCustomerModify: true,
+              expectedRevision,
+              ...(expectedTotalPrice !== undefined ? { expectedTotalPrice } : {}),
+              noriModifyPayload: modifyPayload,
+            },
+            user,
+          ),
+          data: {},
+          depth: 2,
+        })
+
+        logger.logSuccess(200, { action: 'modify' })
+        return json(
+          bookingView(updated, { hasPaymentRecord: false, paymentConfirmed: false }),
+          200,
+          logger.responseHeaders(),
         )
-      const updated = await payload.update({
+      }),
+    )
+  } catch (error) {
+    return apiError(error, { logger, route: 'nori-api/bookings' })
+  }
+}
+
+export async function PATCH(request: Request) {
+  const logger = createRequestLogger('nori-api/bookings', request)
+  try {
+    assertOrigin(request)
+    const auth = await logger.time('auth', () =>
+      appAuth.requireCustomer({
+        unauthMessage: 'Vui lòng đăng nhập.',
+        adminForbiddenMessage:
+          'Bạn đang đăng nhập bằng tài khoản quản trị. Vui lòng sử dụng tài khoản khách hàng để hủy đơn thuê cá nhân.',
+      }),
+    )
+    if (!auth.ok) return auth.response
+    const user = auth.user
+    const data = await body(request, ['id'])
+    const payload = await logger.time('payload', () => getPayloadClient())
+    const id = text(data.id, 100)
+    const preBooking = await payload
+      .findByID({
         collection: 'bookings',
         id,
         user,
         overrideAccess: false,
-        context: { noriCustomerCancel: true },
-        data: {},
-        depth: 2,
+        depth: 0,
       })
-      return json(bookingView(updated))
-    })
+      .catch(() => null)
+    const lockVehicleId = relationId(preBooking?.vehicle)
+    const lockKey = lockVehicleId ? `vehicle-booking:${lockVehicleId}` : `booking:${id}`
+
+    return await logger.time('cancel_booking', () =>
+      withAtomicResourceLock(payload, lockKey, async (tx) => {
+        const booking = await payload.findByID({
+          collection: 'bookings',
+          id,
+          user,
+          overrideAccess: false,
+          depth: 0,
+          ...txReqOptions(tx.req, undefined, user),
+        })
+        if (!['PENDING', 'DEPOSIT_PENDING'].includes(booking.status ?? ''))
+          return fail(
+            'Chỉ có thể hủy đơn đang chờ xác nhận hoặc chờ đặt cọc.',
+            409,
+            'INVALID_BOOKING_TRANSITION',
+            undefined,
+            logger.responseHeaders(),
+          )
+        const updated = await payload.update({
+          collection: 'bookings',
+          id,
+          user,
+          overrideAccess: false,
+          ...txReqOptions(tx.req, { noriCustomerCancel: true }, user),
+          data: {},
+          depth: 2,
+        })
+        logger.logSuccess(200, { action: 'cancel' })
+        return json(bookingView(updated), 200, logger.responseHeaders())
+      }),
+    )
   } catch (error) {
-    return apiError(error)
+    return apiError(error, { logger, route: 'nori-api/bookings' })
   }
 }

@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { api } from '@/lib/client-api'
+import { formatApiErrorDetail, getWithRetry } from '@/lib/client-api'
 import { addDays, businessToday, dateNumber, rentalDays } from '@/lib/rental-rules'
 import { Button, IconButton, Notice, Text, cn } from './ui'
 
@@ -54,24 +54,29 @@ export function AvailabilityCalendar({
       setLoadedVehicle(null)
       return
     }
-    let active = true
+    const controller = new AbortController()
     setLoading(true)
     setError('')
-    api<{ busyDays: string[] }>(`/availability?vehicle=${encodeURIComponent(vehicle)}`)
+    getWithRetry<{ busyDays: string[] }>(`/availability?vehicle=${encodeURIComponent(vehicle)}`, {
+      signal: controller.signal,
+      retries: 2,
+    })
       .then((result) => {
-        if (active) {
+        if (!controller.signal.aborted) {
           setBusyDays(result.busyDays)
           setLoadedVehicle(vehicle)
         }
       })
       .catch((e) => {
-        if (active) setError(e.message)
+        if (!controller.signal.aborted) {
+          setError(formatApiErrorDetail(e, 'Chưa thể tải lịch trống của xe.').message)
+        }
       })
       .finally(() => {
-        if (active) setLoading(false)
+        if (!controller.signal.aborted) setLoading(false)
       })
     return () => {
-      active = false
+      controller.abort()
     }
   }, [vehicle, retry])
 

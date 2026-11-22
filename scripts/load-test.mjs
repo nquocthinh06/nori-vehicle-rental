@@ -250,6 +250,7 @@ async function main() {
     NODE_ENV: 'production',
     PORT: port,
     HOSTNAME: '127.0.0.1',
+    DATABASE_URL: '',
     DATABASE_URI: `file:${isolatedDb}`,
     NORI_SQLITE_PATH: isolatedDb,
     NORI_MEDIA_DIR: isolatedMedia,

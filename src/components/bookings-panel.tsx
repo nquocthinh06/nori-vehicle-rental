@@ -3,7 +3,7 @@
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import type { BookingView, PaymentItemView, Quote } from '@/lib/domain-types'
-import { api, RequestError } from '@/lib/client-api'
+import { api, formatApiErrorDetail, getWithRetry, RequestError } from '@/lib/client-api'
 import {
   BOOKING_CONFIRMED_LOCK_MESSAGE,
   PROMO_REMOVED_MESSAGE,
@@ -431,8 +431,9 @@ function BookingsPanelInner() {
         if (editAddons.length > 0) sp.set('addons', editAddons.join(','))
         if (normalizedCandidate) sp.set('promoCode', normalizedCandidate)
 
-        const quote = await api<Quote>(`/availability?${sp.toString()}`, {
+        const quote = await getWithRetry<Quote>(`/availability?${sp.toString()}`, {
           signal: controller.signal,
+          retries: 2,
         })
         if (seq !== editQuoteSeqRef.current || controller.signal.aborted) return
 
@@ -484,7 +485,10 @@ function BookingsPanelInner() {
         ) {
           return
         }
-        setEditError((err as Error).message)
+        setEditError(
+          formatApiErrorDetail(err, 'Chưa thể kiểm tra báo giá mới lúc này. Vui lòng thử lại.')
+            .message,
+        )
         setPreviewQuote(null)
         setLoadedEditQuoteKey('')
       } finally {

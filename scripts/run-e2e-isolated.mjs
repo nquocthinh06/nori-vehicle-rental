@@ -144,6 +144,8 @@ async function main() {
     ...process.env,
     NODE_ENV: 'production',
     PORT: port,
+    HOST: '0.0.0.0',
+    HOSTNAME: '0.0.0.0',
     DATABASE_URL: '',
     DATABASE_URI: `file:./nori-e2e-isolated.db`,
     NORI_SQLITE_PATH: isolatedDb,
@@ -155,11 +157,20 @@ async function main() {
     NEXT_PUBLIC_SITE_URL: baseUrl,
   }
 
+  const standaloneStarter = path.resolve(process.cwd(), 'scripts', 'start-standalone.mjs')
+  const useStandalone =
+    fs.existsSync(path.resolve(process.cwd(), '.next', 'standalone', 'server.js')) &&
+    fs.existsSync(standaloneStarter)
   const nextBin = path.resolve(process.cwd(), 'node_modules', 'next', 'dist', 'bin', 'next')
-  const serverProc = spawn(process.execPath, [nextBin, 'start', '-p', port, '-H', '0.0.0.0'], {
-    env: serverEnv,
-    stdio: ['ignore', 'pipe', 'pipe'],
-  })
+  const serverProc = useStandalone
+    ? spawn(process.execPath, [standaloneStarter], {
+        env: serverEnv,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      })
+    : spawn(process.execPath, [nextBin, 'start', '-p', port, '-H', '0.0.0.0'], {
+        env: serverEnv,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      })
 
   let serverLogs = ''
   const appendLog = (chunk) => {

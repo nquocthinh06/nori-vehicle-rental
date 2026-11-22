@@ -1,4 +1,3 @@
-import { sql } from '@payloadcms/db-sqlite'
 import { APIError, type Payload, type PayloadRequest } from 'payload'
 import {
   evaluatePromotion,
@@ -6,9 +5,10 @@ import {
   type PromoRecordLike,
 } from './rental-rules.ts'
 
-type SqlResult = { rowsAffected?: number; changes?: number }
+type SqlResult = { rowsAffected?: number; changes?: number; rowCount?: number }
 type SqlRunner = {
-  run: (statement: unknown) => Promise<SqlResult> | SqlResult
+  run?: (statement: unknown) => Promise<SqlResult> | SqlResult
+  execute?: (statement: unknown) => Promise<SqlResult> | SqlResult
 }
 
 let bookingWriteQueue: Promise<unknown> = Promise.resolve()
@@ -27,6 +27,13 @@ export function withBookingWriteLock<T>(task: () => Promise<T>): Promise<T> {
   return next
 }
 
+function isPostgresPayload(payload: Payload): boolean {
+  const dbName = String((payload.db as unknown as { name?: string })?.name ?? '').toLowerCase()
+  if (dbName.includes('postgres')) return true
+  const rawUri = (process.env.DATABASE_URL || process.env.DATABASE_URI || '').trim()
+  return !dbName && (rawUri.startsWith('postgres://') || rawUri.startsWith('postgresql://'))
+}
+
 async function getSqlRunner(payload: Payload, req?: PayloadRequest): Promise<SqlRunner | null> {
   const dbAdapter = payload.db as unknown as {
     drizzle?: SqlRunner
@@ -41,11 +48,47 @@ async function getSqlRunner(payload: Payload, req?: PayloadRequest): Promise<Sql
   return dbAdapter.drizzle ?? null
 }
 
+async function executeDialectSql(
+  payload: Payload,
+  runner: SqlRunner,
+  buildStatement: (
+    dialect: 'postgres' | 'sqlite',
+    sqlTag: typeof import('@payloadcms/db-postgres').sql,
+  ) => unknown,
+): Promise<number> {
+  const isPg = isPostgresPayload(payload)
+  if (isPg && typeof runner.execute === 'function') {
+    const { sql: pgSql } = await import('@payloadcms/db-postgres')
+    const stmt = buildStatement('postgres', pgSql as never)
+    const res = await runner.execute(stmt)
+    return Number(res?.rowCount ?? res?.rowsAffected ?? 0)
+  }
+  if (typeof runner.run === 'function') {
+    const { sql: sqliteSql } = await import('@payloadcms/db-sqlite')
+    const stmt = buildStatement('sqlite', sqliteSql as never)
+    const res = await runner.run(stmt)
+    return Number(res?.rowsAffected ?? res?.changes ?? 0)
+  }
+  if (typeof runner.execute === 'function') {
+    const { sql: pgSql } = await import('@payloadcms/db-postgres')
+    const stmt = buildStatement('postgres', pgSql as never)
+    const res = await runner.execute(stmt)
+    return Number(res?.rowCount ?? res?.rowsAffected ?? res?.changes ?? 0)
+  }
+  return -1
+}
+
+export type PromoWithScope = PromoRecordLike & {
+  id: string
+  branchScope?: string | null
+  applicableBranchIds?: unknown
+}
+
 export async function findPromotionByCode(
   payload: Payload,
   rawCode: string,
   req?: PayloadRequest,
-): Promise<(PromoRecordLike & { id: string }) | null> {
+): Promise<PromoWithScope | null> {
   const normalized = String(rawCode ?? '')
     .trim()
     .toUpperCase()
@@ -57,6 +100,23 @@ export async function findPromotionByCode(
     ...(req ? { req } : {}),
     depth: 0,
     limit: 1,
+    select: {
+      code: true,
+      name: true,
+      description: true,
+      discountType: true,
+      discountValue: true,
+      maxDiscount: true,
+      minDays: true,
+      appliesTo: true,
+      validFrom: true,
+      validTo: true,
+      usageLimit: true,
+      usedCount: true,
+      active: true,
+      branchScope: true,
+      applicableBranchIds: true,
+    },
     where: { code: { equals: normalized } },
   })
   const doc = res.docs[0]
@@ -76,6 +136,8 @@ export async function findPromotionByCode(
     usageLimit: doc.usageLimit ?? null,
     usedCount: doc.usedCount ?? 0,
     active: Boolean(doc.active),
+    branchScope: (doc as { branchScope?: string | null }).branchScope ?? null,
+    applicableBranchIds: (doc as { applicableBranchIds?: unknown }).applicableBranchIds ?? null,
   }
 }
 
@@ -91,7 +153,7 @@ export async function lookupAndEvaluatePromotion(
     req?: PayloadRequest
   },
 ): Promise<{
-  promo: (PromoRecordLike & { id: string }) | null
+  promo: PromoWithScope | null
   evaluation: PromoEvaluationResult
 }> {
   const promo = await findPromotionByCode(payload, params.code, params.req)
@@ -130,19 +192,27 @@ export async function consumePromoSlotAtomically(
   const runner = await getSqlRunner(payload, req)
   const nowIso = new Date().toISOString()
   if (runner) {
-    const res = await runner.run(
-      sql`UPDATE promotions
-          SET used_count = COALESCE(used_count, 0) + 1,
-              updated_at = ${nowIso}
-          WHERE id = ${promoId}
-            AND active = 1
-            AND (usage_limit IS NULL OR COALESCE(used_count, 0) < usage_limit)`,
+    const affected = await executeDialectSql(payload, runner, (dialect, sqlTag) =>
+      dialect === 'postgres'
+        ? sqlTag`UPDATE promotions
+            SET used_count = COALESCE(used_count, 0) + 1,
+                updated_at = ${nowIso}
+            WHERE id = ${promoId}
+              AND active = true
+              AND (usage_limit IS NULL OR COALESCE(used_count, 0) < usage_limit)`
+        : sqlTag`UPDATE promotions
+            SET used_count = COALESCE(used_count, 0) + 1,
+                updated_at = ${nowIso}
+            WHERE id = ${promoId}
+              AND active = 1
+              AND (usage_limit IS NULL OR COALESCE(used_count, 0) < usage_limit)`,
     )
-    const affected = Number(res?.rowsAffected ?? res?.changes ?? 0)
-    if (affected !== 1) {
-      throw new APIError('Mã đã hết lượt sử dụng.', 409)
+    if (affected >= 0) {
+      if (affected !== 1) {
+        throw new APIError('Mã đã hết lượt sử dụng.', 409)
+      }
+      return
     }
-    return
   }
 
   const latest = await payload.findByID({
@@ -186,8 +256,11 @@ export async function releasePromoSlotAtomically(
   const runner = await getSqlRunner(payload, req)
   const nowIso = new Date().toISOString()
   if (runner) {
-    await runner.run(
-      sql`UPDATE promotions
+    const affected = await executeDialectSql(
+      payload,
+      runner,
+      (_dialect, sqlTag) =>
+        sqlTag`UPDATE promotions
           SET used_count = CASE
                 WHEN COALESCE(used_count, 0) > 0 THEN COALESCE(used_count, 0) - 1
                 ELSE 0
@@ -195,7 +268,7 @@ export async function releasePromoSlotAtomically(
               updated_at = ${nowIso}
           WHERE code = ${normalized}`,
     )
-    return
+    if (affected >= 0) return
   }
 
   const found = await findPromotionByCode(payload, normalized, req)

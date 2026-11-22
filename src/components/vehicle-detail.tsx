@@ -5,7 +5,13 @@ import dynamic from 'next/dynamic'
 import { startTransition, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import type { GalleryKind, ModelView, SiteContent } from '@/lib/catalogue'
 import type { FleetView, PublicLocationsPayload, Quote, ReviewView } from '@/lib/domain-types'
-import { api, RequestError } from '@/lib/client-api'
+import {
+  api,
+  formatApiErrorDetail,
+  getSharedPublicLocations,
+  getWithRetry,
+  RequestError,
+} from '@/lib/client-api'
 import {
   CAR_PICKUP_PHOTO_TYPES,
   MOTORBIKE_PHOTO_TYPES,
@@ -205,6 +211,8 @@ export function VehicleDetail({
   const [reviewSuccess, setReviewSuccess] = useState('')
 
   const touchStartX = useRef<number | null>(null)
+  const availAbortRef = useRef<AbortController | null>(null)
+  const availSeqRef = useRef(0)
   const { user, isCustomer, isAdmin } = useAuth()
 
   const catalogueQuery = new URLSearchParams({ intent })
@@ -232,13 +240,14 @@ export function VehicleDetail({
 
   useEffect(() => {
     let active = true
-    api<PublicLocationsPayload>('/locations')
+    getSharedPublicLocations()
       .then((res) => {
         if (active) setPublicLocs(res)
       })
       .catch(() => {})
     return () => {
       active = false
+      availAbortRef.current?.abort()
     }
   }, [])
 
@@ -257,24 +266,29 @@ export function VehicleDetail({
   }, [])
 
   useEffect(() => {
-    let active = true
+    const controller = new AbortController()
     setFleetLoading(true)
     setFleetError('')
-    api<FleetView[]>(`/fleet?model=${encodeURIComponent(model.id)}`)
+    getWithRetry<FleetView[]>(`/fleet?model=${encodeURIComponent(model.id)}`, {
+      signal: controller.signal,
+      retries: 2,
+    })
       .then((result) => {
-        if (active) {
+        if (!controller.signal.aborted) {
           setFleet(result)
           setVehicleId(result[0]?.id ?? '')
         }
       })
       .catch((e) => {
-        if (active) setFleetError(e.message)
+        if (!controller.signal.aborted) {
+          setFleetError(formatApiErrorDetail(e, 'Chưa thể tải danh sách xe thực tế.').message)
+        }
       })
       .finally(() => {
-        if (active) setFleetLoading(false)
+        if (!controller.signal.aborted) setFleetLoading(false)
       })
     return () => {
-      active = false
+      controller.abort()
     }
   }, [model.id, retry])
 
@@ -470,6 +484,10 @@ export function VehicleDetail({
       setError('Thông tin xe thực tế hoặc giá thuê chưa được cập nhật.')
       return
     }
+    availAbortRef.current?.abort()
+    const controller = new AbortController()
+    availAbortRef.current = controller
+    const seq = ++availSeqRef.current
     setQuoteLoading(true)
     setError('')
     setQuote(null)
@@ -487,14 +505,27 @@ export function VehicleDetail({
       }
       if (deliveryRequested) qParams.set('delivery', '1')
       if (selectedAddons.length) qParams.set('addons', selectedAddons.join(','))
-      const result = await api<Quote>(`/availability?${qParams}`)
+      const result = await getWithRetry<Quote>(`/availability?${qParams}`, {
+        signal: controller.signal,
+        retries: 2,
+      })
+      if (seq !== availSeqRef.current || controller.signal.aborted) return
       setQuote(result)
       if (!result.available)
         setError(result.reason || 'Xe đã có lịch trong khoảng ngày này. Vui lòng chọn ngày khác.')
     } catch (e) {
-      setError((e as Error).message)
+      if (
+        seq !== availSeqRef.current ||
+        controller.signal.aborted ||
+        (e instanceof Error && e.name === 'AbortError')
+      ) {
+        return
+      }
+      setError(formatApiErrorDetail(e, 'Chưa thể kiểm tra báo giá. Vui lòng thử lại.').message)
     } finally {
-      setQuoteLoading(false)
+      if (seq === availSeqRef.current) {
+        setQuoteLoading(false)
+      }
     }
   }
 

@@ -1,5 +1,6 @@
 import { getPayloadClient } from '@/lib/payload'
-import { assertOrigin, assertRateLimit } from '@/lib/api-utils'
+import { assertOrigin, assertRateLimit, createRequestLogger } from '@/lib/api-utils'
+import { classifyUnexpectedError } from '@/lib/error-classifier'
 import { processProviderWebhook } from '@/lib/payment-service'
 
 const NO_STORE_HEADERS = {
@@ -8,6 +9,7 @@ const NO_STORE_HEADERS = {
 }
 
 export async function POST(request: Request) {
+  const logger = createRequestLogger('nori-api/payments/webhook/sepay', request)
   try {
     // Only apply browser Origin CSRF check if the request came from a browser CORS context;
     // server-to-server SePay webhook requests authenticate via `Authorization: Apikey <SEPAY_WEBHOOK_SECRET>`.
@@ -21,30 +23,47 @@ export async function POST(request: Request) {
     try {
       parsedBody = JSON.parse(rawBody)
     } catch {
+      logger.logError('INVALID_JSON', 400, 'Malformed webhook JSON payload')
       return Response.json(
         {
           success: false,
           error: { code: 'INVALID_JSON', message: 'Nội dung JSON Webhook không hợp lệ.' },
         },
-        { status: 400, headers: NO_STORE_HEADERS },
+        { status: 400, headers: { ...NO_STORE_HEADERS, ...logger.responseHeaders() } },
       )
     }
 
-    const payload = await getPayloadClient()
-    const result = await processProviderWebhook({
-      payload,
-      providerName: 'SEPAY',
-      headers: request.headers,
-      rawBody,
-      parsedBody,
-    })
+    const payload = await logger.time('payload', () => getPayloadClient())
+    const result = await logger.time('process_webhook', () =>
+      processProviderWebhook({
+        payload,
+        providerName: 'SEPAY',
+        headers: request.headers,
+        rawBody,
+        parsedBody,
+      }),
+    )
+
+    if (result.httpStatus >= 400) {
+      logger.logError(
+        String((result.body.error as { code?: unknown } | undefined)?.code ?? 'WEBHOOK_REJECTED'),
+        result.httpStatus,
+        'Webhook rejected',
+      )
+    } else {
+      logger.logSuccess(result.httpStatus, {
+        duplicate: Boolean(result.body.duplicate),
+        eventId: result.body.eventId ? String(result.body.eventId) : null,
+      })
+    }
 
     return Response.json(result.body, {
       status: result.httpStatus,
-      headers: NO_STORE_HEADERS,
+      headers: { ...NO_STORE_HEADERS, ...logger.responseHeaders() },
     })
   } catch (error) {
-    console.error('[NORI Webhook Error]:', error)
+    const classified = classifyUnexpectedError(error)
+    logger.logError(classified.category, classified.status, classified.summary)
     return Response.json(
       {
         success: false,
@@ -53,7 +72,7 @@ export async function POST(request: Request) {
           message: 'Máy chủ chưa thể xử lý sự kiện Webhook. Vui lòng thử lại.',
         },
       },
-      { status: 500, headers: NO_STORE_HEADERS },
+      { status: 500, headers: { ...NO_STORE_HEADERS, ...logger.responseHeaders() } },
     )
   }
 }

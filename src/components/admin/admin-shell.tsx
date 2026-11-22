@@ -764,7 +764,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
                   }}
                   aria-expanded={accountOpen}
                   aria-haspopup="dialog"
-                  aria-label="Menu tài khoản quản trị"
+                  aria-label={`Menu tài khoản quản trị (${user.email})`}
                   className="flex min-h-touch items-center gap-2 rounded-control border border-line bg-canvas px-2.5 py-1.5 text-left hover:border-brand sm:gap-2.5 sm:px-3"
                 >
                   <span className="flex size-8 shrink-0 items-center justify-center rounded-pill bg-brand text-caption font-bold text-inverse">

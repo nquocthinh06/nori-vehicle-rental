@@ -1,7 +1,15 @@
 import crypto from 'node:crypto'
 import { appAuth } from '@/lib/app-auth'
 import { requireAdmin } from '@/lib/admin-api'
-import { apiError, assertOrigin, body, fail, json, text } from '@/lib/api-utils'
+import {
+  apiError,
+  assertOrigin,
+  body,
+  createRequestLogger,
+  fail,
+  json,
+  text,
+} from '@/lib/api-utils'
 import { getPayloadClient } from '@/lib/payload'
 import { resolvePaymentRuntimeConfig } from '@/lib/payment-providers'
 import { getSitePaymentConfig, processProviderWebhook } from '@/lib/payment-service'
@@ -13,6 +21,7 @@ import { relationId } from '@/lib/rental-rules'
  * and 17-step processing pipeline without bypassing backend validation.
  */
 export async function POST(request: Request) {
+  const logger = createRequestLogger('nori-api/payments/mock-simulate', request)
   try {
     assertOrigin(request)
     const rt = resolvePaymentRuntimeConfig()
@@ -121,15 +130,19 @@ export async function POST(request: Request) {
     })
 
     if (result.httpStatus >= 400) {
+      logger.logError(String(result.body.code ?? 'WEBHOOK_ERROR'), result.httpStatus, scenario)
       return fail(
         String(result.body.message ?? 'Mô phỏng sự kiện thất bại.'),
         result.httpStatus,
         String(result.body.code ?? 'WEBHOOK_ERROR'),
+        undefined,
+        logger.responseHeaders(),
       )
     }
 
-    return json(result.body, result.httpStatus)
+    logger.logSuccess(result.httpStatus, { scenario })
+    return json(result.body, result.httpStatus, logger.responseHeaders())
   } catch (error) {
-    return apiError(error)
+    return apiError(error, { logger, route: 'nori-api/payments/mock-simulate' })
   }
 }
