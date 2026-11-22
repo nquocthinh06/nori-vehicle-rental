@@ -155,8 +155,8 @@ jobs:
           NODE_ENV: production
         run: node scripts/init-ci.mjs && pnpm build
 
-      - name: Install Playwright Chromium
-        run: npx playwright install --with-deps chromium
+      - name: Install Playwright Chromium & WebKit
+        run: npx playwright install --with-deps chromium webkit
 
       - name: Run Isolated Playwright E2E Suite
         run: pnpm test:e2e:isolated
@@ -167,6 +167,8 @@ jobs:
         with:
           name: playwright-failure-artifacts
           path: |
+            /tmp/nori-playwright-results/
+            /tmp/nori-playwright-report.json
             playwright-report/
             test-results/
           retention-days: 7

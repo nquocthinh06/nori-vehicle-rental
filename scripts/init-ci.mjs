@@ -86,8 +86,8 @@ try {
     const hash = crypto.pbkdf2Sync('Customer@12345678', salt, 600_000, 32, 'sha256').toString('hex')
     db.prepare(`
       INSERT INTO users (
-        id, email, hash, salt, full_name, phone_number, status, updated_at, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        id, email, hash, salt, full_name, phone, role, status, updated_at, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       userId,
       'customer.test@nori.vn',
@@ -95,6 +95,7 @@ try {
       salt,
       'Nguyen Van Test CI',
       '0901234567',
+      'CUSTOMER',
       'ACTIVE',
       now,
       now,
