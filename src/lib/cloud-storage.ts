@@ -1,5 +1,5 @@
 import { GetObjectCommand, HeadObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3'
-import { head as vercelBlobHead, put as vercelBlobPut } from '@vercel/blob'
+import { head as vercelBlobHead, list as vercelBlobList, put as vercelBlobPut } from '@vercel/blob'
 import path from 'node:path'
 
 export interface CloudStorageConfig {
@@ -266,12 +266,22 @@ export async function uploadToCloudStorage(
   }
 }
 
-export async function getFromCloudStorage(filename: string): Promise<Buffer | null> {
+export async function getFromCloudStorage(
+  filename: string,
+  hintKeys: string[] = [],
+): Promise<Buffer | null> {
   const cleanFilename = path.basename(filename)
 
   if (isVercelBlobConfigured()) {
     const token = process.env.BLOB_READ_WRITE_TOKEN?.trim()
-    for (const blobPath of getVercelBlobCandidatePaths(cleanFilename)) {
+    const normalizedHints = hintKeys
+      .map((k) => k.trim().replace(/^\/+/, ''))
+      .filter((k) => Boolean(k) && !/^https?:/i.test(k))
+    const candidates = [
+      ...new Set([...normalizedHints, ...getVercelBlobCandidatePaths(cleanFilename)]),
+    ]
+
+    for (const blobPath of candidates) {
       try {
         const info = await vercelBlobHead(blobPath, { token })
         if (!info || !info.url) continue
@@ -283,6 +293,23 @@ export async function getFromCloudStorage(filename: string): Promise<Buffer | nu
         // try next candidate path
       }
     }
+
+    // Fallback: locate prefix-scoped blobs (e.g. `<docPrefix>/<filename>`) when hintKeys were unavailable
+    try {
+      const listed = await vercelBlobList({ limit: 500, token })
+      const matched = listed.blobs.find(
+        (b) => b.pathname === cleanFilename || b.pathname.endsWith(`/${cleanFilename}`),
+      )
+      if (matched?.url) {
+        const res = await fetch(matched.url)
+        if (res.ok) {
+          return Buffer.from(await res.arrayBuffer())
+        }
+      }
+    } catch {
+      // list fallback failed
+    }
+
     return null
   }
 

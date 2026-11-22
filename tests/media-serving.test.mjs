@@ -105,6 +105,10 @@ test('localMediaResizeHandler — Serves Sharp-optimized WebP variants with ?w=&
     assert.ok(res instanceof Response, `Expected Response for optimized ${tc.filename}`)
     assert.equal(res.status, 200, `Expected HTTP 200 for ${tc.filename}`)
     assert.equal(res.headers.get('Content-Type'), tc.expectedFormat)
+    assert.ok(
+      res.headers.get('Cache-Control')?.includes('max-age=31536000'),
+      `Expected long Cache-Control TTL for ${tc.filename}`,
+    )
     assert.ok(res.headers.get('ETag'))
 
     const bodyBytes = await res.arrayBuffer()
@@ -366,4 +370,66 @@ test('Postgres Migration Safety Guard — blocks unconfirmed Production writes a
     '20261122_010000_perf_composite_indexes',
     '20261122_020000_parity_unique_constraints',
   ])
+})
+
+test('localMediaResizeHandler — Queries Payload media prefix hints only on local disk miss and handles gracefully without Cloud Storage', async () => {
+  const origBlob = process.env.BLOB_READ_WRITE_TOKEN
+  const origS3 = process.env.S3_BUCKET
+  const origNoriS3 = process.env.NORI_S3_BUCKET
+  try {
+    delete process.env.BLOB_READ_WRITE_TOKEN
+    delete process.env.S3_BUCKET
+    delete process.env.NORI_S3_BUCKET
+
+    let queriedFilename = null
+    const mockReq = {
+      searchParams: new URLSearchParams({ w: '640', q: '75' }),
+      headers: new Headers({ accept: 'image/webp,*/*' }),
+      payload: {
+        find: async ({ where }) => {
+          queriedFilename = where?.filename?.equals ?? null
+          return {
+            docs: [
+              {
+                prefix: '1d86a1dc-7d05-4143-bad5-b6b67d5136b1',
+                _objectKey: '1d86a1dc-7d05-4143-bad5-b6b67d5136b1/cloud-only-image.jpg',
+              },
+            ],
+          }
+        },
+      },
+    }
+
+    const res = await localMediaResizeHandler(mockReq, {
+      params: { collection: 'media', filename: 'cloud-only-image-test.jpg' },
+    })
+    assert.equal(res, undefined)
+    assert.equal(queriedFilename, 'cloud-only-image-test.jpg')
+
+    // Local seed hit must NEVER trigger a DB query
+    let seedQueryCalled = false
+    const seedReq = {
+      searchParams: new URLSearchParams({ w: '640', q: '75' }),
+      headers: new Headers({ accept: 'image/webp,*/*' }),
+      payload: {
+        find: async () => {
+          seedQueryCalled = true
+          return { docs: [] }
+        },
+      },
+    }
+    const seedRes = await localMediaResizeHandler(seedReq, {
+      params: { collection: 'media', filename: SAMPLE_IMAGES.vehicleDetailExt },
+    })
+    assert.ok(seedRes instanceof Response)
+    assert.equal(seedRes.status, 200)
+    assert.equal(seedQueryCalled, false, 'Local media hits must skip DB metadata lookup')
+  } finally {
+    if (origBlob !== undefined) process.env.BLOB_READ_WRITE_TOKEN = origBlob
+    else delete process.env.BLOB_READ_WRITE_TOKEN
+    if (origS3 !== undefined) process.env.S3_BUCKET = origS3
+    else delete process.env.S3_BUCKET
+    if (origNoriS3 !== undefined) process.env.NORI_S3_BUCKET = origNoriS3
+    else delete process.env.NORI_S3_BUCKET
+  }
 })

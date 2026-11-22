@@ -78,7 +78,7 @@ export function VehicleCard({
               loading="lazy"
               decoding="async"
               fetchPriority="low"
-              sizes="(max-width: 767px) 100vw, (max-width: 1023px) 50vw, 33vw"
+              sizes="(max-width: 767px) 100vw, (max-width: 1023px) 50vw, 384px"
               className="object-cover transition-transform duration-500 group-hover:scale-105"
             />
           ) : (
@@ -174,7 +174,8 @@ export function VehicleCard({
             href={href}
             className="flex min-h-touch items-center gap-1 text-caption font-semibold"
           >
-            Chi tiết <Icon name="arrow-right" className="size-3.5" />
+            Chi tiết<span className="sr-only"> {model.name}</span>{' '}
+            <Icon name="arrow-right" className="size-3.5" />
           </NoriLink>
         </div>
       </div>

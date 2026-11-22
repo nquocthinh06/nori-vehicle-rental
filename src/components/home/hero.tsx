@@ -785,7 +785,7 @@ export function Hero({
 
               <Text
                 as="span"
-                className="hidden px-1 text-caption font-semibold tracking-wider text-inverse sm:inline"
+                className="hidden min-w-[3.25rem] px-1 text-center text-caption font-semibold tracking-wider tabular-nums text-inverse sm:inline"
               >
                 0{safeActive + 1}
                 <span className="ml-0.5 text-micro text-inverse/60">/ 0{totalSlides}</span>
@@ -815,13 +815,13 @@ export function Hero({
                         {isCurrent && (
                           <span
                             key={`prog-${safeActive}-${shouldAutoPlay ? 'run' : 'hold'}`}
-                            className="block h-full rounded-pill bg-brand-bright"
+                            className="block size-full origin-left rounded-pill bg-brand-bright"
                             style={
                               shouldAutoPlay
                                 ? {
                                     animation: `noriHeroProgress ${activeDurationSec}s linear forwards`,
                                   }
-                                : { width: '100%' }
+                                : undefined
                             }
                           />
                         )}

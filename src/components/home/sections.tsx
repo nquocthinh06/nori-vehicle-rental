@@ -64,7 +64,7 @@ export function Story({ image }: { image: Photo | null }) {
               loading="lazy"
               decoding="async"
               fetchPriority="low"
-              sizes="(max-width: 1023px) 100vw, 50vw"
+              sizes="(max-width: 1023px) 100vw, 640px"
               className="object-cover"
             />
           ) : (
