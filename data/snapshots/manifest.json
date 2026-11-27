@@ -12,7 +12,7 @@
     "roles-permissions",
     "media-manifest"
   ],
-  "contentHash": "1a90aa85a72eb5bfbf535551",
+  "contentHash": "bd26a2c28851af73763f8377",
   "counts": {
     "articles": 0,
     "banners": 3,
@@ -37,9 +37,17 @@
     "reviews",
     "audit-logs",
     "admins-sessions",
-    "users-sessions"
+    "users-sessions",
+    "branch-staff",
+    "vehicle-transfers",
+    "vehicle-location-history",
+    "delivery-jobs",
+    "ai-settings",
+    "ai-usage-logs",
+    "ai-feedback",
+    "vehicle-import-jobs"
   ],
-  "exportedAt": "2026-11-18T16:02:13.804Z",
+  "exportedAt": "2026-11-27T19:03:42.845Z",
   "files": {
     "articles.json": {
       "recordCount": 0,
@@ -63,7 +71,7 @@
     },
     "media-manifest.json": {
       "recordCount": 67,
-      "sha256": "cd4141494d22d38294a34fdc3eb41861a9780b6425f1350ffc825d101fa7e963"
+      "sha256": "baa41bf7ff8a2dfb61476aa751ddad5631a4df4cc8614cd81d407adf39b35fe3"
     },
     "promotions.json": {
       "recordCount": 1,
@@ -79,7 +87,7 @@
     },
     "vehicle-models.json": {
       "recordCount": 21,
-      "sha256": "8264e8df4ee99db82416a9bd4f40fe2030b279265705a7b28beff5abf32b3dfd"
+      "sha256": "20990fdf22088709e12dcd941704a7940d6dfcd5340230ac5e6f5d2c0be19bee"
     },
     "vehicles.json": {
       "recordCount": 21,
@@ -88,5 +96,5 @@
   },
   "formatVersion": "1.0.0",
   "schemaVersion": "nori-payload-sqlite-v2.5",
-  "snapshotVersion": "snap-1a90aa85a72e"
+  "snapshotVersion": "snap-bd26a2c28851"
 }

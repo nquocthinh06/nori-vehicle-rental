@@ -1,0 +1,279 @@
+{
+  "schemaVersion": "1.0.0",
+  "auditedAt": "2026-11-28T02:02:00+07:00",
+  "market": "VN",
+  "policy": "Official Vietnam OEM websites verified read-only. WAF/TLS/timeout-blocked domains are NOT bypassed; their baseline specs stay preserved and marked NEEDS_BROCHURE_CHECK for Method 4 (PDF Brochure) or manual verification.",
+  "brands": [
+    {
+      "brand": "Toyota",
+      "officialDomain": "www.toyota.com.vn",
+      "reachability": "REACHABLE_200",
+      "httpStatus": 200,
+      "jsonLd": true,
+      "openGraph": true,
+      "verificationStatus": "VERIFIED",
+      "notes": "Product pages /fortuner, /vios, /hilux return HTTP 200 with structured metadata and current VN specs."
+    },
+    {
+      "brand": "Mitsubishi",
+      "officialDomain": "www.mitsubishi-motors.com.vn",
+      "reachability": "REACHABLE_200",
+      "httpStatus": 200,
+      "jsonLd": true,
+      "openGraph": true,
+      "verificationStatus": "VERIFIED",
+      "notes": "Product pages /newxpander and /all-new-triton return HTTP 200."
+    },
+    {
+      "brand": "Mazda",
+      "officialDomain": "mazdamotors.vn",
+      "reachability": "REACHABLE_200",
+      "httpStatus": 200,
+      "jsonLd": false,
+      "openGraph": true,
+      "verificationStatus": "VERIFIED",
+      "notes": "Product page /vehicles/mazda-cx-5/ returns HTTP 200."
+    },
+    {
+      "brand": "Yamaha",
+      "officialDomain": "yamaha-motor.com.vn",
+      "reachability": "REACHABLE_200",
+      "httpStatus": 200,
+      "jsonLd": true,
+      "openGraph": true,
+      "verificationStatus": "VERIFIED",
+      "notes": "Category/model page /xe/loai-xe/exciter/ returns HTTP 200 with JSON-LD."
+    },
+    {
+      "brand": "Honda",
+      "officialDomain": "www.honda.com.vn",
+      "reachability": "PARTIAL_SPA_200",
+      "httpStatus": 200,
+      "jsonLd": false,
+      "openGraph": false,
+      "verificationStatus": "VERIFIED_MOTORBIKE_NEEDS_BROCHURE_CAR",
+      "notes": "Motorbike routes (/xe-may/san-pham/sh-160i125i?category=2, sh350i, vision, wave-alpha-110) return HTTP 200; /o-to/san-pham/honda-cr-v returns 404 and SPA shell lacks static JSON-LD."
+    },
+    {
+      "brand": "Ford",
+      "officialDomain": "www.ford.com.vn",
+      "reachability": "WAF_BLOCKED_403",
+      "httpStatus": 403,
+      "jsonLd": false,
+      "openGraph": false,
+      "verificationStatus": "NEEDS_BROCHURE_CHECK",
+      "notes": "HTTP 403 Access Denied by edge WAF. Never bypass; use official VN PDF brochure import."
+    },
+    {
+      "brand": "VinFast",
+      "officialDomain": "vinfastauto.com",
+      "reachability": "WAF_BLOCKED_403",
+      "httpStatus": 403,
+      "jsonLd": false,
+      "openGraph": false,
+      "verificationStatus": "NEEDS_BROCHURE_CHECK",
+      "notes": "HTTP 403 Blocked by edge WAF. Never bypass; use official VN PDF brochure import."
+    },
+    {
+      "brand": "Mercedes-Benz",
+      "officialDomain": "www.mercedes-benz.com.vn",
+      "reachability": "WAF_BLOCKED_403",
+      "httpStatus": 403,
+      "jsonLd": false,
+      "openGraph": false,
+      "verificationStatus": "NEEDS_BROCHURE_CHECK",
+      "notes": "HTTP 403 Access Denied by edge WAF. Never bypass; use official VN PDF brochure import."
+    },
+    {
+      "brand": "Hyundai",
+      "officialDomain": "hyundai.thanhcong.vn",
+      "reachability": "TLS_LEGACY_ERROR",
+      "httpStatus": null,
+      "jsonLd": false,
+      "openGraph": false,
+      "verificationStatus": "NEEDS_BROCHURE_CHECK",
+      "notes": "ERR_SSL_UNSAFE_LEGACY_RENEGOTIATION_DISABLED under Node/OpenSSL 3. Use official VN PDF brochure import."
+    },
+    {
+      "brand": "Kawasaki",
+      "officialDomain": "www.kawasaki-motors.vn",
+      "reachability": "TIMEOUT",
+      "httpStatus": null,
+      "jsonLd": false,
+      "openGraph": false,
+      "verificationStatus": "NEEDS_BROCHURE_CHECK",
+      "notes": "Connection timed out (>5000ms). Use official PDF brochure or manual verified spec import."
+    }
+  ],
+  "mediaHygieneAudit": {
+    "dbMediaTotal": 81,
+    "referencedMediaTotal": 67,
+    "unreferencedMediaRows": 14,
+    "unreferencedFilenames": [
+      "nori-hero-1.png",
+      "nori-hero-2.png",
+      "nori-hero-3.png",
+      "nori-story.png",
+      "toyota-fortuner-catalogue.png",
+      "honda-pcx-catalogue.png",
+      "ford-ranger-raptor-catalogue.png",
+      "xe-dien-vinfast-evo-max.jpg",
+      "ERD.png",
+      "vinfast-vf-8-250207-g99-1200x675-jpg-1794998589430-0-ngfl.webp",
+      "vinfast-vf-8-250207-g99-1200x675-jpg-1794999137387-0-aq0e.webp",
+      "vinfast-vf-8-250207-g99-1200x675-jpg-1795003329326-0-w7v0.webp",
+      "vinfast-vf-8-250207-g99-1200x675-jpg-1795003379449-0-d5i8.webp",
+      "vinfast-vf-8-250207-g99-1200x675-jpg-1795003541304-0-c7n8.webp"
+    ],
+    "diskFilesInMediaDirExclSeed": 271,
+    "orphanDiskFilesInMediaDir": 190,
+    "sha256DuplicateGroups": [
+      {
+        "sha256Prefix": "117f5e4b16d1",
+        "filesize": 78985,
+        "filenames": ["xe-dien-vinfast-evo-max.jpg", "xe-dien-vinfast-evo-max-1.jpg"]
+      },
+      {
+        "sha256Prefix": "e31063814242",
+        "filesize": 89902,
+        "filenames": [
+          "vinfast-vf-8-250207-g99-1200x675-jpg-1794998589430-0-ngfl.webp",
+          "vinfast-vf-8-250207-g99-1200x675-jpg-1794999137387-0-aq0e.webp",
+          "vinfast-vf-8-250207-g99-1200x675-jpg-1795003329326-0-w7v0.webp",
+          "vinfast-vf-8-250207-g99-1200x675-jpg-1795003379449-0-d5i8.webp",
+          "vinfast-vf-8-250207-g99-1200x675-jpg-1795003541304-0-c7n8.webp",
+          "vinfast-vf-8-250207-g99-1200x675-jpg-1795014575900-0-v62m.webp"
+        ]
+      }
+    ],
+    "note": "No referenced media rows or disk files were deleted. 14 unreferenced DB rows and 190 orphan disk files are preserved and documented for safe future GC."
+  },
+  "models": [
+    {
+      "slug": "toyota-fortuner",
+      "officialSourceUrl": "https://www.toyota.com.vn/fortuner",
+      "verificationLevel": "VERIFIED",
+      "lastCheckedAt": "2026-11-28T02:02:00+07:00"
+    },
+    {
+      "slug": "toyota-vios",
+      "officialSourceUrl": "https://www.toyota.com.vn/vios",
+      "verificationLevel": "VERIFIED",
+      "lastCheckedAt": "2026-11-28T02:02:00+07:00"
+    },
+    {
+      "slug": "mazda-cx-5",
+      "officialSourceUrl": "https://mazdamotors.vn/vehicles/mazda-cx-5/",
+      "verificationLevel": "VERIFIED",
+      "lastCheckedAt": "2026-11-28T02:02:00+07:00"
+    },
+    {
+      "slug": "mitsubishi-xpander",
+      "officialSourceUrl": "https://www.mitsubishi-motors.com.vn/newxpander",
+      "verificationLevel": "VERIFIED",
+      "lastCheckedAt": "2026-11-28T02:02:00+07:00"
+    },
+    {
+      "slug": "honda-cr-v",
+      "officialSourceUrl": "https://www.honda.com.vn/o-to/san-pham",
+      "verificationLevel": "NEEDS_BROCHURE_CHECK",
+      "lastCheckedAt": "2026-11-28T02:02:00+07:00"
+    },
+    {
+      "slug": "hyundai-accent",
+      "officialSourceUrl": "https://hyundai.thanhcong.vn/",
+      "verificationLevel": "NEEDS_BROCHURE_CHECK",
+      "lastCheckedAt": "2026-11-28T02:02:00+07:00"
+    },
+    {
+      "slug": "vinfast-vf-8",
+      "officialSourceUrl": "https://vinfastauto.com/vn_vi",
+      "verificationLevel": "NEEDS_BROCHURE_CHECK",
+      "lastCheckedAt": "2026-11-28T02:02:00+07:00"
+    },
+    {
+      "slug": "mercedes-benz-c300-amg",
+      "officialSourceUrl": "https://www.mercedes-benz.com.vn/",
+      "verificationLevel": "NEEDS_BROCHURE_CHECK",
+      "lastCheckedAt": "2026-11-28T02:02:00+07:00"
+    },
+    {
+      "slug": "honda-pcx",
+      "officialSourceUrl": "https://www.honda.com.vn/xe-may/san-pham",
+      "verificationLevel": "NEEDS_BROCHURE_CHECK",
+      "lastCheckedAt": "2026-11-28T02:02:00+07:00"
+    },
+    {
+      "slug": "honda-wave-alpha",
+      "officialSourceUrl": "https://www.honda.com.vn/xe-may/san-pham/wave-alpha-110?category=1",
+      "verificationLevel": "VERIFIED",
+      "lastCheckedAt": "2026-11-28T02:02:00+07:00"
+    },
+    {
+      "slug": "honda-vision",
+      "officialSourceUrl": "https://www.honda.com.vn/xe-may/san-pham/vision?category=2",
+      "verificationLevel": "VERIFIED",
+      "lastCheckedAt": "2026-11-28T02:02:00+07:00"
+    },
+    {
+      "slug": "honda-sh160i",
+      "officialSourceUrl": "https://www.honda.com.vn/xe-may/san-pham/sh-160i125i?category=2",
+      "verificationLevel": "VERIFIED",
+      "lastCheckedAt": "2026-11-28T02:02:00+07:00"
+    },
+    {
+      "slug": "honda-sh350i",
+      "officialSourceUrl": "https://www.honda.com.vn/xe-may/san-pham/sh350i?category=2",
+      "verificationLevel": "VERIFIED",
+      "lastCheckedAt": "2026-11-28T02:02:00+07:00"
+    },
+    {
+      "slug": "yamaha-exciter-155-vva",
+      "officialSourceUrl": "https://yamaha-motor.com.vn/xe/loai-xe/exciter/",
+      "verificationLevel": "VERIFIED",
+      "lastCheckedAt": "2026-11-28T02:02:00+07:00"
+    },
+    {
+      "slug": "vinfast-evo200",
+      "officialSourceUrl": "https://vinfastauto.com/vn_vi",
+      "verificationLevel": "NEEDS_BROCHURE_CHECK",
+      "lastCheckedAt": "2026-11-28T02:02:00+07:00"
+    },
+    {
+      "slug": "vinfast-evo-max",
+      "officialSourceUrl": "https://vinfastauto.com/vn_vi",
+      "verificationLevel": "NEEDS_BROCHURE_CHECK",
+      "lastCheckedAt": "2026-11-28T02:02:00+07:00"
+    },
+    {
+      "slug": "kawasaki-z650",
+      "officialSourceUrl": "https://www.kawasaki-motors.vn/",
+      "verificationLevel": "NEEDS_BROCHURE_CHECK",
+      "lastCheckedAt": "2026-11-28T02:02:00+07:00"
+    },
+    {
+      "slug": "ford-ranger-raptor",
+      "officialSourceUrl": "https://www.ford.com.vn/",
+      "verificationLevel": "NEEDS_BROCHURE_CHECK",
+      "lastCheckedAt": "2026-11-28T02:02:00+07:00"
+    },
+    {
+      "slug": "ford-ranger-wildtrak",
+      "officialSourceUrl": "https://www.ford.com.vn/",
+      "verificationLevel": "NEEDS_BROCHURE_CHECK",
+      "lastCheckedAt": "2026-11-28T02:02:00+07:00"
+    },
+    {
+      "slug": "toyota-hilux",
+      "officialSourceUrl": "https://www.toyota.com.vn/hilux",
+      "verificationLevel": "VERIFIED",
+      "lastCheckedAt": "2026-11-28T02:02:00+07:00"
+    },
+    {
+      "slug": "mitsubishi-triton",
+      "officialSourceUrl": "https://www.mitsubishi-motors.com.vn/all-new-triton",
+      "verificationLevel": "VERIFIED",
+      "lastCheckedAt": "2026-11-28T02:02:00+07:00"
+    }
+  ]
+}

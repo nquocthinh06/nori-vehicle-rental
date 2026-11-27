@@ -1,0 +1,12 @@
+{
+  "catalogueVersion": "2026.11.28-v1",
+  "schemaVersion": "nori-payload-sqlite-v2.5",
+  "market": "VN",
+  "modelCount": 21,
+  "verifiedSourceCount": 11,
+  "needsBrochureCheckCount": 10,
+  "demoFleetCount": 21,
+  "referencedMediaCount": 67,
+  "enrichedAt": "2026-11-28T02:02:00+07:00",
+  "enrichmentScript": "scripts/enrich-catalogue-verified.mjs"
+}

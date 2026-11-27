@@ -1,9 +1,9 @@
 {
-  "snapshotVersion": "nori-dev-snapshot-1795257110120",
+  "snapshotVersion": "nori-dev-snapshot-1795809623733",
   "schemaVersion": "nori-payload-sqlite-v2.5",
-  "exportedAt": "2026-11-21T10:31:50.119Z",
-  "dbSha256": "ab6b55e6e2655d2de740a1bacbb6497ca91c93a8a0f662aed9efe48bde9a6e8c",
-  "dbSizeBytes": 4255744,
+  "exportedAt": "2026-11-27T20:00:23.729Z",
+  "dbSha256": "2c39cbadaadf1a2a14e1d57df0e4f8713500ee620ff9f7bac3e5e08ead59d52a",
+  "dbSizeBytes": 4542464,
   "counts": {
     "admins": 2,
     "users": 17,
@@ -29,7 +29,7 @@
     "posts": 0,
     "media": 81,
     "nori_site": 1,
-    "audit_logs": 517
+    "audit_logs": 525
   },
   "mediaCount": 81,
   "mediaFiles": [

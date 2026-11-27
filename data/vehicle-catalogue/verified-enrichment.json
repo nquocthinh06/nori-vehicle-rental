@@ -1,0 +1,273 @@
+{
+  "schemaVersion": "1.0.0",
+  "market": "VN",
+  "generatedAt": "2026-11-28T02:02:00+07:00",
+  "note": "Verified Vietnamese catalogue enrichment dataset for the 21 canonical NORI vehicle models. Preserves id, slug, modelYear, vehicles (isDemo=1), bookings, reviews, rental prices, and deposits. WAF/TLS-blocked brand specs are never fabricated and remain on verified baseline.",
+  "models": [
+    {
+      "slug": "toyota-fortuner",
+      "name": "Toyota Fortuner",
+      "officialName": "Toyota Fortuner",
+      "modelLine": "Fortuner",
+      "versionName": "2.4 AT 4x2 / Legender 2.8 AT 4x4",
+      "generation": "AN160",
+      "shortDescription": "SUV 7 chỗ khung gầm rời bền bỉ, khoảng sáng gầm 279 mm, động cơ Diesel 2.4L/2.8L phù hợp gia đình và hành trình đa địa hình.",
+      "source": "https://www.toyota.com.vn/fortuner",
+      "verificationLevel": "VERIFIED",
+      "importSourceType": "OFFICIAL_URL"
+    },
+    {
+      "slug": "toyota-vios",
+      "name": "Toyota Vios",
+      "officialName": "Toyota Vios",
+      "modelLine": "Vios",
+      "versionName": "1.5E CVT / 1.5G CVT",
+      "generation": "XP150 Facelift",
+      "shortDescription": "Sedan hạng B 5 chỗ tiết kiệm nhiên liệu (~5,88 L/100 km bản G), cốp rộng 506 lít cùng gói an toàn Toyota Safety Sense.",
+      "source": "https://www.toyota.com.vn/vios",
+      "verificationLevel": "VERIFIED",
+      "importSourceType": "OFFICIAL_URL"
+    },
+    {
+      "slug": "mazda-cx-5",
+      "name": "Mazda CX-5",
+      "officialName": "Mazda CX-5",
+      "modelLine": "CX-5",
+      "versionName": "2.0L Luxury / 2.0L Premium Active",
+      "generation": "KF Facelift",
+      "shortDescription": "CUV hạng C thiết kế KODO thanh lịch, động cơ Skyactiv-G 2.0L, công nghệ GVC Plus và gói an toàn chủ động i-Activsense.",
+      "source": "https://mazdamotors.vn/vehicles/mazda-cx-5/",
+      "verificationLevel": "VERIFIED",
+      "importSourceType": "OFFICIAL_URL"
+    },
+    {
+      "slug": "mitsubishi-xpander",
+      "name": "Mitsubishi Xpander",
+      "officialName": "Mitsubishi Xpander",
+      "modelLine": "Xpander",
+      "versionName": "AT Premium",
+      "generation": "NC Facelift",
+      "shortDescription": "MPV 7 chỗ đa dụng gầm cao 225 mm, động cơ 1.5L MIVEC bền bỉ, khoang cabin rộng rãi tối ưu cho gia đình và dịch vụ.",
+      "source": "https://www.mitsubishi-motors.com.vn/newxpander",
+      "verificationLevel": "VERIFIED",
+      "importSourceType": "OFFICIAL_URL"
+    },
+    {
+      "slug": "honda-cr-v",
+      "name": "Honda CR-V",
+      "officialName": "Honda CR-V",
+      "modelLine": "CR-V",
+      "versionName": "1.5L L (FWD)",
+      "generation": "Thế hệ thứ 6 (RS/L)",
+      "shortDescription": "CUV hạng C 7 chỗ (5+2) động cơ 1.5L VTEC Turbo 188 mã lực, trang bị tiêu chuẩn gói an toàn Honda SENSING và 8 túi khí.",
+      "source": "https://www.honda.com.vn/o-to/san-pham",
+      "verificationLevel": "NEEDS_BROCHURE_CHECK",
+      "importSourceType": "OFFICIAL_URL"
+    },
+    {
+      "slug": "hyundai-accent",
+      "name": "Hyundai Accent",
+      "officialName": "Hyundai Accent",
+      "modelLine": "Accent",
+      "versionName": "1.5 AT Đặc biệt",
+      "generation": "Thế hệ mới 2024 (BN7)",
+      "shortDescription": "Sedan đô thị 5 chỗ động cơ Smartstream G 1.5L 115 PS, hộp số IVT êm ái cùng nhiều tiện nghi làm mát ghế và đề nổ từ xa.",
+      "source": "https://hyundai.thanhcong.vn/",
+      "verificationLevel": "NEEDS_BROCHURE_CHECK",
+      "importSourceType": "MANUAL"
+    },
+    {
+      "slug": "vinfast-vf-8",
+      "name": "VinFast VF 8",
+      "officialName": "VinFast VF 8",
+      "modelLine": "VF 8",
+      "versionName": "VF 8S / Eco / Plus (Kèm pin)",
+      "generation": "SUV điện cỡ D",
+      "shortDescription": "SUV thuần điện 5 chỗ dẫn động AWD hai mô-tơ lên tới 402 mã lực, pin khả dụng 87,7 kWh, tầm hoạt động 457–471 km WLTP.",
+      "source": "https://vinfastauto.com/vn_vi",
+      "verificationLevel": "NEEDS_BROCHURE_CHECK",
+      "importSourceType": "MANUAL"
+    },
+    {
+      "slug": "mercedes-benz-c300-amg",
+      "name": "Mercedes-Benz C 300 AMG",
+      "officialName": "Mercedes-Benz C 300 AMG",
+      "modelLine": "C-Class",
+      "versionName": "C 300 AMG First Edition / CKD",
+      "generation": "W206",
+      "shortDescription": "Sedan hạng sang W206 động cơ 2.0L Mild-Hybrid 48V EQ Boost 258 mã lực, hộp số 9G-TRONIC, màn hình dọc MBUX và đèn DIGITAL LIGHT.",
+      "source": "https://www.mercedes-benz.com.vn/",
+      "verificationLevel": "NEEDS_BROCHURE_CHECK",
+      "importSourceType": "MANUAL"
+    },
+    {
+      "slug": "honda-pcx",
+      "name": "Honda PCX",
+      "officialName": "Honda PCX 160 ABS",
+      "modelLine": "PCX",
+      "versionName": "PCX 160 ABS",
+      "generation": "KF47",
+      "shortDescription": "Xe tay ga touring cỡ trung động cơ eSP+ 156,9 cc làm mát dung dịch, bình xăng 8,1 lít và cốp 30 lít cho di chuyển đường dài.",
+      "source": "https://www.honda.com.vn/xe-may/san-pham",
+      "verificationLevel": "NEEDS_BROCHURE_CHECK",
+      "importSourceType": "OFFICIAL_URL"
+    },
+    {
+      "slug": "honda-wave-alpha",
+      "name": "Honda Wave Alpha 110",
+      "officialName": "Honda Wave Alpha 110cc",
+      "modelLine": "Wave Alpha",
+      "versionName": "Tiêu chuẩn / Đặc biệt",
+      "generation": "2025",
+      "shortDescription": "Xe số phổ thông 110 cc bền bỉ, trọng lượng nhẹ 96 kg, mức tiêu hao nhiên liệu khoảng 1,72 lít/100 km tối ưu đi lại hằng ngày.",
+      "source": "https://www.honda.com.vn/xe-may/san-pham/wave-alpha-110?category=1",
+      "verificationLevel": "VERIFIED",
+      "importSourceType": "OFFICIAL_URL"
+    },
+    {
+      "slug": "honda-vision",
+      "name": "Honda Vision",
+      "officialName": "Honda Vision 110",
+      "modelLine": "Vision",
+      "versionName": "Cao cấp / Thể thao",
+      "generation": "2025",
+      "shortDescription": "Xe tay ga đô thị gọn nhẹ 94–98 kg, chiều cao yên 761 mm dễ điều khiển, động cơ eSP 109,5 cc tiết kiệm 1,85 lít/100 km.",
+      "source": "https://www.honda.com.vn/xe-may/san-pham/vision?category=2",
+      "verificationLevel": "VERIFIED",
+      "importSourceType": "OFFICIAL_URL"
+    },
+    {
+      "slug": "honda-sh160i",
+      "name": "Honda SH160i",
+      "officialName": "Honda SH160i",
+      "modelLine": "SH",
+      "versionName": "Cao cấp ABS / Thể thao ABS",
+      "generation": "2025",
+      "shortDescription": "Xe tay ga bánh lớn 16 inch phong cách châu Âu, động cơ eSP+ 156,9 cc, phanh ABS 2 kênh và kiểm soát lực kéo HSTC.",
+      "source": "https://www.honda.com.vn/xe-may/san-pham/sh-160i125i?category=2",
+      "verificationLevel": "VERIFIED",
+      "importSourceType": "OFFICIAL_URL"
+    },
+    {
+      "slug": "honda-sh350i",
+      "name": "Honda SH350i",
+      "officialName": "Honda SH350i",
+      "modelLine": "SH",
+      "versionName": "Thể thao ABS 2025",
+      "generation": "2025",
+      "shortDescription": "Maxi-scooter bánh lớn động cơ eSP+ 329,6 cc mạnh mẽ, phanh ABS 2 kênh và HSTC; yêu cầu bằng lái mô tô hạng A2 / A.",
+      "source": "https://www.honda.com.vn/xe-may/san-pham/sh350i?category=2",
+      "verificationLevel": "VERIFIED",
+      "importSourceType": "OFFICIAL_URL"
+    },
+    {
+      "slug": "yamaha-exciter-155-vva",
+      "name": "Yamaha Exciter 155 VVA",
+      "officialName": "Yamaha Exciter 155 VVA",
+      "modelLine": "Exciter",
+      "versionName": "Cao cấp ABS",
+      "generation": "155 VVA",
+      "shortDescription": "Xe côn tay thể thao 155,09 cc van biến thiên VVA, hộp số 6 cấp kèm ly hợp chống trượt A&S và phanh ABS bánh trước.",
+      "source": "https://yamaha-motor.com.vn/xe/loai-xe/exciter/",
+      "verificationLevel": "VERIFIED",
+      "importSourceType": "OFFICIAL_URL"
+    },
+    {
+      "slug": "vinfast-evo200",
+      "name": "VinFast Evo200",
+      "officialName": "VinFast Evo200",
+      "modelLine": "Evo",
+      "versionName": "Evo200",
+      "generation": "Pin LFP 3,5 kWh",
+      "shortDescription": "Xe máy điện đô thị pin LFP 3,5 kWh cho quãng đường công bố tới 203 km/lần sạc, động cơ Inhub và chuẩn kháng nước IP67.",
+      "source": "https://vinfastauto.com/vn_vi",
+      "verificationLevel": "NEEDS_BROCHURE_CHECK",
+      "importSourceType": "MANUAL"
+    },
+    {
+      "slug": "vinfast-evo-max",
+      "name": "VinFast Evo Max",
+      "officialName": "VinFast Evo (Evo Max – Phiên bản đổi pin LFP)",
+      "modelLine": "Evo",
+      "versionName": "Tiêu chuẩn đổi pin",
+      "generation": "Thế hệ đổi pin 2025",
+      "shortDescription": "Mẫu xe máy điện đô thị VinFast Evo thế hệ hỗ trợ đổi pin LFP linh hoạt, động cơ BLDC Inhub êm ái và chuẩn kháng nước IP67.",
+      "source": "https://vinfastauto.com/vn_vi",
+      "verificationLevel": "NEEDS_BROCHURE_CHECK",
+      "importSourceType": "MANUAL"
+    },
+    {
+      "slug": "kawasaki-z650",
+      "name": "Kawasaki Z650 ABS",
+      "officialName": "Kawasaki Z650 ABS",
+      "modelLine": "Z650",
+      "versionName": "Z650 ABS 2024",
+      "generation": "ER650",
+      "shortDescription": "Mô tô naked bike 649 cc 2 xi-lanh thẳng hàng thiết kế Sugomi, khung Trellis nhẹ 188 kg và kiểm soát lực kéo KTRC (yêu cầu bằng A2/A).",
+      "source": "https://www.kawasaki-motors.vn/",
+      "verificationLevel": "NEEDS_BROCHURE_CHECK",
+      "importSourceType": "MANUAL"
+    },
+    {
+      "slug": "ford-ranger-raptor",
+      "name": "Ford Ranger Raptor",
+      "officialName": "Ford Ranger Raptor",
+      "modelLine": "Ranger",
+      "versionName": "2.0L Bi-Turbo 4WD",
+      "generation": "P703",
+      "shortDescription": "Bán tải hiệu năng cao phát triển bởi Ford Performance với treo FOX 2.5-inch Live Valve, 7 chế độ lái và khả năng lội nước 850 mm.",
+      "source": "https://www.ford.com.vn/",
+      "verificationLevel": "NEEDS_BROCHURE_CHECK",
+      "importSourceType": "MANUAL"
+    },
+    {
+      "slug": "ford-ranger-wildtrak",
+      "name": "Ford Ranger Wildtrak",
+      "officialName": "Ford Ranger Wildtrak",
+      "modelLine": "Ranger",
+      "versionName": "Wildtrak 2.0L Bi-Turbo 4x4 AT",
+      "generation": "P703",
+      "shortDescription": "Bán tải cao cấp 4x4 động cơ 2.0L Bi-Turbo 210 PS, hộp số tự động 10 cấp, màn hình dọc SYNC 4A 12 inch và lội nước 800 mm.",
+      "source": "https://www.ford.com.vn/",
+      "verificationLevel": "NEEDS_BROCHURE_CHECK",
+      "importSourceType": "MANUAL"
+    },
+    {
+      "slug": "toyota-hilux",
+      "name": "Toyota Hilux",
+      "officialName": "Toyota Hilux",
+      "modelLine": "Hilux",
+      "versionName": "2.4L 4x2 AT",
+      "generation": "AN120/AN130",
+      "shortDescription": "Bán tải bền bỉ động cơ Diesel 2.4L/2.8L, khoảng sáng gầm 286 mm, thùng hàng chịu tải ~785 kg phục vụ công việc và địa hình.",
+      "source": "https://www.toyota.com.vn/hilux",
+      "verificationLevel": "VERIFIED",
+      "importSourceType": "OFFICIAL_URL"
+    },
+    {
+      "slug": "mitsubishi-triton",
+      "name": "Mitsubishi Triton Athlete",
+      "officialName": "Mitsubishi Triton Athlete",
+      "modelLine": "Triton",
+      "versionName": "Athlete 4x2 AT",
+      "generation": "Dynamic Shield / All-New Triton",
+      "shortDescription": "Bán tải đa dụng thiết kế Dynamic Shield, hệ dẫn động Super Select 4WD-II và bán kính quay vòng nhỏ 5,9–6,2 m linh hoạt đô thị.",
+      "source": "https://www.mitsubishi-motors.com.vn/all-new-triton",
+      "verificationLevel": "VERIFIED",
+      "importSourceType": "OFFICIAL_URL"
+    }
+  ],
+  "mediaMetadataFixes": [
+    {
+      "filename": "xe-dien-vinfast-evo-max-1.jpg",
+      "sourceUrl": "https://vinfastauto.com/vn_vi",
+      "license": "Tư liệu tham chiếu hãng (VinFast VN)",
+      "mediaCategory": "CATALOGUE_REFERENCE"
+    },
+    {
+      "filename": "ERD.png",
+      "alt": "Sơ đồ ERD hệ thống NORI (tệp tham chiếu nội bộ chưa gắn)",
+      "mediaCategory": "ILLUSTRATION"
+    }
+  ]
+}
