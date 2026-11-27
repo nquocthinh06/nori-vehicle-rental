@@ -53,6 +53,13 @@ export type IconName =
   | 'lock'
   | 'bar-chart'
   | 'image'
+  | 'message'
+  | 'send'
+  | 'thumbs-up'
+  | 'thumbs-down'
+  | 'refresh'
+  | 'maximize'
+  | 'minimize'
 
 const paths: Record<IconName, React.ReactNode> = {
   'arrow-right': (
@@ -291,6 +298,46 @@ const paths: Record<IconName, React.ReactNode> = {
       <rect x="3" y="4" width="18" height="16" rx="2" />
       <circle cx="8.5" cy="9.5" r="1.5" />
       <path d="m21 15-5-5L5 20" />
+    </>
+  ),
+  message: (
+    <>
+      <path d="M21 12a8.5 8.5 0 0 1-8.5 8.5c-1.4 0-2.7-.3-3.9-.9L3 21l1.4-5.2A8.5 8.5 0 1 1 21 12Z" />
+      <path d="M8.5 11.5h.01M12 11.5h.01M15.5 11.5h.01" />
+    </>
+  ),
+  send: (
+    <>
+      <path d="m22 2-7 20-4-9-9-4 20-7Z" />
+      <path d="M22 2 11 13" />
+    </>
+  ),
+  'thumbs-up': (
+    <>
+      <path d="M7 10v11H3V10h4Zm0 0 4-7a2.5 2.5 0 0 1 2.5 2.5V9h5.2a2 2 0 0 1 1.9 2.5l-1.4 6.5a2 2 0 0 1-2 1.5H7" />
+    </>
+  ),
+  'thumbs-down': (
+    <>
+      <path d="M17 14V3h4v11h-4Zm0 0-4 7a2.5 2.5 0 0 1-2.5-2.5V15H5.3a2 2 0 0 1-1.9-2.5L4.8 6a2 2 0 0 1 2-1.5H17" />
+    </>
+  ),
+  refresh: (
+    <>
+      <path d="M3 12a9 9 0 0 1 15.5-6.3L21 8" />
+      <path d="M21 3v5h-5" />
+      <path d="M21 12a9 9 0 0 1-15.5 6.3L3 16" />
+      <path d="M3 21v-5h5" />
+    </>
+  ),
+  maximize: (
+    <>
+      <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
+    </>
+  ),
+  minimize: (
+    <>
+      <path d="M4 14h6v6M20 10h-6V4M14 10l7-7M10 14l-7 7" />
     </>
   ),
 }

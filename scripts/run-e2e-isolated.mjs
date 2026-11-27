@@ -155,6 +155,10 @@ async function main() {
     NORI_SESSION_SECRET:
       process.env.NORI_SESSION_SECRET || 'nori-isolated-e2e-session-secret-0123456789',
     NEXT_PUBLIC_SITE_URL: baseUrl,
+    NORI_AI_ENABLED: process.env.NORI_AI_ENABLED || 'true',
+    NORI_AI_TEST_MOCK: process.env.NORI_AI_TEST_MOCK || '1',
+    NORI_AI_RATE_LIMIT_PER_MINUTE: process.env.NORI_AI_RATE_LIMIT_PER_MINUTE || '40',
+    NORI_AI_RATE_LIMIT_PER_DAY: process.env.NORI_AI_RATE_LIMIT_PER_DAY || '400',
   }
 
   const standaloneStarter = path.resolve(process.cwd(), 'scripts', 'start-standalone.mjs')

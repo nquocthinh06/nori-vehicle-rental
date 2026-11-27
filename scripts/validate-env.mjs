@@ -16,6 +16,9 @@ console.log(`Backup Dir:         ${result.config.backupDir}`)
 console.log(`Log Dir:            ${result.config.logDir}`)
 console.log(`Allowed Origins:    ${result.config.allowedOrigins.join(', ') || '(none configured)'}`)
 console.log(`Payment Engine:     ${result.config.paymentProvider} (${result.config.paymentMode})`)
+console.log(
+  `AI Assistant:       ${result.config.aiEnabled ? 'ENABLED' : 'DISABLED'} (${result.config.aiProvider} / ${result.config.aiModel} / apiKey=${result.config.aiApiKeyConfigured ? 'CONFIGURED' : 'NOT_SET'})`,
+)
 console.log('--------------------------------------------------------')
 
 if (result.warnings.length > 0) {

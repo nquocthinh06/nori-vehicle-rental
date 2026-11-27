@@ -19,6 +19,7 @@ import { NotificationProvider } from '@/components/booking-notification-center'
 import { FavoritesProvider } from '@/components/favorites-provider'
 import { ConditionalFooter } from '@/components/conditional-footer'
 import { MobileBottomNav } from '@/components/mobile-bottom-nav'
+import { AIAssistantLauncher } from '@/components/ai/ai-assistant-launcher'
 import { PwaManager } from '@/components/pwa-manager'
 import { SiteHeader } from '@/components/site-header'
 import { SiteFooter } from '@/components/site-footer'
@@ -118,6 +119,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                   <SiteFooter site={site} />
                 </ConditionalFooter>
                 <MobileBottomNav />
+                <AIAssistantLauncher />
               </FavoritesProvider>
             </NotificationProvider>
           </AuthProvider>

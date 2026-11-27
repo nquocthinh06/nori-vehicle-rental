@@ -30,6 +30,10 @@ export interface NoriEnvironmentConfig {
   paymentEnabled: boolean
   paymentProvider: 'SEPAY' | 'MOCK' | 'MANUAL'
   paymentMode: 'MOCK' | 'SANDBOX' | 'PRODUCTION'
+  aiEnabled: boolean
+  aiProvider: string
+  aiModel: string
+  aiApiKeyConfigured: boolean
 }
 
 function normalizeUrl(rawUrl?: string | null): string {
@@ -402,6 +406,20 @@ export function validateEnvironment(options?: {
     }
   }
 
+  const aiEnabled = !['false', '0', 'off', 'no'].includes(
+    String(process.env.NORI_AI_ENABLED ?? 'true')
+      .trim()
+      .toLowerCase(),
+  )
+  const aiProvider = (process.env.NORI_AI_PROVIDER?.trim() || 'openai').toLowerCase()
+  const aiModel = process.env.OPENAI_MODEL?.trim() || 'gpt-4.1-mini'
+  const aiApiKeyConfigured = Boolean(process.env.OPENAI_API_KEY?.trim())
+  if (aiEnabled && !aiApiKeyConfigured) {
+    warnings.push(
+      'NORI_AI_ENABLED đang bật nhưng OPENAI_API_KEY chưa được cấu hình. Trợ lý AI sẽ hiển thị trạng thái chưa sẵn sàng và website vẫn hoạt động bình thường.',
+    )
+  }
+
   return {
     ok: errors.length === 0,
     errors,
@@ -431,6 +449,10 @@ export function validateEnvironment(options?: {
       paymentEnabled,
       paymentProvider,
       paymentMode,
+      aiEnabled,
+      aiProvider,
+      aiModel,
+      aiApiKeyConfigured,
     },
   }
 }
@@ -444,5 +466,9 @@ export function getEnvConfigSummary() {
     isVercelRuntime: config.isVercelRuntime,
     paymentMode: config.paymentMode,
     paymentProvider: config.paymentProvider,
+    aiEnabled: config.aiEnabled,
+    aiProvider: config.aiProvider,
+    aiModel: config.aiModel,
+    aiApiKeyConfigured: config.aiApiKeyConfigured,
   }
 }

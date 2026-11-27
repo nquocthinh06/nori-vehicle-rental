@@ -49,6 +49,7 @@ export const ADMIN_MODULES = [
   'transfers',
   'deliveries',
   'pricing',
+  'ai',
 ] as const
 
 export type AdminModule = (typeof ADMIN_MODULES)[number]
@@ -76,6 +77,7 @@ export const DEFAULT_OPERATOR_PERMISSIONS: AdminPermissionMap = {
   transfers: ['read', 'create', 'update'],
   deliveries: ['read', 'create', 'update'],
   pricing: ['read'],
+  ai: [],
 }
 
 export const STAFF_ROLE_PERMISSION_PRESETS: Record<StaffTitle, AdminPermissionMap> = {
@@ -103,6 +105,7 @@ export const STAFF_ROLE_PERMISSION_PRESETS: Record<StaffTitle, AdminPermissionMa
     transfers: ['read', 'create', 'update'],
     deliveries: ['read', 'create', 'update'],
     pricing: ['read', 'create', 'update', 'delete'],
+    ai: ['read', 'update'],
   },
   BRANCH_MANAGER: {
     vehicles: ['read', 'create', 'update'],

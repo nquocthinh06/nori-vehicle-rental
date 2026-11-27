@@ -27,6 +27,7 @@ const CLIENT_FORBIDDEN_ENVS = [
   'SEPAY_API_KEY',
   'SEPAY_SECRET_KEY',
   'SEPAY_WEBHOOK_SECRET',
+  'OPENAI_API_KEY',
 ]
 
 async function walk(dir, out = []) {

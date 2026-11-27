@@ -210,6 +210,13 @@ const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
         group: 'Hệ thống',
         module: 'content',
       },
+      {
+        href: '/dashboard/ai',
+        label: 'Trợ lý AI (NORI AI)',
+        icon: 'sparkles',
+        group: 'Hệ thống',
+        module: 'ai',
+      },
     ],
   },
 ]
