@@ -1,8 +1,8 @@
 # ĐẶC TẢ YÊU CẦU HỆ THỐNG NORI (SYSTEM SPECIFICATION)
 
 - **Tên dự án**: NORI — Dịch vụ Cho thuê xe Linh hoạt & Tìm mua xe Tự tin
-- **Phiên bản tài liệu**: 2.7.0 (Nâng cấp Module 3.7 — Quản lý Đa Chi Nhánh, Kho Xe, Điểm Giao Nhận, Điều Chuyển Nguyên Tử, Giao Nhận Tận Nơi, Định Giá Theo Khu Vực & Phân Quyền Theo Chi Nhánh)
-- **Kiến trúc công nghệ**: Next.js 16.4.6 (App Router), React 19.3.1, Payload CMS 4.0.0-beta.8, SQLite (`@payloadcms/db-sqlite` + Drizzle ORM, `109` bảng), Tailwind CSS 4.
+- **Phiên bản tài liệu**: 2.8.0 (Nâng cấp Module 3.8 — PG18 Logical Replication, Encrypted Backup, Smart Vehicle Import, 10 OEM Adapters, VehicleImportJobs State Machine)
+- **Kiến trúc công nghệ**: Next.js 16.4.6 (App Router), React 19.3.1, Payload CMS 4.0.0-beta.8, SQLite (`@payloadcms/db-sqlite`) + PostgreSQL (`@payloadcms/db-postgres`, Neon Production + Local PG 18), Drizzle ORM, `118` bảng, Tailwind CSS 4.
 - **Trạng thái thực thi**: Xem số liệu kiểm thử mới nhất tại [docs/TEST_REPORT.md](./TEST_REPORT.md) và [docs/PROJECT_STATUS.md](./PROJECT_STATUS.md).
 
 ---
@@ -226,3 +226,30 @@ sequenceDiagram
   - Phân bổ doanh thu đơn một chiều theo `revenueSplitMode` (`PICKUP_BRANCH`, `RETURN_BRANCH`, `SPLIT_50_50`, `CUSTOM_PERCENT`) bảo đảm `sum(branch.netRevenue) + unassigned.netRevenue === systemTotal.netRevenue` đến từng VNĐ.
 - **`SPEC-28` — Nâng cấp Schema Additive-Only & Bảo toàn Dữ liệu Hiện hữu**:
   - Migration `20261120_020000_multi_branch_management` chỉ thêm bảng/cột/index mới (lũy kế an toàn), nâng từ `88` lên `109` bảng và bổ sung `12` composite indexes, bảo toàn 100% 21 xe DEMO hiện có ở trạng thái `UNALLOCATED` (không bịa địa chỉ chi nhánh thật).
+
+---
+
+## 10. Yêu cầu Nghiệp vụ Mở rộng Module 3.8 — Replication, Backup & Smart Vehicle Import (`v2.8.0`)
+
+- **`SPEC-29` — Replication & Encrypted Backup (PostgreSQL 18 Logical Replication)**:
+  - Dual-adapter: Payload CMS hoạt động với cả `@payloadcms/db-sqlite` (local dev) và `@payloadcms/db-postgres` (Neon Production + Local PG 18), `push: false` trên cả hai adapter.
+  - Neon PostgreSQL Production → Local PostgreSQL 18 `nori_replica`: one-way Logical Replication (`wal_level = logical`, `PUBLICATION nori_pub`, `SUBSCRIPTION nori_sub`), direct non-pooler TLS connection, `REPLICA IDENTITY DEFAULT` trên tất cả bảng có `PRIMARY KEY`.
+  - Database phân tách: `nori_replica` (read-only replica, Antigravity SQL/ERD tooling), `nori_development` (dev, có migration rights), `nori_readonly` (Antigravity queries).
+  - Encrypted Daily Backup: `pg_dump` + AES-256-GCM + SHA-256 manifest, Windows Task Scheduler `NORI-Daily-Backup-2359` (`State=Ready`, `StartWhenAvailable=True`), `23:59 Asia/Ho_Chi_Minh`, giữ lại `30d/12w/12m`.
+  - Media Backup: `pnpm db:media:backup --verify --json` xác minh `81` files (`19,184,067` bytes), `0` missing, `0` checksum mismatch.
+  - CLI commands: `pnpm db:sync:status`, `pnpm db:sync:check`, `pnpm db:backup`, `pnpm db:backup:verify`, `pnpm db:restore`, `pnpm db:media:backup`.
+  - `nori_replica` là read-only — ứng dụng **không bao giờ ghi** vào replica; Antigravity `nori_readonly` chỉ dùng để query/ERD.
+  - Kiểm thử: `pnpm test:db:replica` — `20/20 PASS` (`DB-01..22`, `132.91s`, dual PG 18.6 disposable clusters).
+
+- **`SPEC-30` — Smart Vehicle Import (5 phương thức, 10 OEM Adapters + Generic, VehicleImportJobs State Machine)**:
+  - **5 phương thức import**: URL/SYNC (tự động fetch từ trang OEM), AI Smart Search (AI đề xuất model theo tên), Bulk (danh sách URL/CSV/JSON), PDF Brochure (trích xuất từ brochure PDF chính thức), Manual (nhập tay toàn bộ trường).
+  - **10 OEM Adapters + Generic**: Toyota, Honda, Ford, Mitsubishi, Mazda, Hyundai, Mercedes-Benz, VinFast, Yamaha, Kawasaki; Generic fallback cho domain không có adapter chuyên biệt. Kết nối thực tế có thể bị WAF 403/TLS/timeout — adapter phát hiện tự động và fallback PDF/JSON.
+  - **Preview-Before-Save**: Mọi import đều hiển thị diff trước/sau, trường bị `lockedFields` không được phép ghi đè từ import.
+  - **VehicleImportJobs State Machine** (12 trạng thái trong `src/lib/vehicle-import/job-manager.ts`): `QUEUED`, `FETCHING`, `EXTRACTING`, `NORMALIZING`, `VALIDATING`, `PREVIEW_READY`, `AWAITING_APPROVAL`, `IMPORTING`, `COMPLETED`, `PARTIAL_SUCCESS`, `FAILED`, `CANCELLED` (khi phục hồi tiến trình treo sau khởi động lại máy chủ, trạng thái chuyển `FAILED` kèm `errorCode: 'RECOVERED_AFTER_RESTART'`).
+  - **Approval/Draft/Publish/Rollback**: Admin có quyền `models` duyệt job → `verificationStatus` (`VERIFIED`/`DRAFT`) + `visible`, một-click Rollback; double-rollback bị từ chối với HTTP `409` (`"Tiến trình này đã được Rollback trước đó."`).
+  - **Concurrency cap**: tối đa 3 job đồng thời; job thứ 4 trả `429 CONCURRENCY_LIMIT_REACHED`.
+  - **Demo separation**: Import chỉ cập nhật `vehicle_models` (Catalogue), **không** tạo hoặc chỉnh sửa bản ghi đội xe `vehicles` (`isDemo`).
+  - **Bảo mật**: SSRF defense-in-depth (`HTTPS_REQUIRED`, `DOMAIN_NOT_ALLOWLISTED`, `SSRF_PRIVATE_IP`, `SSRF_LOCAL_HOST`, `IP_LITERAL_FORBIDDEN`, `TOO_MANY_REDIRECTS`), giới hạn tệp/magic-byte/pixel (`PAYLOAD_TOO_LARGE`, `INVALID_PDF_SIZE`), HTML/XSS sanitization, `assertOrigin` CSRF (`403 FORBIDDEN`), Audit Logging, external API cost controls.
+  - **Kiểm thử**: `tests/vehicle-import.test.mjs` — `5` subtests PASS trong `pnpm test` (`374/375 PASS`, `1 skip`); `tests/e2e/vehicle-import.spec.ts` — E2E-01..15 `PASS`.
+  - **Catalogue enrichment**: `21/21` models enriched (`11` VERIFIED, `10` NEEDS_BROCHURE_CHECK), `pnpm catalogue:validate`: `ok=true`, `files=12`, `media=67`.
+  - **API**: `GET /nori-api/dashboard/catalogue-import/jobs`, `POST /preview`, `POST /sync-check`, `GET /jobs/[id]`, `POST /jobs/[id]/approve`, `POST /jobs/[id]/cancel`, `POST /jobs/[id]/retry`, `POST /jobs/[id]/rollback`, `PATCH /models/[id]/locks`.

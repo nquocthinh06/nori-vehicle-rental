@@ -513,6 +513,7 @@ test.describe('LAN Multi-Device, Auth/Session, Sync & Responsive Suite', () => {
     // Verify all loaded <img> tags render cleanly and never point to a wrong origin or hardcoded localhost
     for (const imgRoute of ['/', '/vehicles', '/vehicles/toyota-fortuner']) {
       await phonePage.goto(imgRoute, { waitUntil: 'load' })
+      await phonePage.locator('main img').first().waitFor({ state: 'visible', timeout: 10_000 })
       const imgAudit = await phonePage.evaluate(() => {
         const imgs = [...document.querySelectorAll('img')]
         const pageOrigin = window.location.origin

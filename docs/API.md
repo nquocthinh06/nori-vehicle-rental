@@ -1,6 +1,6 @@
 # TÀI LIỆU API HỆ THỐNG NORI (API SPECIFICATION & DOCUMENTATION)
 
-- **Phiên bản**: 2.0 (Hỗ trợ Centralized Admin, Responsive & PWA, Idempotency Guard, Concurrency Control)
+- **Phiên bản**: 2.1 (Hỗ trợ Centralized Admin, Responsive & PWA, Idempotency Guard, Concurrency Control, Smart Vehicle Import APIs)
 - **Tiêu chuẩn giao tiếp**: RESTful JSON API.
 - **Tiêu chuẩn phản hồi (Envelope Pattern)**:
   - Thành công: `{ "success": true, "data": <PayloadObject | PayloadArray> }`
@@ -128,3 +128,63 @@ Tất cả endpoint dưới đây áp dụng đồng thời `assertOrigin(reques
 | `VEHICLE_BRANCH_MISMATCH`      | 409         | Xe không có mặt tại chi nhánh nhận xe vào thời điểm yêu cầu                  |
 | `TRANSFER_CONFLICT`            | 409         | Trùng lịch đơn thuê / bảo dưỡng / điều chuyển hoặc sai chuyển trạng thái     |
 | `DELIVERY_STAFF_TIME_CONFLICT` | 409         | Nhân viên giao nhận đã có nhiệm vụ trùng khung giờ trong ngày                |
+
+
+---
+
+## 5. Smart Vehicle Import APIs (`/nori-api/dashboard/catalogue-import/*` — `v2.8.0`)
+
+Tất cả 9 endpoints dưới đây yêu cầu cookie `payload-token` hợp lệ thuộc collection `admins` với quyền `models` (`read`, `create`, hoặc `update` qua `requireAdmin({ permission: ['models', ...] })`), đồng thời mọi mutation (`POST`, `PATCH`) bắt buộc kiểm tra `assertOrigin(request)` chống CSRF (`403 FORBIDDEN`).
+
+### 5.1. Import Jobs — Quản lý Job
+
+- **`GET /nori-api/dashboard/catalogue-import/jobs`** (`models: read`): Danh sách import jobs (phân trang, query `?page=1&status=&method=`).
+  - Response: `{ items, totalDocs, page, totalPages, activeCount, maxConcurrency, aiAvailable, aiReason }`
+  - `maxConcurrency` = `3`; `aiAvailable=false` khi `OPENAI_API_KEY` chưa cấu hình.
+
+- **`GET /nori-api/dashboard/catalogue-import/jobs/[id]`** (`models: read`): Chi tiết 1 import job, `diffPreview`, `normalizedDraft` và `rollbackSnapshot`. Trả `{ job }`.
+
+- **`POST /nori-api/dashboard/catalogue-import/jobs/[id]/approve`** (`models: update`, `assertOrigin`): Duyệt job, tải & dedup ảnh, upsert vào `vehicle-models` và lưu `rollbackSnapshot`.
+  - Body: `{ publishMode?: "DRAFT" | "VERIFIED_HIDDEN" | "PUBLISH", verificationStatus?, visible?, selectedFields?, overrides?, conflictPolicy?, lockFields?, downloadMedia?, selectedMediaUrls?, targetModelId? }`
+  - Response: `{ job, model: { id, slug, name, verificationStatus, visible, revisionNumber }, mediaReport }`
+
+- **`POST /nori-api/dashboard/catalogue-import/jobs/[id]/cancel`** (`models: update`, `assertOrigin`): Hủy job đang chờ/chạy sang `CANCELLED`. Trả `{ job }`.
+
+- **`POST /nori-api/dashboard/catalogue-import/jobs/[id]/retry`** (`models: create`, `assertOrigin`): Chạy lại job `FAILED` hoặc `CANCELLED` (tối đa 5 lần — vượt quá trả `429 MAX_RETRIES`; job `PDF_BROCHURE` yêu cầu tải lại tệp → `400 PDF_REUPLOAD_REQUIRED`).
+
+- **`POST /nori-api/dashboard/catalogue-import/jobs/[id]/rollback`** (`models: update`, `assertOrigin`): Rollback job đã hoàn tất, khôi phục trạng thái `vehicle-models` từ `rollbackSnapshot`.
+  - Response: `{ ok: true, jobId, targetModelId, rolledBackAt }`
+  - Nếu gọi rollback lần 2 trả HTTP `409` (`"Tiến trình này đã được Rollback trước đó."`).
+
+### 5.2. Preview & Sync
+
+- **`POST /nori-api/dashboard/catalogue-import/preview`** (`models: create`, `assertOrigin`): Tạo job `QUEUED` và chạy pipeline Fetch → Extract → Normalize → Diff (chưa ghi `vehicle-models`).
+  - Body (JSON hoặc `multipart/form-data` với `file` PDF): `{ method: "URL" | "AI_SEARCH" | "BULK" | "PDF_BROCHURE" | "MANUAL", url?, urls?, query?, brand?, modelName?, modelYear?, variant?, market?, modelNames?, csvText?, jsonPayload?, targetModelId?, conflictPolicy?, dataGroups?, pdfBase64?, pdfFileName? }`
+  - Response: `{ job, preview, diff, uncertaintyFlags, existingModelMatch, mediaCandidates, bulkItems? }`
+  - Trả `429 CONCURRENCY_LIMIT_REACHED` khi đã có `3` job đang chạy đồng thời.
+
+- **`POST /nori-api/dashboard/catalogue-import/sync-check`** (`models: update`, `assertOrigin`): Kiểm tra khác biệt giữa `vehicle-models` hiện tại và nguồn OEM (tạo preview ở chế độ `URL`, không ghi DB).
+  - Body: `{ targetModelId, url?, conflictPolicy? }` (thiếu URL nguồn trả `400 MISSING_SOURCE_URL`).
+
+### 5.3. Field Locks
+
+- **`PATCH /nori-api/dashboard/catalogue-import/models/[id]/locks`** (`models: update`, `assertOrigin`): Cập nhật danh sách trường bị khoá (`lockedFields`) trên `vehicle-models`.
+  - Body: `{ lockedFields: string[] }`
+  - Response: `{ id, lockedFields, revisionNumber }`
+
+### 5.4. Bảng Mã Lỗi Bổ sung (`v2.8.0`)
+
+| Mã lỗi (Code)               | HTTP Status | Mô tả nghiệp vụ                                                              |
+| :-------------------------- | :---------- | :--------------------------------------------------------------------------- |
+| `HTTPS_REQUIRED`            | 400         | URL nguồn không dùng giao thức `https://`                                    |
+| `DOMAIN_NOT_ALLOWLISTED`    | 400         | Tên miền không thuộc danh sách hãng chính thức / `NORI_IMPORT_ALLOWED_DOMAINS` |
+| `SSRF_PRIVATE_IP`           | 400         | DNS phân giải ra dải IP nội bộ / riêng tư (RFC 1918, Link-Local, ULA...)     |
+| `SSRF_LOCAL_HOST`           | 400         | Tên miền nội bộ (`localhost`, `*.local`, `*.internal`, `*.lan`, metadata)    |
+| `IP_LITERAL_FORBIDDEN`      | 400         | URL nhập trực tiếp địa chỉ IP thay vì tên miền chính thức                    |
+| `TOO_MANY_REDIRECTS`        | 400         | Chuyển hướng HTTP vượt quá 3 hop                                             |
+| `INVALID_PDF_SIZE`          | 400         | Tệp PDF Brochure rỗng (0 byte) hoặc vượt quá 25 MB                           |
+| `FORBIDDEN`                 | 403         | Thiếu/sai header `Origin` (`assertOrigin`), chưa đăng nhập hoặc thiếu quyền `models` |
+| `INVALID_JOB_TRANSITION`    | 409         | Chuyển trạng thái job không hợp lệ hoặc rollback trùng (`HTTP 409`)          |
+| `PAYLOAD_TOO_LARGE`         | 413         | Phản hồi HTML/PDF/ảnh vượt quá ngưỡng dung lượng cho phép                   |
+| `UPSTREAM_WAF_BLOCKED`      | 422         | Website hãng trả `403`/WAF/CAPTCHA; chuyển sang PDF Brochure hoặc JSON/Manual |
+| `CONCURRENCY_LIMIT_REACHED` | 429         | Đã có 3 job đang chạy đồng thời (giới hạn tối đa)                            |

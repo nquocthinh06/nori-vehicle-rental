@@ -360,11 +360,12 @@ test('detail hides misleading interior filter on motorbike PCX and renders full 
   await page.getByRole('button', { name: 'Ngoại thất', exact: true }).click()
   await page.getByRole('button', { name: 'Xem ảnh lớn' }).click()
   await expect(page.getByRole('dialog')).toBeVisible()
-  await expect(page.getByRole('dialog').locator('img')).toHaveJSProperty('complete', true)
+  await expect(page.getByRole('dialog').locator('img').first()).toHaveJSProperty('complete', true)
   expect(
     await page
       .getByRole('dialog')
       .locator('img')
+      .first()
       .evaluate((image: HTMLImageElement) => image.naturalWidth),
   ).toBeGreaterThan(0)
   await page.keyboard.press('Escape')

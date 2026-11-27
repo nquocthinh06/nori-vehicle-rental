@@ -369,6 +369,8 @@ test('Postgres Migration Safety Guard — blocks unconfirmed Production writes a
     '20261121_120000_media_cloud_storage_columns',
     '20261122_010000_perf_composite_indexes',
     '20261122_020000_parity_unique_constraints',
+    '20261128_010000_ai_assistant_foundation',
+    '20261128_020000_vehicle_import_jobs',
   ])
 })
 

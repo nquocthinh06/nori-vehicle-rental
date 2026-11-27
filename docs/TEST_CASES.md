@@ -429,3 +429,139 @@
 - **Mức độ ưu tiên**: `P0`
 - **Bằng chứng**: `tests/multi-branch-rules.test.mjs`, `tests/e2e/multi-branch-workflow.spec.ts` Scenario 5 & 6.
 - **Source code**: [src/access/nori.ts](file:///f:/1.%20University/2.%20Đồ%20án/3.%20Bài%20tập/nori-vehicle-rental/nori-vehicle-rental/nori-vehicle-rental/src/access/nori.ts), [staff/route.ts](<file:///f:/1.%20University/2.%20Đồ%20án/3.%20Bài%20tập/nori-vehicle-rental/nori-vehicle-rental/nori-vehicle-rental/src/app/(frontend)/nori-api/dashboard/staff/route.ts>), [branch-reports/route.ts](<file:///f:/1.%20University/2.%20Đồ%20án/3.%20Bài%20tập/nori-vehicle-rental/nori-vehicle-rental/nori-vehicle-rental/src/app/(frontend)/nori-api/dashboard/branch-reports/route.ts>)
+
+
+---
+
+## Nhóm kiểm thử DB Replication & Backup (`TC-DB-*`) — `v2.8.0`
+
+### `TC-DB-01` — Khởi tạo Dual PG 18.6 & Schema Toàn vẹn
+
+- **Module**: DB Replication (`pnpm test:db:replica`)
+- **Tên chức năng**: Khởi tạo hai cụm PG 18.6 riêng biệt (source & replica) và kiểm tra schema
+- **Mục tiêu kiểm thử**: Hai cụm PG khởi tạo thành công, `118` bảng, `0` FK violations, `0` pending migrations
+- **Điều kiện trước khi kiểm thử**: PostgreSQL 18.6 đã cài, `pnpm test:db:replica` có thể spin up disposable clusters
+- **Dữ liệu đầu vào**: Migration scripts từ `src/migrations/`
+- **Các bước thực hiện**: Chạy `pnpm test:db:replica` → `DB-01..DB-05`
+- **Kết quả mong đợi**: `118` bảng, `integrity=ok`, `fkViolations=0`
+- **Kết quả thực tế**: `PASS` — `118` bảng, `integrity=ok`, `fkViolations=0`
+- **Trạng thái**: `PASS`
+- **Mức độ ưu tiên**: `P0`
+- **Bằng chứng**: `pnpm test:db:replica` — `20/20 PASS`, `132.91s`
+- **Source code**: `src/migrations/`, `scripts/pg-sync-*.mjs`
+
+---
+
+### `TC-DB-02` — Logical Replication PUBLICATION & SUBSCRIPTION
+
+- **Module**: DB Replication — WAL level & Logical Replication
+- **Tên chức năng**: Thiết lập PUBLICATION trên source PG, SUBSCRIPTION trên replica PG
+- **Mục tiêu kiểm thử**: `wal_level=logical`, `PUBLICATION nori_pub` tạo thành công, `SUBSCRIPTION nori_sub` active, dữ liệu đồng bộ trong vòng `< 2s`
+- **Điều kiện trước khi kiểm thử**: Local PG 18.6, `wal_level=logical` được set trong `postgresql.conf`
+- **Dữ liệu đầu vào**: Dual disposable PG 18.6 clusters
+- **Kết quả thực tế**: `PASS` trên local PG 18.6 disposable clusters (`DB-06..DB-14` PASS, `132.91s`)
+- **Trạng thái**: `PASS` (Local PG 18.6) / `BLOCKED` (Neon Production — `wal_level=replica`)
+- **Mức độ ưu tiên**: `P0`
+- **Bằng chứng**: `pnpm test:db:replica` DB-06..DB-14 PASS; Neon BLOCKED (#44 `@db-devops`)
+
+---
+
+### `TC-DB-03` — Encrypted Backup (AES-256-GCM + SHA-256 Manifest)
+
+- **Module**: Backup (`pnpm db:backup`, `pnpm db:backup:verify`)
+- **Tên chức năng**: Backup PG DB với mã hóa AES-256-GCM và tạo SHA-256 manifest
+- **Mục tiêu kiểm thử**: Tệp backup được tạo, manifest SHA-256 khớp, `db:backup:verify` trả `ok=true`
+- **Điều kiện trước khi kiểm thử**: Task Scheduler `NORI-Daily-Backup-2359` ở trạng thái `Ready`
+- **Kết quả thực tế**: `PASS` — Task Scheduler `State=Ready`, `StartWhenAvailable=True`, `NextRunTime=11/28/2026 23:59:00`
+- **Trạng thái**: `PASS`
+- **Mức độ ưu tiên**: `P0`
+- **Bằng chứng**: `pnpm test:db:replica` DB-15..DB-18 PASS; Task Scheduler output (#44)
+
+---
+
+### `TC-DB-04` — Media Backup & Verify
+
+- **Module**: Media Backup (`pnpm db:media:backup`)
+- **Tên chức năng**: Sao lưu và xác minh toàn vẹn `81` files media (`public/media/`)
+- **Mục tiêu kiểm thử**: `ok=true`, `checked=81`, `missing=[]`, `checksumMismatch=[]`, `totalBytes=19184067`
+- **Dữ liệu đầu vào**: `public/media/` — 81 files
+- **Kết quả thực tế**: `PASS` — `ok=true`, `checked=81`, `missing=[]`, `checksumMismatch=[]`, `totalBytes=19184067`
+- **Trạng thái**: `PASS`
+- **Mức độ ưu tiên**: `P1`
+- **Bằng chứng**: `pnpm db:media:backup --verify --json` output (#50 `@db-devops`)
+
+---
+
+### `TC-DB-05` — Sequence Sync & DDL Monitoring
+
+- **Module**: DB Replication — Sequence & DDL
+- **Tên chức năng**: Đồng bộ sequences và phát hiện DDL drift giữa source và replica
+- **Mục tiêu kiểm thử**: `42+` serial sequences trong `*_rels` được sync đúng; DDL drift được phát hiện và cảnh báo
+- **Kết quả thực tế**: `PASS` (`DB-19..DB-22`)
+- **Trạng thái**: `PASS`
+- **Mức độ ưu tiên**: `P1`
+- **Bằng chứng**: `pnpm test:db:replica` DB-19..DB-22 PASS
+
+---
+
+## Nhóm kiểm thử Smart Vehicle Import (`TC-IMPORT-*`) — `v2.8.0`
+
+### `TC-IMPORT-01` — Manufacturer Adapters (10 OEM + Generic)
+
+- **Module**: Smart Import — Adapters (`src/lib/vehicle-import/adapters/`, `tests/vehicle-import.test.mjs`)
+- **Tên chức năng**: 10 OEM adapters + Generic adapter nhận diện URL/brand, phân tích HTML/JSON-LD và chuẩn hóa thông số xe
+- **Mục tiêu kiểm thử**: Đủ 10 hãng (`toyota.com.vn`, `honda.com.vn`, `ford.com.vn`, `mitsubishi-motors.com.vn`, `mazdamotors.vn`, `hyundai.thanhcong.vn`, `mercedes-benz.com.vn`, `vinfastauto.com`, `yamaha-motor.com.vn`, `kawasakivietnam.vn`) + Generic fallback phân tích đúng `brand`, `category`, `msrpReferenceVnd`, `specifications`, `mediaCandidates`
+- **Điều kiện trước khi kiểm thử**: Node test runner với mẫu HTML/JSON-LD đại diện từng hãng
+- **Kết quả thực tế**: 10 OEM adapters + Generic `PASS`
+- **Trạng thái**: `PASS`
+- **Mức độ ưu tiên**: `P0`
+- **Bằng chứng**: `tests/vehicle-import.test.mjs` subtest 1 `PASS` (#75 `@verifier`)
+
+---
+
+### `TC-IMPORT-02` — SSRF Defense-in-Depth & Security
+
+- **Module**: Smart Import — SSRF & Fetcher (`src/lib/vehicle-import/security.ts`, `fetcher.ts`)
+- **Tên chức năng**: Chặn toàn bộ các vector SSRF, WAF challenge và payload độc hại
+- **Mục tiêu kiểm thử**: `http://` → `HTTPS_REQUIRED`; credentials → `URL_CREDENTIALS_FORBIDDEN`; port != 443 → `PORT_FORBIDDEN`; `localhost` → `SSRF_LOCAL_HOST`; IP literal → `IP_LITERAL_FORBIDDEN`; ngoài allowlist → `DOMAIN_NOT_ALLOWLISTED`; DNS/IPv6 private → `SSRF_PRIVATE_IP`; redirect > 3 hop → `TOO_MANY_REDIRECTS`; WAF 403 → `UPSTREAM_WAF_BLOCKED`; magic bytes giả / XSS → bị lọc
+- **Kết quả thực tế**: Toàn bộ kịch bản chặn SSRF/XSS/WAF `PASS`
+- **Trạng thái**: `PASS`
+- **Mức độ ưu tiên**: `P0`
+- **Bằng chứng**: `tests/vehicle-import.test.mjs` subtest 2 `PASS`; `tests/e2e/vehicle-import.spec.ts` `E2E-01..03` `PASS`
+
+---
+
+### `TC-IMPORT-03` — Normalizer, PDF Extractor & Media Processor
+
+- **Module**: Smart Import — Normalizer & Media (`src/lib/vehicle-import/normalizer.ts`, `extractor.ts`, `media-processor.ts`)
+- **Tên chức năng**: Chuẩn hóa thông số EV/Motorbike, trích xuất PDF brochure (`/FlateDecode`), deduplication SHA-256
+- **Mục tiêu kiểm thử**: EV spec ẩn thông số động cơ đốt trong; Motorbike spec đặt `seats=2`, `driveType=null`, `interiorOverview=null` và loại ảnh `INTERIOR`; PDF trích `pageRef=1` & gắn `uncertaintyFlags` `REVIEW`; dedup SHA-256 intra-batch và cross-job
+- **Kết quả thực tế**: `PASS` — toàn bộ kịch bản normalizer, PDF extractor & media processor
+- **Trạng thái**: `PASS`
+- **Mức độ ưu tiên**: `P0`
+- **Bằng chứng**: `tests/vehicle-import.test.mjs` subtest 3 & 4 `PASS`
+
+---
+
+### `TC-IMPORT-04` — VehicleImportJobs State Machine
+
+- **Module**: Smart Import — State Machine (`src/lib/vehicle-import/job-manager.ts`, `import-service.ts`)
+- **Tên chức năng**: 12 trạng thái job (`QUEUED`..`CANCELLED`), `lockedFields`, bảo vệ giá thuê NORI, idempotency, rollback, concurrency cap, stale recovery
+- **Mục tiêu kiểm thử**: Diff preview đánh dấu `locked=true, selected=false` cho trường khóa; `referenceRentPrice` & `defaultDepositSuggestion` không bị ghi đè; approve tăng `revisionNumber` không tạo trùng model; rollback khôi phục phiên bản trước; double-rollback trả HTTP `409`; concurrency cap `MAX_CONCURRENT_IMPORT_JOBS=3` (job 4 → `429 CONCURRENCY_LIMIT_REACHED`); stale restart → `FAILED` với `errorCode: 'RECOVERED_AFTER_RESTART'`
+- **Kết quả thực tế**: `PASS`
+- **Trạng thái**: `PASS`
+- **Mức độ ưu tiên**: `P0`
+- **Bằng chứng**: `tests/vehicle-import.test.mjs` subtest 5 `PASS` (#75 `@verifier`)
+
+---
+
+### `TC-IMPORT-05` — E2E Admin Smart Import UI (`/dashboard/models`) & CLI
+
+- **Module**: Smart Import — E2E (`tests/e2e/vehicle-import.spec.ts`, `src/components/admin/smart-import-drawer.tsx`)
+- **Tên chức năng**: RBAC/Origin/SSRF (`E2E-01..03`), `<SmartImportDrawer />` 6 tabs trên `/dashboard/models` (`E2E-04..12`), CLI (`E2E-13..15`)
+- **Mục tiêu kiểm thử**: Unauthenticated → `403`; Customer RBAC → `403`; cross-origin `assertOrigin` → `403`; SSRF URLs → `400`; 6 tab UI hoạt động đúng; Diff + `lockedFields` (`PATCH .../models/[id]/locks`); Draft/Publish (`Thông số & phiên bản hãng (không phải DEMO)`); tách biệt đội xe `vehicles` (`isDemo`) nguyên vẹn; PDF brochure + History Rollback; `catalogue-cli.mjs` `validate`, `status`, `import --dry-run`
+- **Điều kiện trước khi kiểm thử**: DB & Media cô lập, Playwright Chromium
+- **Kết quả thực tế**: `3/3` test groups (`E2E-01..15`) `PASS` (`800ms` + `5.8s` + `9.2s`), `postIntegrity=ok`, `fkViolations=0`
+- **Trạng thái**: `PASS`
+- **Mức độ ưu tiên**: `P0`
+- **Bằng chứng**: `pnpm test:e2e:isolated tests/e2e/vehicle-import.spec.ts` `PASS` (#75 `@verifier`)

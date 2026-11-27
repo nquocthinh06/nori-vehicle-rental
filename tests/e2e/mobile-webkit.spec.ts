@@ -48,24 +48,29 @@ test.describe('NORI Mobile WebKit & Safari Mobile Journeys', () => {
   test('Mobile Journey 2: Vehicle Detail gallery, specs, quote calculator, and sticky booking bar', async ({
     page,
   }) => {
-    await page.goto('/vehicles/toyota-fortuner', { waitUntil: 'domcontentloaded' })
+    await page.goto('/vehicles/toyota-fortuner', { waitUntil: 'load' })
 
     // Check Mobile Sticky Action Bar
     const mobileBar = page.locator('.fixed.inset-x-0.bottom-0.lg\\:hidden')
     await expect(mobileBar).toBeVisible()
     await expect(mobileBar.getByText(/Giá thuê \/ ngày/)).toBeVisible()
 
-    // Test tab navigation on mobile
+    // Test tab navigation on mobile — use retry loop to tolerate React hydration
+    // timing: on WebKit under load, domcontentloaded fires before onClick is attached.
     const specsTab = page.getByRole('tab', { name: /Thông số kỹ thuật/i })
     await expect(specsTab).toBeVisible()
-    await specsTab.click()
-    await expect(specsTab).toHaveAttribute('aria-selected', 'true')
+    await expect(async () => {
+      await specsTab.click()
+      await expect(specsTab).toHaveAttribute('aria-selected', 'true', { timeout: 1500 })
+    }).toPass({ timeout: 15_000 })
     await expect(page.locator('#specifications')).toBeVisible()
 
     // Test overview tab
     const overviewTab = page.getByRole('tab', { name: /Tổng quan/i })
-    await overviewTab.click()
-    await expect(overviewTab).toHaveAttribute('aria-selected', 'true')
+    await expect(async () => {
+      await overviewTab.click()
+      await expect(overviewTab).toHaveAttribute('aria-selected', 'true', { timeout: 1500 })
+    }).toPass({ timeout: 15_000 })
   })
 
   test('Mobile Journey 3: Test drive & purchase inquiry modal submission on mobile', async ({

@@ -1,5 +1,74 @@
 # NHẬT KÝ THAY ĐỔI VÀ NÂNG CẤP HỆ THỐNG NORI (CHANGELOG)
 
+## [Phiên bản 2.8.0] — 2026-11-28: PG18 Logical Replication, AES-256-GCM Encrypted Backup & Smart Vehicle Import
+
+### 1. PostgreSQL 18 Logical Replication + Encrypted Backup + Media Backup
+
+- **Dual-adapter Payload CMS**: `@payloadcms/db-sqlite` (local dev) + `@payloadcms/db-postgres` (Neon Production + Local PG 18), `push: false` trên cả hai adapter; failsafe reject startup khi thiếu `DATABASE_URL` trong production (`VERCEL=1` / `NORI_ENV=production`).
+- **Neon Production → Local PG 18 `nori_replica`**: One-way Logical Replication (`wal_level = logical`, direct non-pooler TLS, `PUBLICATION nori_pub`, `SUBSCRIPTION nori_sub`, `REPLICA IDENTITY DEFAULT` trên tất cả bảng có `PRIMARY KEY`). **Trạng thái trên Neon**: hiện đang cấu hình `wal_level = replica` (`PostgreSQL 17.12`, `109` bảng, `2` pending migrations) — BLOCKED, cần **chủ dự án phê duyệt bật `wal_level = logical` trong Neon Console (khởi động lại compute), áp dụng `2` pending migrations và tạo `PUBLICATION nori_pub`** trước khi bật Live Subscription. Đã PASS hoàn toàn trên dual disposable PG 18.6 clusters (`pnpm test:db:replica` — `20/20 PASS`, `132.91s`).
+- **Database phân tách**: `nori_replica` (read-only, Antigravity SQL/ERD), `nori_development` (dev + migration), `nori_readonly` (Antigravity queries). `nori_replica` là read-only — ứng dụng **không bao giờ ghi** vào replica.
+- **Encrypted Daily Backup**: `pg_dump` + AES-256-GCM + SHA-256 manifest; Windows Task Scheduler `NORI-Daily-Backup-2359` (`State=Ready`, `StartWhenAvailable=True`), `23:59 Asia/Ho_Chi_Minh`, `30d/12w/12m` retention, khuyến nghị off-machine copy.
+- **Media Backup**: `pnpm db:media:backup --verify --json` — `ok=true`, `checked=81`, `missing=[]`, `checksumMismatch=[]`, `totalBytes=19,184,067` (`public/media/`).
+- **CLI mới**: `pnpm db:sync:status`, `pnpm db:sync:check`, `pnpm db:backup`, `pnpm db:backup:verify`, `pnpm db:restore`, `pnpm db:media:backup`.
+- **VSCode extensions**: `.vscode/extensions.json` với `cweijan.vscode-postgresql-client2`, `ms-ossdata.vscode-pgsql`, `bierner.markdown-mermaid`.
+- **Schema**: `118` bảng (tăng từ `109` sau 2 migrations: `20261128_010000_ai_assistant_foundation`, `20261128_020000_vehicle_import_jobs`).
+
+### 2. Smart Vehicle Import (5 phương thức, 10 OEM Adapters + Generic, VehicleImportJobs State Machine)
+
+- **5 phương thức import**: URL/SYNC (tự động fetch trang OEM), AI Smart Search (AI đề xuất model), Bulk (URL/CSV/JSON hàng loạt), PDF Brochure (trích xuất thông số từ PDF chính thức), Manual (nhập tay).
+- **10 OEM Adapters + Generic**: Toyota, Honda, Ford, Mitsubishi, Mazda, Hyundai, Mercedes-Benz, VinFast, Yamaha, Kawasaki; Generic fallback. Adapters phát hiện WAF 403/TLS/timeout và chuyển sang PDF/JSON fallback tự động.
+- **VehicleImportJobs State Machine** (`src/lib/vehicle-import/job-manager.ts`, 12 trạng thái): `QUEUED`, `FETCHING`, `EXTRACTING`, `NORMALIZING`, `VALIDATING`, `PREVIEW_READY`, `AWAITING_APPROVAL`, `IMPORTING`, `COMPLETED`, `PARTIAL_SUCCESS`, `FAILED`, `CANCELLED` (khi phục hồi tiến trình treo sau restart, trạng thái chuyển `FAILED` kèm `errorCode: 'RECOVERED_AFTER_RESTART'`).
+- **Preview-Before-Save**: Mọi import hiển thị diff field trước/sau, trường `lockedFields` không được phép ghi đè.
+- **Admin UI `<SmartImportDrawer />` trong `/dashboard/models`**: 6 tab (Website hãng, Tìm kiếm thông minh, Nhập hàng loạt, Brochure PDF, Nhập thủ công, Lịch sử nhập liệu); Approve/Draft/Publish/Rollback; double-rollback bị từ chối với HTTP `409` (`"Tiến trình này đã được Rollback trước đó."`).
+- **Concurrency cap**: tối đa 3 job đồng thời (`MAX_CONCURRENT_IMPORT_JOBS = 3`); job thứ 4 → `429 CONCURRENCY_LIMIT_REACHED`.
+- **Demo separation**: Import chỉ cập nhật `vehicle_models` (Catalogue), **không** tạo hay chỉnh sửa bản ghi đội xe `vehicles` (`isDemo`).
+- **SSRF defense-in-depth**: `src/lib/vehicle-import/security.ts` & `fetcher.ts` (`HTTPS_REQUIRED`, `DOMAIN_NOT_ALLOWLISTED`, `SSRF_PRIVATE_IP`, `SSRF_LOCAL_HOST`, `IP_LITERAL_FORBIDDEN`, `UPSTREAM_WAF_BLOCKED`, `TOO_MANY_REDIRECTS`), magic-byte/MIME/pixel limits, HTML/XSS sanitization, `assertOrigin` CSRF (`403 FORBIDDEN`), Audit Logging, external API cost controls.
+- **Manufacturer Sync**: `POST /nori-api/dashboard/catalogue-import/sync-check` kiểm tra delta với nguồn OEM.
+- **API mới** (`v2.1`, 9 routes): `GET /jobs`, `POST /preview`, `POST /sync-check`, `GET /jobs/[id]`, `POST /jobs/[id]/approve`, `POST /jobs/[id]/cancel`, `POST /jobs/[id]/retry`, `POST /jobs/[id]/rollback`, `PATCH /models/[id]/locks`.
+
+### 3. Verified VN Vehicle Catalogue (21 Dòng Xe)
+
+- **21 models enriched**: `officialName`, `source`, `modelYear`, `market=VN`, `trim`, EV vs ICE vs Motorbike rules.
+- **Trạng thái enrichment**: `11` VERIFIED, `10` NEEDS_BROCHURE_CHECK.
+- **`pnpm catalogue:validate`**: `ok=true`, `files=12`, `media=67`.
+- **CLI mới**: `pnpm catalogue:validate`, `pnpm catalogue:status`, `pnpm catalogue:import --dry-run`, `pnpm catalogue:export`.
+- **Data Source Manifest**: `docs/DATA_SOURCE_MANIFEST.md` ghi lại nguồn gốc 21 models từ `sources-manifest.json`, `catalogue-version.json`, `verified-enrichment.json`.
+
+### 4. Kiểm thử & Chất lượng
+
+- **`pnpm test`**: `374/375 PASS` (`1` skip — Postgres live parity), `0` fail, `30,436ms`. `tests/vehicle-import.test.mjs` — `5/5` subtests PASS.
+- **`pnpm test:db:replica`**: `20/20 PASS` (`DB-01..22`, `132.91s`, dual PG 18.6 disposable clusters).
+- **`pnpm test:e2e:isolated`**: `122/122 PASS`, `6.6 phút`, `postIntegrity=ok`, `postFkViolationsCount=0`, `newLeftoverTestUsersCount=0`. `vehicle-import.spec.ts` — E2E-01..15 PASS.
+- **`pnpm release:gate`**: `9/9 PASS` (`env:check`, `format:check`, `typecheck`, `lint`, `media:audit`, `test`, `test:admin`, `db:check`, `build`), build `163.40s`, `114` static/SSG pages.
+- **Lint**: `330/330` files. **Format**: `421/421` files. **Typecheck**: `0` errors.
+- **`pnpm db:check`**: `118` tables, `integrity=ok`, `0` FK violations.
+
+### 5. 14 Tài Liệu Kỹ Thuật Mới
+
+- `docs/DATABASE_ARCHITECTURE.md` — Kiến trúc Before/After, Mermaid diagrams, 118 bảng scope, PK/FK/sequence inventory.
+- `docs/DATABASE_REPLICATION.md` — Neon→Local PG18 Logical Replication setup, monitoring, slot invalidation runbook.
+- `docs/BACKUP_RESTORE.md` — SQLite backup/restore + PG Encrypted Backup AES-256-GCM (cập nhật).
+- `docs/DISASTER_RECOVERY.md` — 4 kịch bản DR, RPO/RTO, Failover proposal.
+- `docs/VEHICLE_CATALOGUE.md` — Tiêu chuẩn làm phong phú catalogue, EV/ICE/Motorbike rules, Demo separation.
+- `docs/SMART_VEHICLE_IMPORT.md` — Hướng dẫn admin đầy đủ 5 phương thức, API spec.
+- `docs/MANUFACTURER_ADAPTERS.md` — 10 OEM adapters + Generic, reachability matrix, hướng dẫn thêm adapter.
+- `docs/DATA_SYNCHRONIZATION.md` — Multi-developer sync qua GitHub + Git LFS, `pnpm catalogue:*`.
+- `docs/MEDIA_STORAGE.md` — SHA-256 dedup, `next/image`, focal points, license governance.
+- `docs/IMPORT_SECURITY.md` — SSRF defense-in-depth, RBAC, Audit Logging, cost controls.
+- `docs/BACKUP_AND_ROLLBACK.md` — Unified runbook: SQLite/PG backup, Smart Import rollback.
+- `docs/DATA_SOURCE_MANIFEST.md` — 21 models source manifest từ verified-enrichment.json.
+- `docs/DATABASE_TEST_REPORT.md` — Báo cáo kiểm thử DB-01..22, media backup, Neon BLOCKED.
+- `docs/IMPORT_TEST_REPORT.md` — Báo cáo kiểm thử Smart Import unit + E2E-01..15.
+
+### 6. Sửa Lỗi (Bug Fixes)
+
+- **`_media_v.version_source_sha256` thiếu trong migration** (P0): Thêm cột vào cả SQLite và PG migrations, `data-sync.ts` schema check, `check-db-schema.mjs` contract. Kết quả: `122/122` E2E PASS (từ `115/122`).
+- **Unicode regex trong `normalizer.ts` / `adapters/generic.ts`**: Bổ sung ranh giới từ hỗ trợ Unicode — tránh cắt nhầm ký tự tiếng Việt.
+- **Cache invalidation ngoài scope Next.js trong `import-service.ts`**: Bọc dynamic import `await import('../public-cache.ts')` trong `safeInvalidateCatalogueCaches()` kèm `try/catch` để tương thích Node test runner.
+- **`mobile-webkit.spec.ts` Journey 2 flake** (`specsTab.click()` → `aria-selected="false"`): Thêm `waitUntil: 'load'` + `.toPass()` hydration-safe retry. Kết quả: `tests/e2e/mobile-webkit.spec.ts` chạy đơn lẻ `PASS`, và toàn bộ `pnpm test:e2e:isolated` đạt `122/122 PASS`.
+
+---
+
 ## [Phiên bản 2.7.1] — 2026-11-20: Kiểm Toán Chuyên Sâu Nghiệp Vụ Thanh Toán, Nhất Quán Dữ Liệu User-Admin & Tối Ưu Hóa Responsive Đa Thiết Bị
 
 ### 1. Chuẩn hóa Nghiệp vụ Thanh toán, Đặt cọc & Phân định Bản chất Dòng tiền
