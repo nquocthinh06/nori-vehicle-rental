@@ -63,7 +63,27 @@ export const REQUIRED_SCHEMA_CONTRACT = {
   location_pricing_rules: ['id', 'code', 'scope_type', 'active'],
   one_way_rental_rules: ['id', 'route_key', 'from_branch_id', 'to_branch_id', 'active'],
   nori_site: ['id', 'online_payment_enabled', 'allow_sepay_qr'],
-  media: ['id', 'filename', 'url', 'prefix', '_objectkey'],
+  media: ['id', 'filename', 'url', 'prefix', '_objectkey', 'source_sha256'],
+  _media_v: ['id', 'parent_id', 'version_prefix', 'version__objectkey', 'version_source_sha256'],
+  ai_settings: ['id', 'enabled', 'max_output_tokens', 'weight_budget'],
+  ai_settings_rels: ['id', 'order', 'parent_id', 'path', 'admins_id', 'users_id'],
+  ai_usage_logs: ['id', 'request_id', 'event_type', 'status', 'total_tokens'],
+  ai_usage_logs_rels: ['id', 'order', 'parent_id', 'path', 'admins_id', 'users_id'],
+  ai_feedback: ['id', 'request_id', 'rating', 'review_status'],
+  ai_feedback_rels: ['id', 'order', 'parent_id', 'path', 'admins_id', 'users_id'],
+  vehicle_models: [
+    'id',
+    'name',
+    'slug',
+    'brand',
+    'category',
+    'import_source_url',
+    'import_source_type',
+    'locked_fields',
+    'revision_number',
+  ],
+  vehicle_import_jobs: ['id', 'job_code', 'method', 'status', 'conflict_policy', 'progress_pct'],
+  vehicle_import_jobs_rels: ['id', 'order', 'parent_id', 'path', 'admins_id', 'users_id'],
 }
 
 export const REGISTERED_MIGRATIONS = [
@@ -71,6 +91,8 @@ export const REGISTERED_MIGRATIONS = [
   '20261120_020000_multi_branch_management',
   '20261120_030000_booking_payment_option_plans',
   '20261121_040000_media_cloud_storage_columns',
+  '20261128_010000_ai_assistant_foundation',
+  '20261128_020000_vehicle_import_jobs',
 ]
 
 export function checkDatabaseCompatibility(options = {}) {

@@ -151,6 +151,13 @@ export const Media: CollectionConfig = {
     },
     { name: 'sourceUrl', label: 'URL nguồn gốc', type: 'text' },
     { name: 'sourceName', label: 'Tác giả / Nguồn ảnh', type: 'text' },
+    {
+      name: 'sourceSha256',
+      label: 'SHA-256 nội dung gốc',
+      type: 'text',
+      maxLength: 64,
+      index: true,
+    },
     { name: 'license', label: 'Giấy phép / Quyền sử dụng', type: 'text' },
     { name: 'modelYear', label: 'Đời xe áp dụng', type: 'text' },
     { name: 'variantName', label: 'Phiên bản áp dụng', type: 'text' },

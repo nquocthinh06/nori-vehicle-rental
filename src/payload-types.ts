@@ -168,6 +168,7 @@ export interface Config {
     'service-locations': ServiceLocation;
     'branch-staff': BranchStaff;
     'vehicle-models': VehicleModel;
+    'vehicle-import-jobs': VehicleImportJob;
     vehicles: Vehicle;
     'vehicle-transfers': VehicleTransfer;
     'vehicle-location-history': VehicleLocationHistory;
@@ -187,6 +188,8 @@ export interface Config {
     refunds: Refund;
     reviews: Review;
     posts: Post;
+    'ai-usage-logs': AiUsageLog;
+    'ai-feedback': AiFeedback;
     'payload-kv': PayloadKv;
     'payload-locked-documents': PayloadLockedDocument;
     'payload-preferences': PayloadPreference;
@@ -206,6 +209,7 @@ export interface Config {
     'service-locations': ServiceLocationsSelect<false> | ServiceLocationsSelect<true>;
     'branch-staff': BranchStaffSelect<false> | BranchStaffSelect<true>;
     'vehicle-models': VehicleModelsSelect<false> | VehicleModelsSelect<true>;
+    'vehicle-import-jobs': VehicleImportJobsSelect<false> | VehicleImportJobsSelect<true>;
     vehicles: VehiclesSelect<false> | VehiclesSelect<true>;
     'vehicle-transfers': VehicleTransfersSelect<false> | VehicleTransfersSelect<true>;
     'vehicle-location-history': VehicleLocationHistorySelect<false> | VehicleLocationHistorySelect<true>;
@@ -225,6 +229,8 @@ export interface Config {
     refunds: RefundsSelect<false> | RefundsSelect<true>;
     reviews: ReviewsSelect<false> | ReviewsSelect<true>;
     posts: PostsSelect<false> | PostsSelect<true>;
+    'ai-usage-logs': AiUsageLogsSelect<false> | AiUsageLogsSelect<true>;
+    'ai-feedback': AiFeedbackSelect<false> | AiFeedbackSelect<true>;
     'payload-kv': PayloadKvSelect<false> | PayloadKvSelect<true>;
     'payload-locked-documents': PayloadLockedDocumentsSelect<false> | PayloadLockedDocumentsSelect<true>;
     'payload-preferences': PayloadPreferencesSelect<false> | PayloadPreferencesSelect<true>;
@@ -237,9 +243,11 @@ export interface Config {
   fallbackLocale: ('false' | 'none' | 'null') | false | null | 'en' | 'en'[];
   globals: {
     'nori-site': NoriSite;
+    'ai-settings': AiSetting;
   };
   globalsSelect: {
     'nori-site': NoriSiteSelect<false> | NoriSiteSelect<true>;
+    'ai-settings': AiSettingsSelect<false> | AiSettingsSelect<true>;
   };
   locale: 'en';
   widgets: {
@@ -475,6 +483,7 @@ export interface Media {
   alt: string;
   sourceUrl?: string | null;
   sourceName?: string | null;
+  sourceSha256?: string | null;
   license?: string | null;
   modelYear?: string | null;
   variantName?: string | null;
@@ -847,6 +856,7 @@ export interface VehicleModel {
   transmission?: string | null;
   driveType?: string | null;
   listedPrice?: number | null;
+  msrpReferenceVnd?: number | null;
   referenceRentPrice?: number | null;
   defaultDepositSuggestion?: number | null;
   suitableFor?: string | null;
@@ -923,10 +933,130 @@ export interface VehicleModel {
       }[]
     | null;
   source?: string | null;
+  importSourceUrl?: string | null;
+  importSourceType?: ('OFFICIAL_URL' | 'PDF_BROCHURE' | 'AI_ASSISTED' | 'BULK_FILE' | 'MANUAL') | null;
+  importSourceHash?: string | null;
+  lastImportedAt?: string | null;
+  lockedFields?:
+    | {
+        [k: string]: unknown;
+      }
+    | unknown[]
+    | string
+    | number
+    | boolean
+    | null;
+  revisionNumber?: number | null;
   verificationStatus?: ('VERIFIED' | 'UNVERIFIED' | 'DRAFT') | null;
   visible?: boolean | null;
   featured?: boolean | null;
   sortOrder?: number | null;
+  createdBy?:
+    | ({
+        relationTo: 'admins';
+        value: string | Admin;
+      } | null)
+    | ({
+        relationTo: 'users';
+        value: string | User;
+      } | null);
+  updatedBy?:
+    | ({
+        relationTo: 'admins';
+        value: string | Admin;
+      } | null)
+    | ({
+        relationTo: 'users';
+        value: string | User;
+      } | null);
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "vehicle-import-jobs".
+ */
+export interface VehicleImportJob {
+  id: string;
+  jobCode: string;
+  method: 'URL' | 'AI_SEARCH' | 'BULK' | 'PDF_BROCHURE' | 'MANUAL';
+  status:
+    | 'QUEUED'
+    | 'FETCHING'
+    | 'EXTRACTING'
+    | 'NORMALIZING'
+    | 'VALIDATING'
+    | 'PREVIEW_READY'
+    | 'AWAITING_APPROVAL'
+    | 'IMPORTING'
+    | 'COMPLETED'
+    | 'PARTIAL_SUCCESS'
+    | 'FAILED'
+    | 'CANCELLED';
+  targetModel?: (string | null) | VehicleModel;
+  sourceInput?:
+    | {
+        [k: string]: unknown;
+      }
+    | unknown[]
+    | string
+    | number
+    | boolean
+    | null;
+  normalizedDraft?:
+    | {
+        [k: string]: unknown;
+      }
+    | unknown[]
+    | string
+    | number
+    | boolean
+    | null;
+  diffPreview?:
+    | {
+        [k: string]: unknown;
+      }
+    | unknown[]
+    | string
+    | number
+    | boolean
+    | null;
+  uncertaintyFlags?:
+    | {
+        [k: string]: unknown;
+      }
+    | unknown[]
+    | string
+    | number
+    | boolean
+    | null;
+  mediaReport?:
+    | {
+        [k: string]: unknown;
+      }
+    | unknown[]
+    | string
+    | number
+    | boolean
+    | null;
+  rollbackSnapshot?:
+    | {
+        [k: string]: unknown;
+      }
+    | unknown[]
+    | string
+    | number
+    | boolean
+    | null;
+  conflictPolicy: 'SKIP_EXISTING' | 'MERGE_EMPTY' | 'OVERWRITE_UNLOCKED';
+  progressPct?: number | null;
+  currentStage?: string | null;
+  attemptCount?: number | null;
+  errorCode?: string | null;
+  errorMessage?: string | null;
+  createdByAdminId?: string | null;
+  startedAt?: string | null;
+  finishedAt?: string | null;
   createdBy?:
     | ({
         relationTo: 'admins';
@@ -2073,6 +2203,115 @@ export interface Post {
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "ai-usage-logs".
+ */
+export interface AiUsageLog {
+  id: string;
+  requestId: string;
+  eventType: 'CHAT' | 'VEHICLE_CLICK' | 'CHECKOUT_HANDOFF' | 'CONNECTION_TEST';
+  status: 'SUCCESS' | 'ERROR' | 'BLOCKED' | 'RATE_LIMITED' | 'UNCONFIGURED' | 'DISABLED';
+  provider?: string | null;
+  model?: string | null;
+  userType?: ('GUEST' | 'CUSTOMER' | 'ADMIN') | null;
+  userId?: string | null;
+  sessionHash?: string | null;
+  intent?: string | null;
+  toolsCalled?:
+    | {
+        [k: string]: unknown;
+      }
+    | unknown[]
+    | string
+    | number
+    | boolean
+    | null;
+  recommendedModelSlugs?:
+    | {
+        [k: string]: unknown;
+      }
+    | unknown[]
+    | string
+    | number
+    | boolean
+    | null;
+  clickedModelSlug?: string | null;
+  noResultFound?: boolean | null;
+  inputTokens?: number | null;
+  outputTokens?: number | null;
+  totalTokens?: number | null;
+  estimatedCostUsd?: number | null;
+  latencyMs?: number | null;
+  errorCode?: string | null;
+  errorCategory?: string | null;
+  guardrailTriggered?: string | null;
+  querySummary?: string | null;
+  createdBy?:
+    | ({
+        relationTo: 'admins';
+        value: string | Admin;
+      } | null)
+    | ({
+        relationTo: 'users';
+        value: string | User;
+      } | null);
+  updatedBy?:
+    | ({
+        relationTo: 'admins';
+        value: string | Admin;
+      } | null)
+    | ({
+        relationTo: 'users';
+        value: string | User;
+      } | null);
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "ai-feedback".
+ */
+export interface AiFeedback {
+  id: string;
+  requestId: string;
+  rating: 'HELPFUL' | 'NOT_HELPFUL';
+  reasonCategory?:
+    ('ACCURATE' | 'WRONG_PRICE' | 'WRONG_RECOMMENDATION' | 'UNAVAILABLE_VEHICLE' | 'INCOMPLETE_INFO' | 'OTHER') | null;
+  comment?: string | null;
+  recommendedSlugs?:
+    | {
+        [k: string]: unknown;
+      }
+    | unknown[]
+    | string
+    | number
+    | boolean
+    | null;
+  userType?: ('GUEST' | 'CUSTOMER') | null;
+  reviewStatus?: ('NEW' | 'REVIEWED' | 'RESOLVED') | null;
+  adminNote?: string | null;
+  createdBy?:
+    | ({
+        relationTo: 'admins';
+        value: string | Admin;
+      } | null)
+    | ({
+        relationTo: 'users';
+        value: string | User;
+      } | null);
+  updatedBy?:
+    | ({
+        relationTo: 'admins';
+        value: string | Admin;
+      } | null)
+    | ({
+        relationTo: 'users';
+        value: string | User;
+      } | null);
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "payload-kv".
  */
 export interface PayloadKv {
@@ -2301,6 +2540,7 @@ export interface MediaSelect<T extends boolean = true> {
   alt?: T;
   sourceUrl?: T;
   sourceName?: T;
+  sourceSha256?: T;
   license?: T;
   modelYear?: T;
   variantName?: T;
@@ -2555,6 +2795,7 @@ export interface VehicleModelsSelect<T extends boolean = true> {
   transmission?: T;
   driveType?: T;
   listedPrice?: T;
+  msrpReferenceVnd?: T;
   referenceRentPrice?: T;
   defaultDepositSuggestion?: T;
   suitableFor?: T;
@@ -2631,10 +2872,45 @@ export interface VehicleModelsSelect<T extends boolean = true> {
         id?: T;
       };
   source?: T;
+  importSourceUrl?: T;
+  importSourceType?: T;
+  importSourceHash?: T;
+  lastImportedAt?: T;
+  lockedFields?: T;
+  revisionNumber?: T;
   verificationStatus?: T;
   visible?: T;
   featured?: T;
   sortOrder?: T;
+  createdBy?: T;
+  updatedBy?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "vehicle-import-jobs_select".
+ */
+export interface VehicleImportJobsSelect<T extends boolean = true> {
+  jobCode?: T;
+  method?: T;
+  status?: T;
+  targetModel?: T;
+  sourceInput?: T;
+  normalizedDraft?: T;
+  diffPreview?: T;
+  uncertaintyFlags?: T;
+  mediaReport?: T;
+  rollbackSnapshot?: T;
+  conflictPolicy?: T;
+  progressPct?: T;
+  currentStage?: T;
+  attemptCount?: T;
+  errorCode?: T;
+  errorMessage?: T;
+  createdByAdminId?: T;
+  startedAt?: T;
+  finishedAt?: T;
   createdBy?: T;
   updatedBy?: T;
   updatedAt?: T;
@@ -3320,6 +3596,56 @@ export interface PostsSelect<T extends boolean = true> {
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "ai-usage-logs_select".
+ */
+export interface AiUsageLogsSelect<T extends boolean = true> {
+  requestId?: T;
+  eventType?: T;
+  status?: T;
+  provider?: T;
+  model?: T;
+  userType?: T;
+  userId?: T;
+  sessionHash?: T;
+  intent?: T;
+  toolsCalled?: T;
+  recommendedModelSlugs?: T;
+  clickedModelSlug?: T;
+  noResultFound?: T;
+  inputTokens?: T;
+  outputTokens?: T;
+  totalTokens?: T;
+  estimatedCostUsd?: T;
+  latencyMs?: T;
+  errorCode?: T;
+  errorCategory?: T;
+  guardrailTriggered?: T;
+  querySummary?: T;
+  createdBy?: T;
+  updatedBy?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "ai-feedback_select".
+ */
+export interface AiFeedbackSelect<T extends boolean = true> {
+  requestId?: T;
+  rating?: T;
+  reasonCategory?: T;
+  comment?: T;
+  recommendedSlugs?: T;
+  userType?: T;
+  reviewStatus?: T;
+  adminNote?: T;
+  createdBy?: T;
+  updatedBy?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "payload-kv_select".
  */
 export interface PayloadKvSelect<T extends boolean = true> {
@@ -3534,6 +3860,54 @@ export interface NoriSite {
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "ai-settings".
+ */
+export interface AiSetting {
+  id: string;
+  enabled?: boolean | null;
+  greetingMessage?: string | null;
+  quickSuggestions?:
+    | {
+        label: string;
+        prompt: string;
+        id?: string | null;
+      }[]
+    | null;
+  maxOutputTokens?: number | null;
+  maxToolRounds?: number | null;
+  rateLimitPerMinute?: number | null;
+  rateLimitPerDay?: number | null;
+  dailyBudgetUsd?: number | null;
+  weightBudget?: number | null;
+  weightPurpose?: number | null;
+  weightCapacity?: number | null;
+  weightRating?: number | null;
+  weightFuel?: number | null;
+  knowledgeNote?: string | null;
+  updatedByEmail?: string | null;
+  createdBy?:
+    | ({
+        relationTo: 'admins';
+        value: string | Admin;
+      } | null)
+    | ({
+        relationTo: 'users';
+        value: string | User;
+      } | null);
+  updatedBy?:
+    | ({
+        relationTo: 'admins';
+        value: string | Admin;
+      } | null)
+    | ({
+        relationTo: 'users';
+        value: string | User;
+      } | null);
+  updatedAt?: string | null;
+  createdAt?: string | null;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "nori-site_select".
  */
 export interface NoriSiteSelect<T extends boolean = true> {
@@ -3676,6 +4050,38 @@ export interface NoriSiteSelect<T extends boolean = true> {
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "ai-settings_select".
+ */
+export interface AiSettingsSelect<T extends boolean = true> {
+  enabled?: T;
+  greetingMessage?: T;
+  quickSuggestions?:
+    | T
+    | {
+        label?: T;
+        prompt?: T;
+        id?: T;
+      };
+  maxOutputTokens?: T;
+  maxToolRounds?: T;
+  rateLimitPerMinute?: T;
+  rateLimitPerDay?: T;
+  dailyBudgetUsd?: T;
+  weightBudget?: T;
+  weightPurpose?: T;
+  weightCapacity?: T;
+  weightRating?: T;
+  weightFuel?: T;
+  knowledgeNote?: T;
+  updatedByEmail?: T;
+  createdBy?: T;
+  updatedBy?: T;
+  updatedAt?: T;
+  createdAt?: T;
+  globalType?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "welcome_widget".
  */
 export interface WelcomeWidget {
@@ -3713,6 +4119,7 @@ export interface CollectionQueryWidget {
       | 'service-locations'
       | 'branch-staff'
       | 'vehicle-models'
+      | 'vehicle-import-jobs'
       | 'vehicles'
       | 'vehicle-transfers'
       | 'vehicle-location-history'
@@ -3730,7 +4137,9 @@ export interface CollectionQueryWidget {
       | 'payment-events'
       | 'refunds'
       | 'reviews'
-      | 'posts';
+      | 'posts'
+      | 'ai-usage-logs'
+      | 'ai-feedback';
     where?:
       | {
           [k: string]: unknown;
@@ -3765,6 +4174,7 @@ export interface ActivityWidget {
           | 'service-locations'
           | 'branch-staff'
           | 'vehicle-models'
+          | 'vehicle-import-jobs'
           | 'vehicles'
           | 'vehicle-transfers'
           | 'vehicle-location-history'
@@ -3783,6 +4193,8 @@ export interface ActivityWidget {
           | 'refunds'
           | 'reviews'
           | 'posts'
+          | 'ai-usage-logs'
+          | 'ai-feedback'
         )[]
       | null;
   };

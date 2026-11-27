@@ -62,6 +62,9 @@ importers:
       next:
         specifier: 16.4.6
         version: 16.4.6(@playwright/test@1.65.1)(@types/node@24.12.3)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(sass@1.77.4)
+      openai:
+        specifier: ^7.65.0
+        version: 7.65.0(@aws-sdk/credential-provider-node@3.972.98)(@smithy/signature-v4@5.7.5)(undici@7.30.1)(ws@8.22.2)(zod@4.6.7)
       payload:
         specifier: 4.0.0-beta.8
         version: 4.0.0-beta.8(graphql@16.15.0)(typescript@6.0.3)
@@ -3105,6 +3108,33 @@ packages:
   open@10.2.0:
     resolution: {integrity: sha512-YgBpdJHPyQ2UE5x+hlSXcnejzAvD0b22U2OuAP+8OnlJT+PjWPxtgmGqKKc+RgTM63U9gN0YzrYc71R2WT/hTA==}
     engines: {node: '>=18'}
+
+  openai@7.65.0:
+    resolution: {integrity: sha512-n7tmWKiUptMIugQMGAEDsfeu8MsPLR4uHPFWRcUjy7Mn2w968TuAUMGOlvnh/AghLF1iz4zYop2RoxfHZFKaEw==}
+    engines: {node: '>=22.0.0'}
+    peerDependencies:
+      '@aws-sdk/credential-provider-node': '>=3.972.0 <4'
+      '@smithy/hash-node': '>=4.3.0 <5'
+      '@smithy/signature-v4': '>=5.4.0 <6'
+      google-auth-library: '>=9.15.1 <12'
+      undici: '>=5 <9'
+      ws: ^8.21.0
+      zod: ^3.25 || ^4.0
+    peerDependenciesMeta:
+      '@aws-sdk/credential-provider-node':
+        optional: true
+      '@smithy/hash-node':
+        optional: true
+      '@smithy/signature-v4':
+        optional: true
+      google-auth-library:
+        optional: true
+      undici:
+        optional: true
+      ws:
+        optional: true
+      zod:
+        optional: true
 
   openapi-fetch@0.15.0:
     resolution: {integrity: sha512-OjQUdi61WO4HYhr9+byCPMj0+bgste/LtSBEcV6FzDdONTs7x0fWn8/ndoYwzqCsKWIxEZwo4FN/TG1c1rI8IQ==}
@@ -7018,6 +7048,14 @@ snapshots:
       define-lazy-prop: 3.0.0
       is-inside-container: 1.0.0
       wsl-utils: 0.1.0
+
+  openai@7.65.0(@aws-sdk/credential-provider-node@3.972.98)(@smithy/signature-v4@5.7.5)(undici@7.30.1)(ws@8.22.2)(zod@4.6.7):
+    optionalDependencies:
+      '@aws-sdk/credential-provider-node': 3.972.98
+      '@smithy/signature-v4': 5.7.5
+      undici: 7.30.1
+      ws: 8.22.2
+      zod: 4.6.7
 
   openapi-fetch@0.15.0:
     dependencies:

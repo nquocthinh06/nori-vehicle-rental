@@ -153,7 +153,7 @@ export function VehicleDetail({
 }) {
   const [intent, setIntent] = useState<'rent' | 'buy'>('rent')
   const [galleryScope, setGalleryScope] = useState<'catalogue' | 'instance'>('catalogue')
-  const [kind, setKind] = useState<GalleryKind | 'ALL'>('ALL')
+  const [kind, setKind] = useState<GalleryKind | 'ALL' | 'TECH'>('ALL')
   const [imageIndex, setImageIndex] = useState(0)
   const [mainImageReady, setMainImageReady] = useState(false)
   const [galleryOpen, setGalleryOpen] = useState(false)
@@ -356,8 +356,10 @@ export function VehicleDetail({
   const baseScopedImages = effectiveScope === 'instance' ? instanceImages : catalogueImages
 
   const hasOverviewPhotos = baseScopedImages.some((g) => g.kind === 'OVERVIEW')
-  const hasInteriorPhotos = baseScopedImages.some((g) => g.kind === 'INTERIOR')
   const hasEnginePhotos = baseScopedImages.some((g) => g.kind === 'ENGINE')
+  const hasTechPhotos = baseScopedImages.some((g) =>
+    ['AMENITY', 'METER', 'BATTERY_CHARGER', 'LIGHTING'].includes(g.photoType ?? ''),
+  )
   const hasFeaturePhotos = baseScopedImages.some((g) => g.kind === 'FEATURE')
 
   const selectedVariant = variantIndex >= 0 ? model.variants[variantIndex] : null
@@ -379,7 +381,11 @@ export function VehicleDetail({
         : []
       : kind === 'ALL'
         ? baseScopedImages
-        : baseScopedImages.filter((g) => g.kind === kind)
+        : kind === 'TECH'
+          ? baseScopedImages.filter((g) =>
+              ['AMENITY', 'METER', 'BATTERY_CHARGER', 'LIGHTING'].includes(g.photoType ?? ''),
+            )
+          : baseScopedImages.filter((g) => g.kind === kind)
 
   const safeIndex = images.length ? imageIndex % images.length : 0
   const currentItem = images[safeIndex] ?? null
@@ -652,6 +658,11 @@ export function VehicleDetail({
               <Badge>{subLabel}</Badge>
               {model.modelYear && <Badge>Đời {model.modelYear}</Badge>}
               <Badge>Catalogue</Badge>
+              {model.verificationStatus === 'VERIFIED' ? (
+                <Badge tone="brand">Đã xác minh chính hãng</Badge>
+              ) : model.verificationStatus === 'UNVERIFIED' ? (
+                <Badge tone="warning">Cần xác minh thông số</Badge>
+              ) : null}
               {model.hasDemoFleet && <Badge tone="brand">Có xe thực tế (DEMO)</Badge>}
             </div>
             <Heading as="h1" size="display">
@@ -743,6 +754,9 @@ export function VehicleDetail({
                     onLoad={() => setMainImageReady(true)}
                     onError={() => setMainImageReady(true)}
                     className="object-cover"
+                    style={{
+                      objectPosition: `${currentImage.focalX ?? 50}% ${currentImage.focalY ?? 50}%`,
+                    }}
                   />
                 ) : (
                   <div className="px-6 text-center">
@@ -811,7 +825,7 @@ export function VehicleDetail({
                       setImageIndex(0)
                     }}
                   >
-                    Ảnh thực tế xe {selectedVehicle.reference} ({instanceImages.length})
+                    Ảnh xe thực tế {selectedVehicle.reference} ({instanceImages.length})
                   </Button>
                 </div>
               )}
@@ -823,7 +837,7 @@ export function VehicleDetail({
                       ['ALL', `Tất cả (${baseScopedImages.length})`],
                       ...(hasOverviewPhotos ? ([['OVERVIEW', 'Tổng thể']] as const) : []),
                       ['EXTERIOR', 'Ngoại thất'],
-                      ...(model.category !== 'MOTORBIKE' || hasInteriorPhotos
+                      ...(model.category !== 'MOTORBIKE'
                         ? ([['INTERIOR', 'Nội thất']] as const)
                         : []),
                       ...(hasEnginePhotos
@@ -834,6 +848,7 @@ export function VehicleDetail({
                             ],
                           ] as const)
                         : []),
+                      ...(hasTechPhotos ? ([['TECH', 'Công nghệ']] as const) : []),
                       ...(hasFeaturePhotos ? ([['FEATURE', 'Chi tiết']] as const) : []),
                     ] as const
                   ).map(([k, label]) => (
@@ -845,7 +860,13 @@ export function VehicleDetail({
                         const firstForKind =
                           k === 'ALL'
                             ? baseScopedImages[0]?.image
-                            : baseScopedImages.find((item) => item.kind === k)?.image
+                            : k === 'TECH'
+                              ? baseScopedImages.find((item) =>
+                                  ['AMENITY', 'METER', 'BATTERY_CHARGER', 'LIGHTING'].includes(
+                                    item.photoType ?? '',
+                                  ),
+                                )?.image
+                              : baseScopedImages.find((item) => item.kind === k)?.image
                         if (firstForKind?.url && typeof window !== 'undefined') {
                           const preloadImg = new window.Image()
                           preloadImg.src = firstForKind.url.includes('?')
@@ -919,6 +940,9 @@ export function VehicleDetail({
                           fetchPriority="low"
                           sizes="96px"
                           className="object-cover"
+                          style={{
+                            objectPosition: `${item.image.focalX ?? 50}% ${item.image.focalY ?? 50}%`,
+                          }}
                         />
                       )}
                     </button>
@@ -1870,14 +1894,66 @@ export function VehicleDetail({
               </section>
             )}
 
-            {model.source && /^https:\/\//.test(model.source) && (
-              <Text className="pt-4 text-micro text-muted">
-                Nguồn tham khảo catalogue:{' '}
-                <ExternalLink href={model.source} target="_blank">
-                  Trang chính thức hãng xe <Icon name="external" className="ml-1 inline size-3" />
-                </ExternalLink>
-              </Text>
-            )}
+            {/* Nguồn thông tin catalogue — tách biệt khỏi xe thực tế / DEMO */}
+            <section
+              aria-label="Nguồn thông tin catalogue"
+              className="mt-6 rounded-card border border-line bg-subtle/60 p-5"
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <Icon name="shield" className="size-4 text-brand" />
+                  <Heading as="h3" size="body" className="font-semibold text-ink">
+                    Nguồn thông tin catalogue
+                  </Heading>
+                </div>
+                {model.verificationStatus === 'VERIFIED' ? (
+                  <Badge tone="brand">Đã xác minh chính hãng</Badge>
+                ) : model.verificationStatus === 'UNVERIFIED' ? (
+                  <Badge tone="warning">Cần xác minh bổ sung</Badge>
+                ) : (
+                  <Badge tone="muted">Bản nháp nội bộ</Badge>
+                )}
+              </div>
+              <dl className="mt-3 grid gap-3 text-caption sm:grid-cols-2 lg:grid-cols-4">
+                <div>
+                  <dt className="text-micro text-muted">Thị trường & Đời xe</dt>
+                  <dd className="mt-0.5 font-medium text-ink">
+                    Việt Nam (VN){model.modelYear ? ` · Đời ${model.modelYear}` : ''}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-micro text-muted">Nguồn chính thức</dt>
+                  <dd className="mt-0.5 font-medium text-ink">
+                    {model.source && /^https:\/\//.test(model.source) ? (
+                      <ExternalLink href={model.source} target="_blank">
+                        Trang chính thức hãng xe{' '}
+                        <Icon name="external" className="ml-0.5 inline size-3" />
+                      </ExternalLink>
+                    ) : (
+                      model.source || 'Tài liệu kỹ thuật chính thức'
+                    )}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-micro text-muted">Xác minh gần nhất</dt>
+                  <dd className="mt-0.5 font-medium text-ink">
+                    {(model as ModelView & { lastImportedAt?: string | null }).lastImportedAt
+                      ? formatDate(
+                          (model as ModelView & { lastImportedAt?: string | null }).lastImportedAt,
+                        )
+                      : model.verificationStatus === 'VERIFIED'
+                        ? 'Đã đối chiếu catalogue hãng'
+                        : 'Chưa xác minh'}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-micro text-muted">Phạm vi dữ liệu</dt>
+                  <dd className="mt-0.5 font-medium text-ink">
+                    Thông số & phiên bản hãng (không phải DEMO)
+                  </dd>
+                </div>
+              </dl>
+            </section>
           </div>
 
           {/* Sticky Booking / Purchase Sidebar */}
@@ -2354,7 +2430,13 @@ export function VehicleDetail({
 
       {/* Lightbox Dialog */}
       <Dialog
-        title={`${model.name} — ${kind === 'ALL' ? 'Bộ sưu tập ảnh' : galleryKindLabels[kind]}`}
+        title={`${model.name} — ${
+          kind === 'ALL'
+            ? 'Bộ sưu tập ảnh'
+            : kind === 'TECH'
+              ? 'Công nghệ'
+              : galleryKindLabels[kind]
+        }`}
         open={galleryOpen}
         onClose={() => {
           setGalleryOpen(false)
@@ -2369,6 +2451,21 @@ export function VehicleDetail({
             if (e.key === 'ArrowLeft')
               setImageIndex((safeIndex - 1 + images.length) % images.length)
             if (e.key === 'ArrowRight') setImageIndex((safeIndex + 1) % images.length)
+          }}
+          onTouchStart={(e) => {
+            touchStartX.current = e.changedTouches[0]?.clientX ?? null
+          }}
+          onTouchEnd={(e) => {
+            if (touchStartX.current == null || images.length < 2) return
+            const delta = (e.changedTouches[0]?.clientX ?? 0) - touchStartX.current
+            if (Math.abs(delta) > 40) {
+              setImageIndex(
+                delta < 0
+                  ? (safeIndex + 1) % images.length
+                  : (safeIndex - 1 + images.length) % images.length,
+              )
+            }
+            touchStartX.current = null
           }}
           className="relative h-gallery-mobile overflow-hidden rounded-card bg-subtle focus:outline-none md:h-gallery"
         >
@@ -2386,9 +2483,37 @@ export function VehicleDetail({
             />
           )}
         </div>
+        {galleryOpen && images.length > 1 && (
+          <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
+            {images.map((item, idx) => (
+              <button
+                key={`lb-${item.image.url}-${idx}`}
+                type="button"
+                onClick={() => setImageIndex(idx)}
+                aria-label={`Xem ảnh ${idx + 1}: ${item.caption ?? item.image.alt}`}
+                aria-pressed={idx === safeIndex}
+                className={cn(
+                  'relative h-12 w-18 shrink-0 overflow-hidden rounded-control border-2 bg-subtle',
+                  idx === safeIndex
+                    ? 'border-brand'
+                    : 'border-transparent opacity-70 hover:opacity-100',
+                )}
+              >
+                <Image
+                  src={item.image.url}
+                  alt={item.image.alt}
+                  fill
+                  sizes="72px"
+                  className="object-cover"
+                />
+              </button>
+            ))}
+          </div>
+        )}
         <div className="mt-4 flex flex-wrap items-center justify-between gap-4">
           <Text className="text-caption text-muted">
-            Ảnh catalogue tham khảo · {images.length ? `${safeIndex + 1}/${images.length}` : ''}
+            {effectiveScope === 'instance' ? 'Ảnh xe thực tế' : 'Ảnh catalogue tham khảo'} ·{' '}
+            {images.length ? `${safeIndex + 1}/${images.length}` : ''}
             {currentItem?.caption ? ` — ${currentItem.caption}` : ''}
           </Text>
           <div className="flex items-center gap-2">

@@ -18,6 +18,13 @@ import {
   BOOKING_PAYMENT_OPTION_INDEXES_SQL,
 } from '../migrations/20261120_030000_booking_payment_option_plans.ts'
 import { MEDIA_CLOUD_STORAGE_COLUMN_ADDITIONS } from '../migrations/20261121_040000_media_cloud_storage_columns.ts'
+import { AI_ASSISTANT_TABLES_AND_INDEXES_SQL } from '../migrations/20261128_010000_ai_assistant_foundation.ts'
+import {
+  VEHICLE_IMPORT_COLUMN_ADDITIONS,
+  VEHICLE_IMPORT_COLUMN_INDEXES_SQL,
+  VEHICLE_IMPORT_OPTIONAL_MEDIA_V_INDEX_SQL,
+  VEHICLE_IMPORT_TABLES_AND_INDEXES_SQL,
+} from '../migrations/20261128_020000_vehicle_import_jobs.ts'
 
 export const CURRENT_SCHEMA_VERSION = 'nori-payload-sqlite-v2.5'
 export const SNAPSHOT_FORMAT_VERSION = '1.0.0'
@@ -53,6 +60,10 @@ export const EXCLUDED_SENSITIVE_COLLECTIONS = [
   'vehicle-transfers',
   'vehicle-location-history',
   'delivery-jobs',
+  'ai-settings',
+  'ai-usage-logs',
+  'ai-feedback',
+  'vehicle-import-jobs',
 ] as const
 
 const FORBIDDEN_FIELD_NAMES = new Set([
@@ -81,6 +92,8 @@ const FORBIDDEN_FIELD_NAMES = new Set([
   'contact_phone',
   'apiKey',
   'api_key',
+  'openaiApiKey',
+  'openai_api_key',
   'payloadSecret',
   'sessionSecret',
   'sessions',
@@ -92,6 +105,8 @@ const SENSITIVE_VALUE_PATTERNS = [
   /NORI_SESSION_SECRET\s*=/,
   /PAYLOAD_SECRET\s*=/,
   /NORI_ADMIN_PASSWORD\s*=/,
+  /OPENAI_API_KEY\s*=/,
+  /\bsk-(?:proj-)?[A-Za-z0-9_-]{20,}\b/,
 ]
 
 export type ConflictStrategy = 'abort' | 'keep-local' | 'prefer-snapshot'
@@ -455,6 +470,49 @@ export function applyAdditiveMediaCloudStorageSchema(db: DatabaseSync): void {
   }
 }
 
+export function applyAdditiveAIAssistantSchema(db: DatabaseSync): void {
+  for (const stmt of AI_ASSISTANT_TABLES_AND_INDEXES_SQL) {
+    db.exec(stmt)
+  }
+}
+
+export function applyAdditiveVehicleImportSchema(db: DatabaseSync): void {
+  const existingTables = new Set(
+    (
+      db
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('vehicle_models', 'media', '_media_v')",
+        )
+        .all() as { name?: string }[]
+    )
+      .map((r) => String(r.name ?? ''))
+      .filter(Boolean),
+  )
+  const colsCache = new Map<string, Set<string>>()
+  for (const [tableName, columnName, colDef] of VEHICLE_IMPORT_COLUMN_ADDITIONS) {
+    if (!existingTables.has(tableName)) continue
+    let colSet = colsCache.get(tableName)
+    if (!colSet) {
+      const rows = db.prepare(`PRAGMA table_info('${tableName}')`).all() as { name?: string }[]
+      colSet = new Set(rows.map((r) => String(r.name ?? '')))
+      colsCache.set(tableName, colSet)
+    }
+    if (!colSet.has(columnName)) {
+      db.exec(`ALTER TABLE \`${tableName}\` ADD COLUMN \`${columnName}\` ${colDef};`)
+      colSet.add(columnName)
+    }
+  }
+  for (const stmt of VEHICLE_IMPORT_TABLES_AND_INDEXES_SQL) {
+    db.exec(stmt)
+  }
+  for (const idxStmt of VEHICLE_IMPORT_COLUMN_INDEXES_SQL) {
+    db.exec(idxStmt)
+  }
+  if (existingTables.has('_media_v')) {
+    db.exec(VEHICLE_IMPORT_OPTIONAL_MEDIA_V_INDEX_SQL)
+  }
+}
+
 export function runDatabaseMigration(options?: { rootDir?: string; dbPath?: string }) {
   const paths = resolvePaths(options)
   const schemaSqlPath = path.join(paths.seedDir, 'schema.sql')
@@ -474,6 +532,8 @@ export function runDatabaseMigration(options?: { rootDir?: string; dbPath?: stri
       applyAdditiveMultiBranchSchema(db)
       applyAdditiveBookingPaymentOptionSchema(db)
       applyAdditiveMediaCloudStorageSchema(db)
+      applyAdditiveAIAssistantSchema(db)
+      applyAdditiveVehicleImportSchema(db)
       const now = new Date().toISOString()
       const existingDev = db
         .prepare("SELECT id FROM payload_migrations WHERE name = 'dev' LIMIT 1")
@@ -526,6 +586,24 @@ export function runDatabaseMigration(options?: { rootDir?: string; dbPath?: stri
         db.prepare(
           'INSERT INTO payload_migrations (id, name, batch, updated_at, created_at) VALUES (?, ?, ?, ?, ?)',
         ).run(crypto.randomUUID(), mediaCloudMigName, 5, now, now)
+      }
+      const aiAssistantMigName = '20261128_010000_ai_assistant_foundation'
+      const existingAiAssistantMig = db
+        .prepare('SELECT id FROM payload_migrations WHERE name = ? LIMIT 1')
+        .get(aiAssistantMigName) as { id?: string } | undefined
+      if (!existingAiAssistantMig) {
+        db.prepare(
+          'INSERT INTO payload_migrations (id, name, batch, updated_at, created_at) VALUES (?, ?, ?, ?, ?)',
+        ).run(crypto.randomUUID(), aiAssistantMigName, 6, now, now)
+      }
+      const vehicleImportMigName = '20261128_020000_vehicle_import_jobs'
+      const existingVehicleImportMig = db
+        .prepare('SELECT id FROM payload_migrations WHERE name = ? LIMIT 1')
+        .get(vehicleImportMigName) as { id?: string } | undefined
+      if (!existingVehicleImportMig) {
+        db.prepare(
+          'INSERT INTO payload_migrations (id, name, batch, updated_at, created_at) VALUES (?, ?, ?, ?, ?)',
+        ).run(crypto.randomUUID(), vehicleImportMigName, 7, now, now)
       }
       db.exec('COMMIT')
     } catch (err) {

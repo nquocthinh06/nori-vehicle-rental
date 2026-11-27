@@ -290,6 +290,11 @@ export async function GET(request: Request) {
     }
 
     if (view === 'models') {
+      const brandFilter = (sp.get('brand') || '').trim().toLowerCase()
+      const subCategoryFilter = (sp.get('subCategory') || '').trim()
+      const verificationFilter = (sp.get('verificationStatus') || '').trim()
+      const visibleFilter = (sp.get('visible') || '').trim().toLowerCase()
+
       const modelsRes = await payload.find({
         collection: 'vehicle-models',
         user,
@@ -342,6 +347,13 @@ export async function GET(request: Request) {
       const filtered = modelsRes.docs
         .filter((m) => {
           if (category && m.category !== category) return false
+          if (brandFilter && m.brand.toLowerCase() !== brandFilter) return false
+          if (subCategoryFilter && (m.subCategory ?? '') !== subCategoryFilter) return false
+          if (verificationFilter && (m.verificationStatus ?? 'VERIFIED') !== verificationFilter) {
+            return false
+          }
+          if (visibleFilter === 'true' && !m.visible) return false
+          if (visibleFilter === 'false' && m.visible) return false
           if (search) {
             const hay =
               `${m.name} ${m.officialName ?? ''} ${m.brand} ${m.slug} ${m.segment ?? ''}`.toLowerCase()
@@ -442,6 +454,13 @@ export async function GET(request: Request) {
               }),
             })),
             source: m.source ?? null,
+            msrpReferenceVnd: (m as unknown as Record<string, unknown>).msrpReferenceVnd ?? null,
+            importSourceUrl: (m as unknown as Record<string, unknown>).importSourceUrl ?? null,
+            importSourceType:
+              (m as unknown as Record<string, unknown>).importSourceType ?? 'MANUAL',
+            lastImportedAt: (m as unknown as Record<string, unknown>).lastImportedAt ?? null,
+            lockedFields: (m as unknown as Record<string, unknown>).lockedFields ?? [],
+            revisionNumber: (m as unknown as Record<string, unknown>).revisionNumber ?? 1,
             verificationStatus: m.verificationStatus ?? 'VERIFIED',
             visible: Boolean(m.visible),
             featured: Boolean(m.featured),

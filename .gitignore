@@ -33,6 +33,11 @@ dev-data/**/*.tmp*
 /data/media/*
 !/data/media/seed/
 backups/
+backups/postgres/
+backups/media/
+*.enc
+nori-e2e-isolated.db*
+.tmp-e2e-media/
 test-results/
 playwright-report/
 playwright/.cache/

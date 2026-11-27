@@ -8,6 +8,8 @@ import { en as adminLanguage } from '@payloadcms/translations/languages/en'
 import { buildConfig } from 'payload'
 import { fileURLToPath } from 'url'
 import { Admins } from './collections/Admins'
+import { AIFeedback } from './collections/AIFeedback'
+import { AIUsageLogs } from './collections/AIUsageLogs'
 import { AuditLogs } from './collections/AuditLogs'
 import { Bookings } from './collections/Bookings'
 import { Branches } from './collections/Branches'
@@ -32,11 +34,13 @@ import { SalesInquiries } from './collections/SalesInquiries'
 import { ServiceLocations } from './collections/ServiceLocations'
 import { Tags } from './collections/Tags'
 import { Users } from './collections/Users'
+import { VehicleImportJobs } from './collections/VehicleImportJobs'
 import { VehicleLocationHistory } from './collections/VehicleLocationHistory'
 import { VehicleModels } from './collections/VehicleModels'
 import { Vehicles } from './collections/Vehicles'
 import { VehicleTransfers } from './collections/VehicleTransfers'
 import { Warehouses } from './collections/Warehouses'
+import { AISettings } from './globals/AISettings'
 import { NoriSite } from './globals/NoriSite'
 import {
   assertVercelBlobStorageReady,
@@ -133,6 +137,7 @@ export default buildConfig({
     ServiceLocations,
     BranchStaff,
     VehicleModels,
+    VehicleImportJobs,
     Vehicles,
     VehicleTransfers,
     VehicleLocationHistory,
@@ -152,8 +157,10 @@ export default buildConfig({
     Refunds,
     Reviews,
     Posts,
+    AIUsageLogs,
+    AIFeedback,
   ],
-  globals: [NoriSite],
+  globals: [NoriSite, AISettings],
   typescript: {
     outputFile: path.resolve(dirname, 'payload-types.ts'),
   },

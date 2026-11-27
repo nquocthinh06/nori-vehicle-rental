@@ -1,6 +1,7 @@
 'use client'
 
 import Image from 'next/image'
+import dynamic from 'next/dynamic'
 import { useEffect, useMemo, useState } from 'react'
 import { api } from '@/lib/client-api'
 import {
@@ -31,7 +32,17 @@ import {
 } from '@/components/ui'
 import { Dialog } from '@/components/ui/dialog'
 import { Icon } from '@/components/ui/icon'
+import type {
+  ExtractedDraftPreview,
+  SmartImportMode,
+  SmartImportTargetModel,
+} from './smart-import-drawer'
 import { useToast } from './toast'
+
+const SmartImportDrawer = dynamic(
+  () => import('./smart-import-drawer').then((m) => m.SmartImportDrawer),
+  { ssr: false },
+)
 
 type GalleryFormItem = {
   imageId: string
@@ -133,6 +144,11 @@ type ModelRow = {
   specifications: SpecFormItem[]
   variants: VariantFormItem[]
   source: string | null
+  importSourceUrl?: string | null
+  importSourceType?: string | null
+  lastImportedAt?: string | null
+  lockedFields?: string[]
+  revisionNumber?: number
   verificationStatus: string
   visible: boolean
   featured: boolean
@@ -187,9 +203,18 @@ export function ModelsPanel() {
   const [totalPages, setTotalPages] = useState(1)
   const [q, setQ] = useState('')
   const [category, setCategory] = useState('')
+  const [brandFilter, setBrandFilter] = useState('')
+  const [subCategoryFilter, setSubCategoryFilter] = useState('')
+  const [verificationFilter, setVerificationFilter] = useState('')
+  const [visibleFilter, setVisibleFilter] = useState('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [retry, setRetry] = useState(0)
+
+  // Smart Import Drawer state (lazy-loaded)
+  const [importDrawerOpen, setImportDrawerOpen] = useState(false)
+  const [importDrawerMode, setImportDrawerMode] = useState<SmartImportMode>('URL')
+  const [importTargetModel, setImportTargetModel] = useState<SmartImportTargetModel | null>(null)
 
   // Editor workspace state
   const [editorMode, setEditorMode] = useState<'list' | 'edit'>('list')
@@ -269,6 +294,10 @@ export function ModelsPanel() {
       page: String(page),
       ...(q.trim() ? { q: q.trim() } : {}),
       ...(category ? { category } : {}),
+      ...(brandFilter ? { brand: brandFilter } : {}),
+      ...(subCategoryFilter ? { subCategory: subCategoryFilter } : {}),
+      ...(verificationFilter ? { verificationStatus: verificationFilter } : {}),
+      ...(visibleFilter ? { visible: visibleFilter } : {}),
     })
     api<{ items: ModelRow[]; totalDocs: number; totalPages: number }>(
       `/dashboard/vehicles?${sp.toString()}`,
@@ -288,7 +317,90 @@ export function ModelsPanel() {
     return () => {
       active = false
     }
-  }, [page, q, category, retry])
+  }, [page, q, category, brandFilter, subCategoryFilter, verificationFilter, visibleFilter, retry])
+
+  const brandFilterOptions = useMemo(() => {
+    const known = [
+      'Toyota',
+      'Honda',
+      'Ford',
+      'Mitsubishi',
+      'Mazda',
+      'Hyundai',
+      'Mercedes-Benz',
+      'VinFast',
+      'Yamaha',
+      'Kawasaki',
+    ]
+    return [...new Set([...known, ...items.map((m) => m.brand).filter(Boolean)])].sort((a, b) =>
+      a.localeCompare(b, 'vi'),
+    )
+  }, [items])
+
+  const subCategoryFilterOptions = useMemo(() => {
+    if (category && category in subCategoriesByCategory) {
+      return subCategoriesByCategory[category as 'CAR' | 'MOTORBIKE' | 'PICKUP'] ?? []
+    }
+    return Object.keys(subCategoryLabels)
+  }, [category])
+
+  function openImportDrawer(mode: SmartImportMode, model?: ModelRow | null) {
+    setImportDrawerMode(mode)
+    setImportTargetModel(
+      model
+        ? {
+            id: model.id,
+            name: model.name,
+            brand: model.brand,
+            slug: model.slug,
+            source: model.importSourceUrl || model.source,
+            modelYear: model.modelYear,
+            lockedFields: model.lockedFields ?? [],
+            verificationStatus: model.verificationStatus,
+          }
+        : null,
+    )
+    setImportDrawerOpen(true)
+  }
+
+  function openFromImportDraft(draft?: ExtractedDraftPreview | null) {
+    if (!draft) {
+      openCreate()
+      return
+    }
+    openCreate()
+    if (draft.name) setName(draft.name)
+    if (draft.officialName) setOfficialName(draft.officialName)
+    if (draft.brand) setBrand(draft.brand)
+    if (draft.category) setCatField(draft.category)
+    if (draft.subCategory) setSubCategory(draft.subCategory)
+    if (draft.modelYear) setModelYear(String(draft.modelYear))
+    if (draft.versionName) setVersionName(draft.versionName)
+    if (draft.seats) setSeats(String(draft.seats))
+    if (draft.fuelType) setFuelType(draft.fuelType)
+    if (draft.transmission) setTransmission(draft.transmission)
+    if (draft.driveType) setDriveType(draft.driveType)
+    if (draft.listedPrice) setListedPrice(String(draft.listedPrice))
+    if (draft.shortDescription) setShortDescription(draft.shortDescription)
+    if (draft.description) setDescription(draft.description)
+    if (draft.exteriorOverview) setExteriorOverview(draft.exteriorOverview)
+    if (draft.interiorOverview) setInteriorOverview(draft.interiorOverview)
+    if (draft.engineOverview) setEngineOverview(draft.engineOverview)
+    if (draft.highlights?.length) setHighlights(draft.highlights)
+    if (draft.specifications?.length) {
+      setSpecifications(
+        draft.specifications.map((s) => ({
+          group: (s.group as SpecFormItem['group']) || 'OVERVIEW',
+          label: s.label,
+          value: s.value,
+          variantName: s.variantName ?? '',
+          source: s.source ?? '',
+        })),
+      )
+    }
+    if (draft.sourceUrl || draft.source) setSource(draft.sourceUrl || draft.source || '')
+    setIsDirty(true)
+  }
 
   function markChanged() {
     setIsDirty(true)
@@ -2577,14 +2689,56 @@ export function ModelsPanel() {
   // ==========================================================================
   // CATALOGUE MODELS LIST VIEW
   // ==========================================================================
+  const hasActiveFilters = Boolean(
+    q.trim() || category || brandFilter || subCategoryFilter || verificationFilter || visibleFilter,
+  )
+
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-end justify-between gap-4 rounded-card border border-line bg-canvas p-4">
-        <div className="grid flex-1 gap-3 sm:grid-cols-2 lg:max-w-xl">
+      <div className="space-y-4 rounded-card border border-line bg-canvas p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <Heading as="h2" size="subtitle">
+              Quản trị Catalogue Dòng xe & Nhập dữ liệu từ hãng
+            </Heading>
+            <Text className="text-caption text-muted">
+              Quản lý thông số kỹ thuật, phiên bản, hình ảnh chính hãng tách biệt hoàn toàn với kho
+              xe thực tế.
+            </Text>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button size="sm" variant="primary" onClick={openCreate}>
+              <Icon name="plus" className="size-4" />
+              Thêm dòng xe thủ công
+            </Button>
+            <Button size="sm" variant="secondary" onClick={() => openImportDrawer('URL')}>
+              <Icon name="globe" className="size-4" />
+              Nhập từ website hãng
+            </Button>
+            <Button size="sm" variant="secondary" onClick={() => openImportDrawer('AI_SEARCH')}>
+              <Icon name="sparkles" className="size-4" />
+              Tìm kiếm thông minh
+            </Button>
+            <Button size="sm" variant="secondary" onClick={() => openImportDrawer('BULK')}>
+              <Icon name="upload" className="size-4" />
+              Nhập hàng loạt
+            </Button>
+            <Button size="sm" variant="secondary" onClick={() => openImportDrawer('PDF_BROCHURE')}>
+              <Icon name="file" className="size-4" />
+              Nhập từ brochure
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => openImportDrawer('HISTORY')}>
+              <Icon name="clock" className="size-4" />
+              Lịch sử nhập liệu
+            </Button>
+          </div>
+        </div>
+
+        <div className="grid gap-3 border-t border-line pt-4 sm:grid-cols-2 lg:grid-cols-6">
           <Input
             id="model-search"
             label="Tìm kiếm dòng xe"
-            placeholder="Tên dòng xe, thương hiệu, phân khúc..."
+            placeholder="Tên dòng xe, thương hiệu..."
             value={q}
             onChange={(e) => {
               setPage(1)
@@ -2598,6 +2752,7 @@ export function ModelsPanel() {
             onChange={(e) => {
               setPage(1)
               setCategory(e.target.value)
+              setSubCategoryFilter('')
             }}
           >
             <option value="">Tất cả danh mục</option>
@@ -2605,11 +2760,86 @@ export function ModelsPanel() {
             <option value="MOTORBIKE">Xe máy</option>
             <option value="PICKUP">Bán tải</option>
           </Select>
+          <Select
+            id="model-brand-filter"
+            label="Thương hiệu"
+            value={brandFilter}
+            onChange={(e) => {
+              setPage(1)
+              setBrandFilter(e.target.value)
+            }}
+          >
+            <option value="">Tất cả thương hiệu</option>
+            {brandFilterOptions.map((b) => (
+              <option key={b} value={b}>
+                {b}
+              </option>
+            ))}
+          </Select>
+          <Select
+            id="model-subcat-filter"
+            label="Phân loại kiểu dáng"
+            value={subCategoryFilter}
+            onChange={(e) => {
+              setPage(1)
+              setSubCategoryFilter(e.target.value)
+            }}
+          >
+            <option value="">Tất cả phân loại</option>
+            {subCategoryFilterOptions.map((sc) => (
+              <option key={sc} value={sc}>
+                {subCategoryLabels[sc] ?? sc}
+              </option>
+            ))}
+          </Select>
+          <Select
+            id="model-ver-filter"
+            label="Trạng thái xác minh"
+            value={verificationFilter}
+            onChange={(e) => {
+              setPage(1)
+              setVerificationFilter(e.target.value)
+            }}
+          >
+            <option value="">Tất cả trạng thái</option>
+            <option value="VERIFIED">Đã xác minh</option>
+            <option value="UNVERIFIED">Cần xác minh</option>
+            <option value="DRAFT">Bản nháp</option>
+          </Select>
+          <Select
+            id="model-visible-filter"
+            label="Hiển thị công khai"
+            value={visibleFilter}
+            onChange={(e) => {
+              setPage(1)
+              setVisibleFilter(e.target.value)
+            }}
+          >
+            <option value="">Tất cả</option>
+            <option value="true">Đang công khai</option>
+            <option value="false">Đang ẩn</option>
+          </Select>
         </div>
-        <Button size="sm" onClick={openCreate}>
-          <Icon name="plus" className="size-4" />
-          Thêm dòng xe Catalogue
-        </Button>
+
+        {hasActiveFilters && (
+          <div className="flex justify-end">
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => {
+                setPage(1)
+                setQ('')
+                setCategory('')
+                setBrandFilter('')
+                setSubCategoryFilter('')
+                setVerificationFilter('')
+                setVisibleFilter('')
+              }}
+            >
+              Đặt lại bộ lọc
+            </Button>
+          </div>
+        )}
       </div>
 
       {error && <Notice tone="error">{error}</Notice>}
@@ -2666,8 +2896,15 @@ export function ModelsPanel() {
                         <Badge tone={m.visible ? 'brand' : 'muted'}>
                           {m.visible ? 'Công khai' : 'Đang ẩn'}
                         </Badge>
+                        {m.verificationStatus === 'VERIFIED' && (
+                          <Badge tone="brand">Đã xác minh</Badge>
+                        )}
                         {m.verificationStatus === 'UNVERIFIED' && (
                           <Badge tone="warning">Cần xác minh</Badge>
+                        )}
+                        {m.verificationStatus === 'DRAFT' && <Badge tone="muted">Bản nháp</Badge>}
+                        {(m.lockedFields?.length ?? 0) > 0 && (
+                          <Badge tone="muted">Khóa {m.lockedFields!.length} trường</Badge>
                         )}
                         <Badge tone="muted">{m.fleetCount} xe thực tế</Badge>
                       </div>
@@ -2684,10 +2921,16 @@ export function ModelsPanel() {
                     </span>
                   </div>
                 </div>
-                <div className="mt-4 flex items-center justify-between gap-2 border-t border-line pt-3">
-                  <Button size="sm" variant="secondary" onClick={() => openEdit(m)}>
-                    Chỉnh sửa đầy đủ (10 Tabs)
-                  </Button>
+                <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-line pt-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button size="sm" variant="secondary" onClick={() => openEdit(m)}>
+                      Chỉnh sửa đầy đủ (10 Tabs)
+                    </Button>
+                    <Button size="sm" variant="ghost" onClick={() => openImportDrawer('SYNC', m)}>
+                      <Icon name="refresh" className="size-3.5" />
+                      Đồng bộ từ nhà sản xuất
+                    </Button>
+                  </div>
                   <Button
                     size="sm"
                     variant="danger"
@@ -2751,6 +2994,17 @@ export function ModelsPanel() {
           </div>
         )}
       </Dialog>
+
+      {importDrawerOpen && (
+        <SmartImportDrawer
+          open={importDrawerOpen}
+          initialMode={importDrawerMode}
+          targetModel={importTargetModel}
+          onClose={() => setImportDrawerOpen(false)}
+          onImported={() => setRetry((r) => r + 1)}
+          onSwitchToManual={openFromImportDraft}
+        />
+      )}
     </div>
   )
 }

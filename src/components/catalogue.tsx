@@ -741,10 +741,12 @@ export function Catalogue({ models }: { models: ModelView[] }) {
             </nav>
           )}
           <div className="mt-7 flex items-start gap-2 rounded-control bg-subtle p-4 text-caption text-muted">
-            <Icon name="info" className="mt-0.5 size-4" />
+            <Icon name="info" className="mt-0.5 size-4 shrink-0 text-brand" />
             <Text>
-              Đây là catalogue dòng xe kết hợp danh sách xe thực tế minh họa (DEMO). Giá, ODO, màu
-              sắc và lịch trống chi tiết được kiểm tra theo từng chiếc xe ở trang chi tiết.
+              Catalogue dòng xe hiển thị thông số kỹ thuật, phiên bản và bảng màu tham chiếu từ
+              nguồn nhà sản xuất (không phải dữ liệu DEMO). Các xe thực tế minh họa trong kho được
+              gắn nhãn DEMO riêng biệt; giá thuê/bán, ODO và lịch trống được kiểm tra độc lập theo
+              từng chiếc xe tại trang chi tiết.
             </Text>
           </div>
         </section>

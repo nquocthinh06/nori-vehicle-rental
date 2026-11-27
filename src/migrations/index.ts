@@ -7,6 +7,8 @@ import * as migration_20261120_010000_online_payment_integration from './2026112
 import * as migration_20261120_020000_multi_branch_management from './20261120_020000_multi_branch_management'
 import * as migration_20261120_030000_booking_payment_option_plans from './20261120_030000_booking_payment_option_plans'
 import * as migration_20261121_040000_media_cloud_storage_columns from './20261121_040000_media_cloud_storage_columns'
+import * as migration_20261128_010000_ai_assistant_foundation from './20261128_010000_ai_assistant_foundation'
+import * as migration_20261128_020000_vehicle_import_jobs from './20261128_020000_vehicle_import_jobs'
 
 export const migrations = [
   {
@@ -53,5 +55,15 @@ export const migrations = [
     up: migration_20261121_040000_media_cloud_storage_columns.up,
     down: migration_20261121_040000_media_cloud_storage_columns.down,
     name: '20261121_040000_media_cloud_storage_columns',
+  },
+  {
+    up: migration_20261128_010000_ai_assistant_foundation.up,
+    down: migration_20261128_010000_ai_assistant_foundation.down,
+    name: '20261128_010000_ai_assistant_foundation',
+  },
+  {
+    up: migration_20261128_020000_vehicle_import_jobs.up,
+    down: migration_20261128_020000_vehicle_import_jobs.down,
+    name: '20261128_020000_vehicle_import_jobs',
   },
 ]

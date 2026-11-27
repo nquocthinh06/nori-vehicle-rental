@@ -119,6 +119,12 @@ export const VehicleModels: CollectionConfig = {
       min: 0,
     },
     {
+      name: 'msrpReferenceVnd',
+      label: 'Giá niêm yết hãng tham khảo (VNĐ)',
+      type: 'number',
+      min: 0,
+    },
+    {
       name: 'referenceRentPrice',
       label: 'Giá thuê tham khảo từ (VNĐ/ngày)',
       type: 'number',
@@ -276,6 +282,24 @@ export const VehicleModels: CollectionConfig = {
       ],
     },
     { name: 'source', label: 'Nguồn catalogue', type: 'text' },
+    { name: 'importSourceUrl', label: 'URL nguồn nhập chính thức', type: 'text', maxLength: 500 },
+    {
+      name: 'importSourceType',
+      label: 'Nguồn nhập dữ liệu',
+      type: 'select',
+      options: ['OFFICIAL_URL', 'PDF_BROCHURE', 'AI_ASSISTED', 'BULK_FILE', 'MANUAL'],
+      defaultValue: 'MANUAL',
+    },
+    { name: 'importSourceHash', label: 'Mã băm dữ liệu nguồn', type: 'text', maxLength: 120 },
+    { name: 'lastImportedAt', label: 'Lần đồng bộ gần nhất', type: 'text', maxLength: 60 },
+    { name: 'lockedFields', label: 'Danh sách trường khóa ghi đè (JSON)', type: 'json' },
+    {
+      name: 'revisionNumber',
+      label: 'Phiên bản chỉnh sửa',
+      type: 'number',
+      min: 1,
+      defaultValue: 1,
+    },
     {
       name: 'verificationStatus',
       label: 'Trạng thái xác minh dữ liệu',

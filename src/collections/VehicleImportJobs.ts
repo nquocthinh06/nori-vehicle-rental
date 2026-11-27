@@ -1,0 +1,175 @@
+import type { CollectionConfig } from 'payload'
+import { adminPermission, isSuperAdmin } from '@/access/nori'
+import { auditCollection } from '@/hooks/audit-nori'
+
+const importJobAudit = auditCollection({
+  entity: 'vehicle-import-job',
+  entityName: 'tiến trình nhập dữ liệu xe',
+  label: (doc) => String(doc.jobCode ?? doc.id),
+  statusField: 'status',
+  fields: {
+    method: 'Phương thức',
+    status: 'Trạng thái',
+    conflictPolicy: 'Chính sách xung đột',
+    progressPct: 'Tiến độ (%)',
+  },
+})
+
+export const VehicleImportJobs: CollectionConfig = {
+  slug: 'vehicle-import-jobs',
+  labels: { singular: 'Tiến trình nhập xe', plural: 'Lịch sử nhập dữ liệu xe' },
+  lockDocuments: false,
+  admin: {
+    useAsTitle: 'jobCode',
+    group: 'NORI · Phương tiện',
+    defaultColumns: ['jobCode', 'method', 'status', 'progressPct', 'currentStage', 'createdAt'],
+  },
+  access: {
+    create: adminPermission('models', 'create'),
+    read: adminPermission('models', 'read'),
+    update: adminPermission('models', 'update'),
+    delete: isSuperAdmin,
+  },
+  hooks: {
+    afterChange: [importJobAudit.afterChange],
+    afterDelete: [importJobAudit.afterDelete],
+  },
+  fields: [
+    {
+      name: 'jobCode',
+      label: 'Mã tiến trình',
+      type: 'text',
+      required: true,
+      unique: true,
+      index: true,
+    },
+    {
+      name: 'method',
+      label: 'Phương thức nhập',
+      type: 'select',
+      options: ['URL', 'AI_SEARCH', 'BULK', 'PDF_BROCHURE', 'MANUAL'],
+      required: true,
+      index: true,
+    },
+    {
+      name: 'status',
+      label: 'Trạng thái xử lý',
+      type: 'select',
+      options: [
+        'QUEUED',
+        'FETCHING',
+        'EXTRACTING',
+        'NORMALIZING',
+        'VALIDATING',
+        'PREVIEW_READY',
+        'AWAITING_APPROVAL',
+        'IMPORTING',
+        'COMPLETED',
+        'PARTIAL_SUCCESS',
+        'FAILED',
+        'CANCELLED',
+      ],
+      defaultValue: 'QUEUED',
+      required: true,
+      index: true,
+    },
+    {
+      name: 'targetModel',
+      label: 'Dòng xe mục tiêu',
+      type: 'relationship',
+      relationTo: 'vehicle-models',
+      index: true,
+    },
+    {
+      name: 'sourceInput',
+      label: 'Dữ liệu đầu vào nguồn (JSON)',
+      type: 'json',
+    },
+    {
+      name: 'normalizedDraft',
+      label: 'Bản nháp đã chuẩn hóa (JSON)',
+      type: 'json',
+    },
+    {
+      name: 'diffPreview',
+      label: 'So sánh thay đổi từng trường (JSON)',
+      type: 'json',
+    },
+    {
+      name: 'uncertaintyFlags',
+      label: 'Cảnh báo cần xác minh (JSON)',
+      type: 'json',
+    },
+    {
+      name: 'mediaReport',
+      label: 'Báo cáo xử lý hình ảnh (JSON)',
+      type: 'json',
+    },
+    {
+      name: 'rollbackSnapshot',
+      label: 'Snapshot trước khi nhập để Rollback (JSON)',
+      type: 'json',
+    },
+    {
+      name: 'conflictPolicy',
+      label: 'Chính sách xử lý xung đột',
+      type: 'select',
+      options: ['SKIP_EXISTING', 'MERGE_EMPTY', 'OVERWRITE_UNLOCKED'],
+      defaultValue: 'MERGE_EMPTY',
+      required: true,
+    },
+    {
+      name: 'progressPct',
+      label: 'Tiến độ (%)',
+      type: 'number',
+      min: 0,
+      max: 100,
+      defaultValue: 0,
+    },
+    {
+      name: 'currentStage',
+      label: 'Bước xử lý hiện tại',
+      type: 'text',
+      maxLength: 160,
+    },
+    {
+      name: 'attemptCount',
+      label: 'Số lần thử',
+      type: 'number',
+      min: 0,
+      defaultValue: 1,
+    },
+    {
+      name: 'errorCode',
+      label: 'Mã lỗi',
+      type: 'text',
+      maxLength: 80,
+    },
+    {
+      name: 'errorMessage',
+      label: 'Chi tiết lỗi',
+      type: 'text',
+      maxLength: 1000,
+    },
+    {
+      name: 'createdByAdminId',
+      label: 'Admin khởi tạo',
+      type: 'text',
+      maxLength: 80,
+      index: true,
+    },
+    {
+      name: 'startedAt',
+      label: 'Bắt đầu lúc',
+      type: 'text',
+      maxLength: 60,
+    },
+    {
+      name: 'finishedAt',
+      label: 'Kết thúc lúc',
+      type: 'text',
+      maxLength: 60,
+    },
+  ],
+  versions: false,
+}
