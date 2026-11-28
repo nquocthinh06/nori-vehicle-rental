@@ -557,8 +557,8 @@ export function AdminShell({ children }: { children: ReactNode }) {
     .toUpperCase()
 
   const sidebarContent = (
-    <div className="flex h-full flex-col bg-night text-inverse">
-      <div className="flex h-16 items-center justify-between border-b border-inverse/15 px-4">
+    <div className="flex h-full min-h-0 flex-col bg-night text-inverse">
+      <div className="flex h-16 shrink-0 items-center justify-between border-b border-inverse/15 px-4 sm:h-18">
         <NoriLink
           href="/dashboard"
           className="flex items-center gap-2.5 text-inverse hover:text-brand-bright"
@@ -593,7 +593,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
 
       <nav
         aria-label="Điều hướng quản trị NORI"
-        className="flex-1 space-y-5 overflow-y-auto px-3 py-5"
+        className="min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain px-3 py-5"
       >
         {visibleNavGroups.map((group) => (
           <div key={group.title}>
@@ -631,7 +631,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
         ))}
       </nav>
 
-      <div className="space-y-1.5 border-t border-inverse/15 p-3">
+      <div className="shrink-0 space-y-1.5 border-t border-inverse/15 p-3">
         <NoriLink
           href="/"
           title={collapsed ? 'Về website chính' : undefined}
@@ -659,14 +659,15 @@ export function AdminShell({ children }: { children: ReactNode }) {
   )
 
   return (
-    <div className="flex min-h-screen bg-subtle text-ink">
-      {/* Desktop Sidebar */}
+    <div className="min-h-dvh bg-subtle text-ink">
+      {/* Desktop Sidebar — fixed full viewport height so left column never shows blank gaps on scroll */}
       <aside
-        className={`hidden shrink-0 border-r border-line transition-[width] duration-200 lg:block ${
+        data-testid="admin-desktop-sidebar"
+        className={`fixed inset-y-0 left-0 z-40 hidden border-r border-night-soft bg-night text-inverse transition-[width] duration-200 lg:flex lg:flex-col ${
           collapsed ? 'w-20' : 'w-64'
         }`}
       >
-        <div className="sticky top-0 h-screen">{sidebarContent}</div>
+        {sidebarContent}
       </aside>
 
       {/* Mobile Drawer */}
@@ -677,16 +678,25 @@ export function AdminShell({ children }: { children: ReactNode }) {
             onClick={() => setMobileOpen(false)}
             aria-hidden="true"
           />
-          <aside className="relative z-10 h-full w-72 max-w-[85vw] shadow-float">
+          <aside className="relative z-10 h-full w-72 max-w-[85vw] bg-night shadow-float">
             {sidebarContent}
           </aside>
         </div>
       )}
 
       {/* Main Column */}
-      <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-30 border-b border-line bg-canvas/95 backdrop-blur-sm">
-          <div className="flex items-center justify-between gap-2 px-3 py-2.5 sm:gap-3 sm:px-4 sm:py-3 md:px-6">
+      <div
+        className={`flex min-h-dvh min-w-0 flex-col pt-16 transition-[padding] duration-200 sm:pt-18 ${
+          collapsed ? 'lg:pl-20' : 'lg:pl-64'
+        }`}
+      >
+        <header
+          data-testid="admin-topbar"
+          className={`fixed top-0 right-0 left-0 z-30 flex h-16 items-center border-b border-line bg-canvas/95 backdrop-blur-md transition-[left] duration-200 sm:h-18 ${
+            collapsed ? 'lg:left-20' : 'lg:left-64'
+          }`}
+        >
+          <div className="flex w-full items-center justify-between gap-2 px-3 sm:gap-3 sm:px-4 md:px-6">
             <div className="flex min-w-0 flex-1 items-center gap-2.5 sm:gap-3">
               <button
                 type="button"
@@ -703,15 +713,19 @@ export function AdminShell({ children }: { children: ReactNode }) {
               <div className="min-w-0 flex-1">
                 <nav
                   aria-label="Breadcrumb"
-                  className="hidden flex-wrap items-center gap-1.5 text-caption text-muted sm:flex"
+                  className="hidden items-center gap-1.5 overflow-hidden text-caption text-muted sm:flex"
                 >
-                  <NoriLink href="/dashboard" className="hover:text-brand">
+                  <NoriLink href="/dashboard" className="shrink-0 hover:text-brand">
                     Quản trị hệ thống
                   </NoriLink>
-                  <span aria-hidden="true">/</span>
-                  <span>{activeNav.group}</span>
-                  <span aria-hidden="true">/</span>
-                  <span className="font-medium text-ink">{activeNav.label}</span>
+                  <span aria-hidden="true" className="shrink-0">
+                    /
+                  </span>
+                  <span className="truncate">{activeNav.group}</span>
+                  <span aria-hidden="true" className="shrink-0">
+                    /
+                  </span>
+                  <span className="truncate font-medium text-ink">{activeNav.label}</span>
                 </nav>
                 <p className="truncate text-body font-semibold text-ink sm:text-subtitle">
                   {activeNav.label}

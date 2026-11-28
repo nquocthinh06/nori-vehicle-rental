@@ -971,7 +971,7 @@ export function ModelsPanel() {
     return (
       <div className="space-y-5">
         {/* Top Action & Completeness Bar */}
-        <div className="sticky top-16 z-20 rounded-card border border-line bg-canvas/95 p-4 shadow-xs backdrop-blur-sm space-y-3">
+        <div className="sticky top-16 z-20 space-y-3 rounded-card border border-line bg-canvas/95 p-4 shadow-xs backdrop-blur-sm sm:top-18">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-3">
               <Button variant="ghost" size="sm" onClick={requestCloseEditor}>

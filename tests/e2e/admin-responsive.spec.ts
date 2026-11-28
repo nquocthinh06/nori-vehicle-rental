@@ -250,4 +250,96 @@ test.describe('NORI Admin Responsive UI & Notification Bell Viewport Integrity',
       }
     }
   })
+
+  test('ADMIN-RESP-05: Admin header stays pinned at top and left sidebar has zero blank space when scrolling', async ({
+    page,
+  }) => {
+    await loginAsAdmin(page)
+
+    // 1. Desktop (1440x900) — expanded and collapsed sidebar during deep vertical scroll
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await page.goto('/dashboard', { waitUntil: 'networkidle' })
+
+    // Ensure page is tall enough to scroll significantly past 100vh
+    await page.evaluate(() => {
+      const filler = document.createElement('div')
+      filler.id = 'e2e-scroll-filler'
+      filler.style.height = '2200px'
+      filler.style.pointerEvents = 'none'
+      document.querySelector('main')?.appendChild(filler)
+    })
+
+    const topbar = page.getByTestId('admin-topbar')
+    const sidebar = page.getByTestId('admin-desktop-sidebar')
+    await expect(topbar).toBeVisible()
+    await expect(sidebar).toBeVisible()
+
+    const initialHeaderBox = await topbar.boundingBox()
+    const initialSidebarBox = await sidebar.boundingBox()
+    expect(initialHeaderBox).not.toBeNull()
+    expect(initialSidebarBox).not.toBeNull()
+    expect(Math.abs(initialHeaderBox!.y)).toBeLessThanOrEqual(1)
+    expect(Math.abs(initialSidebarBox!.y)).toBeLessThanOrEqual(1)
+    expect(Math.abs(initialSidebarBox!.height - 900)).toBeLessThanOrEqual(1)
+    expect(Math.abs(initialHeaderBox!.x - initialSidebarBox!.width)).toBeLessThanOrEqual(1)
+
+    // Scroll deep past viewport height (1200px > 900px)
+    await page.evaluate(() => window.scrollTo({ top: 1200, behavior: 'instant' }))
+    await page.waitForTimeout(150)
+
+    const scrollY = await page.evaluate(() => window.scrollY)
+    expect(scrollY).toBeGreaterThanOrEqual(1000)
+
+    const scrolledHeaderBox = await topbar.boundingBox()
+    const scrolledSidebarBox = await sidebar.boundingBox()
+    expect(scrolledHeaderBox).not.toBeNull()
+    expect(scrolledSidebarBox).not.toBeNull()
+
+    // Header must remain pinned at y = 0
+    expect(Math.abs(scrolledHeaderBox!.y)).toBeLessThanOrEqual(1)
+    // Left sidebar must remain pinned from y = 0 to bottom = 900 (no white blank space on left)
+    expect(Math.abs(scrolledSidebarBox!.y)).toBeLessThanOrEqual(1)
+    expect(Math.abs(scrolledSidebarBox!.height - 900)).toBeLessThanOrEqual(1)
+
+    // Verify pixel hit-testing along the left column (top, middle, bottom) hits dark sidebar, never white background
+    const leftColumnBg = await page.evaluate(() => {
+      const sampleYs = [36, 450, 860]
+      return sampleYs.map((y) => {
+        const el = document.elementFromPoint(24, y)
+        const aside = el?.closest('aside')
+        const bg = aside ? window.getComputedStyle(aside).backgroundColor : 'none'
+        return { y, insideSidebar: Boolean(aside), bg }
+      })
+    })
+    for (const sample of leftColumnBg) {
+      expect(sample.insideSidebar, `Left column at y=${sample.y} missing sidebar`).toBe(true)
+      expect(sample.bg).not.toBe('rgba(0, 0, 0, 0)')
+      expect(sample.bg).not.toBe('rgb(255, 255, 255)')
+    }
+
+    // Collapse sidebar while scrolled and verify header left edge adapts cleanly
+    await page.getByRole('button', { name: 'Thu gọn thanh điều hướng' }).click()
+    await page.waitForTimeout(250)
+    const collapsedHeaderBox = await topbar.boundingBox()
+    const collapsedSidebarBox = await sidebar.boundingBox()
+    expect(collapsedHeaderBox).not.toBeNull()
+    expect(collapsedSidebarBox).not.toBeNull()
+    expect(Math.abs(collapsedHeaderBox!.y)).toBeLessThanOrEqual(1)
+    expect(Math.abs(collapsedSidebarBox!.y)).toBeLessThanOrEqual(1)
+    expect(Math.abs(collapsedSidebarBox!.height - 900)).toBeLessThanOrEqual(1)
+    expect(Math.abs(collapsedHeaderBox!.x - collapsedSidebarBox!.width)).toBeLessThanOrEqual(1)
+
+    // 2. Mobile (375x812) — header stays pinned at y = 0 during vertical scroll
+    await page.setViewportSize({ width: 375, height: 812 })
+    await page.evaluate(() => window.scrollTo({ top: 900, behavior: 'instant' }))
+    await page.waitForTimeout(150)
+
+    const mobileScrollY = await page.evaluate(() => window.scrollY)
+    expect(mobileScrollY).toBeGreaterThanOrEqual(700)
+    const mobileHeaderBox = await topbar.boundingBox()
+    expect(mobileHeaderBox).not.toBeNull()
+    expect(Math.abs(mobileHeaderBox!.y)).toBeLessThanOrEqual(1)
+    expect(Math.abs(mobileHeaderBox!.x)).toBeLessThanOrEqual(1)
+    expect(Math.abs(mobileHeaderBox!.width - 375)).toBeLessThanOrEqual(1)
+  })
 })

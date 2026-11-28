@@ -264,9 +264,11 @@
 }
 
 /* Mobile Responsive Hardening & Accessibility Standards */
+/* Use overflow-x: clip (not hidden) so horizontal overflow is clipped without
+   turning html/body into scroll containers that break position: sticky. */
 html,
 body {
-  overflow-x: hidden;
+  overflow-x: clip;
   max-width: 100vw;
 }
 

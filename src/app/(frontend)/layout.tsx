@@ -17,7 +17,7 @@ import './styles.css'
 import { AuthProvider } from '@/components/auth-provider'
 import { NotificationProvider } from '@/components/booking-notification-center'
 import { FavoritesProvider } from '@/components/favorites-provider'
-import { ConditionalFooter } from '@/components/conditional-footer'
+import { ConditionalFooter, ConditionalMaintenanceBanner } from '@/components/conditional-footer'
 import { MobileBottomNav } from '@/components/mobile-bottom-nav'
 import { AIAssistantLauncher } from '@/components/ai/ai-assistant-launcher'
 import { PwaManager } from '@/components/pwa-manager'
@@ -106,12 +106,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
               <FavoritesProvider>
                 <PwaManager />
                 {site.maintenanceBannerEnabled && site.maintenanceBannerText && (
-                  <div
-                    role="status"
-                    className="bg-warning-soft px-4 py-2 text-center text-caption font-medium text-warning"
-                  >
-                    {site.maintenanceBannerText}
-                  </div>
+                  <ConditionalMaintenanceBanner text={site.maintenanceBannerText} />
                 )}
                 <SiteHeader />
                 {children}
