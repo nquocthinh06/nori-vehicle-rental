@@ -1,55 +1,27 @@
 import crypto from 'node:crypto'
 import type { Payload } from 'payload'
-import { stripVietnameseAccents } from './guardrails.ts'
-import { extractStructuredIntent } from './recommendation.ts'
+import { analyzeConversationTurn, type ParsedNLUAnalysis } from './nlu.ts'
 import { executeAllowedTool } from './tool-registry.ts'
 import type {
   AIBookingHandoff,
+  AIChatMessageInput,
   AIChatResponsePayload,
   AIComparisonTable,
   AIPolicyCitation,
   AIProviderToolCall,
   AIQuoteSummary,
   AIResolvedConfig,
+  AISessionContextSummary,
   AIVehicleCard,
   AllowedToolName,
+  NoriAIIntent,
 } from './types.ts'
 
-export const RULE_BASED_MODE_LABEL = 'Chế độ tư vấn cơ bản (Rule-based Engine)'
-
-const KNOWN_VEHICLE_NAMES = [
-  'fortuner',
-  'xpander',
-  'vios',
-  'accent',
-  'ranger',
-  'raptor',
-  'cx-5',
-  'cr-v',
-  'innova',
-  'veloz',
-  'vf 8',
-  'vf 5',
-  'vf 3',
-  'evo max',
-  'evo200',
-  'pcx',
-  'sh350i',
-  'sh160i',
-  'sh',
-  'vision',
-  'wave alpha',
-  'air blade',
-  'exciter',
-  'z650',
-  'triton',
-  'hilux',
-  'c300',
-]
+export const RULE_BASED_MODE_LABEL = 'Chế độ tư vấn cơ bản'
 
 export function extractComparisonNames(text: string): string[] {
-  const norm = stripVietnameseAccents(text).toLowerCase()
-  return KNOWN_VEHICLE_NAMES.filter((k) => norm.includes(k)).slice(0, 4)
+  const analyzed = analyzeConversationTurn({ message: text })
+  return analyzed.comparisonQueries
 }
 
 export function synthesizeDeterministicReply(data: Record<string, unknown>): string {
@@ -59,39 +31,48 @@ export function synthesizeDeterministicReply(data: Record<string, unknown>): str
   if (typeof data.error === 'string' && data.error.trim()) {
     return data.error.trim()
   }
-  return 'Tôi đã tra cứu dữ liệu thực tế từ hệ thống NORI. Bạn có thể xem chi tiết thông tin trong thẻ kết quả bên dưới.'
+  return 'Tôi đã tra cứu dữ liệu thực tế từ hệ thống NORI. Bạn có thể xem chi tiết thông tin bên dưới.'
 }
 
 export type PlannedDeterministicTurn =
   | {
       kind: 'ASK'
       text: string
-      intent: string
+      intent: NoriAIIntent
+      analysis: ParsedNLUAnalysis
     }
   | {
       kind: 'TOOL_CALL'
+      intent: NoriAIIntent
       toolName: AllowedToolName
       argumentsObj: Record<string, unknown>
       toolCall: AIProviderToolCall
+      analysis: ParsedNLUAnalysis
     }
 
 /**
- * Shared deterministic intent-to-tool planner used by BOTH:
- * 1) NORI Rule-based Recommendation Fallback (when Gemini is unconfigured, 429, quota exhausted, or offline)
+ * Shared context-aware deterministic intent-to-tool planner used by BOTH:
+ * 1) NORI Rule-based Engine (when Gemini is unconfigured, 429, quota exhausted, timeout, or offline)
  * 2) MockTestAIProvider (`NORI_AI_TEST_MOCK=1`)
- * All vehicle, price, availability, promotion, and policy results still go through real NORI tools.
+ * Supports all 14 business intents and multi-turn session history!
  */
-export function planDeterministicToolTurn(userText: string): PlannedDeterministicTurn {
-  const norm = stripVietnameseAccents(userText).toLowerCase()
-  const intent = extractStructuredIntent(userText)
+export function planDeterministicToolTurn(
+  userText: string,
+  history: AIChatMessageInput[] = [],
+): PlannedDeterministicTurn {
+  const analysis = analyzeConversationTurn({ message: userText, history })
+
   const makeCall = (
     prefix: string,
+    intent: NoriAIIntent,
     name: AllowedToolName,
     args: Record<string, unknown>,
   ): PlannedDeterministicTurn => ({
     kind: 'TOOL_CALL',
+    intent,
     toolName: name,
     argumentsObj: args,
+    analysis,
     toolCall: {
       callId: `nori-call-${prefix}-${crypto.randomUUID().slice(0, 8)}`,
       name,
@@ -99,96 +80,174 @@ export function planDeterministicToolTurn(userText: string): PlannedDeterministi
     },
   })
 
-  if (/\b(so sanh|compare)\b/.test(norm)) {
-    const names = extractComparisonNames(userText)
-    return makeCall('cmp', 'compareVehicles', {
-      queries: names.length >= 2 ? names : ['fortuner', 'xpander'],
-      startDate: intent.startDate ?? undefined,
-      endDate: intent.endDate ?? undefined,
-    })
-  }
-
-  if (
-    /\b(khuyen mai|ma giam gia|voucher|promo|uu dai|giam gia)\b/.test(norm) &&
-    !/\b(tinh gia|bao gia)\b/.test(norm)
-  ) {
-    const codeMatch = userText.match(/\b([A-Z0-9]{4,20})\b/)
-    return makeCall('promo', 'getActivePromotions', {
-      code: codeMatch ? codeMatch[1] : undefined,
-    })
-  }
-
-  if (
-    /\b(chinh sach|dat coc|huy don|hoan tien|bao hiem|giay to|faq|dieu kien thue|lien he|hotline|giao nhan)\b/.test(
-      norm,
-    )
-  ) {
-    return makeCall('policy', 'getRentalPolicy', { query: userText })
-  }
-
-  if (/\b(dat xe|thue xe nay|chuan bi dat|checkout|dat thue)\b/.test(norm) && intent.query) {
-    return makeCall('book', 'prepareBooking', {
-      vehicleQuery: intent.query,
-      startDate: intent.startDate ?? undefined,
-      endDate: intent.endDate ?? undefined,
-    })
-  }
-
-  if (/\b(tinh gia|bao gia|het bao nhieu|tong chi phi|tong tien)\b/.test(norm)) {
-    if (!intent.startDate || !intent.endDate) {
+  switch (analysis.intent) {
+    case 'GREETING':
       return {
         kind: 'ASK',
-        intent: 'CALCULATE_PRICE',
-        text: 'Để tính báo giá chính xác theo Business Rule Engine của NORI, vui lòng cung cấp giúp tôi **ngày nhận xe** và **ngày trả xe** cụ thể (ví dụ: nhận 2026-12-01, trả 2026-12-04).',
+        intent: 'GREETING',
+        analysis,
+        text: 'Xin chào bạn! Tôi là **Trợ lý AI của NORI**. Tôi có thể giúp bạn:\n- Tìm dòng xe cụ thể hoặc gợi ý xe theo **số chỗ, ngân sách, nhu cầu đi lại**.\n- Kiểm tra **lịch trống** và tính **báo giá thuê xe** chính xác theo ngày.\n- Giải đáp **khuyến mãi, chính sách đặt cọc, hủy đơn** và hướng dẫn đặt thuê.\n\nBạn đang quan tâm dòng xe nào hoặc cần thuê xe cho nhu cầu gì ạ?',
       }
-    }
-    const promoMatch = userText.match(/\b(?:ma|code)\s+([A-Za-z0-9_-]{3,24})/i)
-    return makeCall('price', 'calculateRentalPrice', {
-      vehicleQuery: intent.query || userText,
-      startDate: intent.startDate,
-      endDate: intent.endDate,
-      promoCode: promoMatch ? promoMatch[1].toUpperCase() : undefined,
-    })
-  }
 
-  if (/\b(con trong|kiem tra lich|kha dung|co san|het lich)\b/.test(norm)) {
-    if (!intent.startDate || !intent.endDate) {
+    case 'OUT_OF_SCOPE':
       return {
         kind: 'ASK',
-        intent: 'CHECK_AVAILABILITY',
-        text: 'Tôi cần biết chính xác **ngày nhận xe** và **ngày trả xe** (định dạng YYYY-MM-DD) để kiểm tra lịch trống thực tế của xe trong hệ thống NORI. Bạn dự kiến thuê từ ngày nào đến ngày nào?',
+        intent: 'OUT_OF_SCOPE',
+        analysis,
+        text: 'Xin lỗi, tôi là trợ lý chuyên trách về dịch vụ **thuê xe và tư vấn mua xe tại NORI** nên chưa thể hỗ trợ các chủ đề ngoài phạm vi phương tiện. Bạn cần tìm ô tô, xe máy, bán tải hay tra cứu giá thuê và chính sách của NORI ạ?',
+      }
+
+    case 'CLARIFICATION':
+      return {
+        kind: 'ASK',
+        intent: 'CLARIFICATION',
+        analysis,
+        text: 'Để tư vấn đúng phương tiện phù hợp nhất trong đội xe NORI, bạn vui lòng cho tôi biết thêm một vài thông tin nhé:\n- Bạn muốn tìm **ô tô (4–5 chỗ, 7 chỗ)**, **xe máy** hay **xe bán tải**?\n- **Ngân sách dự kiến** mỗi ngày hoặc **tên dòng xe** bạn đang quan tâm?\n- **Ngày nhận và trả xe** dự kiến (nếu đã có lịch trình)?',
+      }
+
+    case 'BOOKING_STATUS':
+      return makeCall('bstatus', 'BOOKING_STATUS', 'getCustomerBookingStatus', {
+        bookingKey: analysis.bookingKey ?? undefined,
+        limit: 3,
+      })
+
+    case 'PURCHASE_CONSULTATION':
+      return makeCall('buy', 'PURCHASE_CONSULTATION', 'getPurchaseConsultationInfo', {
+        query: analysis.modelQuery ?? analysis.brand ?? undefined,
+        category: analysis.category ?? undefined,
+      })
+
+    case 'VEHICLE_COMPARISON': {
+      if (analysis.comparisonQueries.length < 2) {
+        return {
+          kind: 'ASK',
+          intent: 'VEHICLE_COMPARISON',
+          analysis,
+          text: analysis.modelDisplayName
+            ? `Bạn muốn so sánh **${analysis.modelDisplayName}** với dòng xe nào khác tại NORI (ví dụ: Toyota Fortuner, Mitsubishi Xpander, Honda CR-V, VinFast VF 8)?`
+            : 'Vui lòng cho tôi biết **ít nhất 2 dòng xe** bạn muốn so sánh (ví dụ: *So sánh Toyota Fortuner và Mitsubishi Xpander*).',
+        }
+      }
+      return makeCall('cmp', 'VEHICLE_COMPARISON', 'compareVehicles', {
+        queries: analysis.comparisonQueries,
+        startDate: analysis.startDate ?? undefined,
+        endDate: analysis.endDate ?? undefined,
+      })
+    }
+
+    case 'PROMOTION_QUERY':
+      return makeCall('promo', 'PROMOTION_QUERY', 'getActivePromotions', {
+        code: analysis.promoCode ?? undefined,
+      })
+
+    case 'RENTAL_POLICY':
+      return makeCall('policy', 'RENTAL_POLICY', 'getRentalPolicy', {
+        query: userText,
+      })
+
+    case 'BOOKING_GUIDANCE':
+      return makeCall('book', 'BOOKING_GUIDANCE', 'prepareBooking', {
+        vehicleQuery: analysis.modelQuery ?? undefined,
+        startDate: analysis.startDate ?? undefined,
+        endDate: analysis.endDate ?? undefined,
+      })
+
+    case 'PRICE_QUOTE': {
+      // Both startDate & endDate known -> official Business Rule Engine quote
+      if (analysis.startDate && analysis.endDate && analysis.modelQuery) {
+        return makeCall('price', 'PRICE_QUOTE', 'calculateRentalPrice', {
+          vehicleQuery: analysis.modelQuery,
+          startDate: analysis.startDate,
+          endDate: analysis.endDate,
+          promoCode: analysis.promoCode ?? undefined,
+        })
+      }
+      // Specific model known, but missing exact dates (e.g. "Xe VF8 giá sao?", "Xe đó giá bao nhiêu?", "Thuê 3 ngày thì sao?")
+      // -> If user explicitly asked total/availability without dates AND no duration, check if they asked "kiểm tra ... tổng tiền" vs daily rate:
+      if (analysis.modelQuery && !/\b(kiem tra|con trong)\b/.test(analysis.normalizedQuery)) {
+        return makeCall('vprice', 'PRICE_QUOTE', 'getVehicleDetails', {
+          query: analysis.modelQuery,
+          durationDays: analysis.durationDays ?? undefined,
+        })
+      }
+      return {
+        kind: 'ASK',
+        intent: 'PRICE_QUOTE',
+        analysis,
+        text: analysis.modelDisplayName
+          ? `Để kiểm tra lịch trống thực tế và tính tổng báo giá chính xác cho **${analysis.modelDisplayName}** theo Business Rule Engine của NORI, bạn vui lòng cung cấp **ngày nhận xe** và **ngày trả xe** cụ thể (định dạng YYYY-MM-DD, ví dụ: nhận 2026-12-01, trả 2026-12-04).`
+          : 'Để tính báo giá thuê xe chính xác, bạn vui lòng cho tôi biết **dòng xe bạn quan tâm** cùng **ngày nhận xe** và **ngày trả xe** cụ thể (định dạng YYYY-MM-DD).',
       }
     }
-    return makeCall('avail', 'checkAvailability', {
-      vehicleQuery: intent.query || userText,
-      startDate: intent.startDate,
-      endDate: intent.endDate,
-    })
-  }
 
-  if (/\b(chi tiet|thong so)\b/.test(norm) && intent.query) {
-    return makeCall('detail', 'getVehicleDetails', { query: intent.query })
-  }
+    case 'AVAILABILITY_CHECK': {
+      if (!analysis.startDate || !analysis.endDate) {
+        return {
+          kind: 'ASK',
+          intent: 'AVAILABILITY_CHECK',
+          analysis,
+          text: analysis.modelDisplayName
+            ? `Tôi cần biết chính xác **ngày nhận xe** và **ngày trả xe** (định dạng YYYY-MM-DD) để kiểm tra lịch trống thực tế của **${analysis.modelDisplayName}** trong hệ thống NORI. Bạn dự kiến thuê từ ngày nào đến ngày nào?`
+            : 'Vui lòng cho tôi biết **tên dòng xe** cùng **ngày nhận xe** và **ngày trả xe** (YYYY-MM-DD) để kiểm tra lịch trống thực tế trong hệ thống NORI.',
+        }
+      }
+      if (!analysis.modelQuery) {
+        return makeCall('searchavail', 'AVAILABILITY_CHECK', 'searchVehicles', {
+          category: analysis.category ?? undefined,
+          brand: analysis.brand ?? undefined,
+          minSeats: analysis.minSeats ?? undefined,
+          maxPricePerDay: analysis.maxBudgetPerDay ?? undefined,
+          startDate: analysis.startDate,
+          endDate: analysis.endDate,
+          limit: 4,
+        })
+      }
+      return makeCall('avail', 'AVAILABILITY_CHECK', 'checkAvailability', {
+        vehicleQuery: analysis.modelQuery,
+        startDate: analysis.startDate,
+        endDate: analysis.endDate,
+      })
+    }
 
-  return makeCall('rec', 'recommendVehicles', {
-    userQuery: userText,
-    category: intent.category ?? undefined,
-    seats: intent.minSeats ?? undefined,
-    maxBudgetPerDay: intent.maxBudgetPerDay ?? undefined,
-    strictBudget: intent.strictBudget,
-    fuelType: intent.fuelType ?? undefined,
-    transmission: intent.transmission ?? undefined,
-    purpose: intent.purpose ?? undefined,
-    startDate: intent.startDate ?? undefined,
-    endDate: intent.endDate ?? undefined,
-    limit: 4,
-  })
+    case 'VEHICLE_LOOKUP':
+      return makeCall('lookup', 'VEHICLE_LOOKUP', 'getVehicleDetails', {
+        query: analysis.modelQuery ?? userText,
+        durationDays: analysis.durationDays ?? undefined,
+      })
+
+    case 'BRAND_LOOKUP':
+      return makeCall('brand', 'BRAND_LOOKUP', 'searchVehicles', {
+        brand: analysis.brand ?? undefined,
+        category: analysis.category ?? undefined,
+        startDate: analysis.startDate ?? undefined,
+        endDate: analysis.endDate ?? undefined,
+        limit: 6,
+      })
+
+    case 'VEHICLE_RECOMMENDATION':
+    default:
+      return makeCall('rec', 'VEHICLE_RECOMMENDATION', 'recommendVehicles', {
+        userQuery: userText,
+        category: analysis.category ?? undefined,
+        brand: analysis.brand ?? undefined,
+        seats: analysis.minSeats ?? undefined,
+        maxBudgetPerDay: analysis.maxBudgetPerDay ?? undefined,
+        strictBudget: analysis.strictBudget,
+        fuelType: analysis.fuelType ?? undefined,
+        transmission: analysis.transmission ?? undefined,
+        purpose: analysis.purpose ?? undefined,
+        startDate: analysis.startDate ?? undefined,
+        endDate: analysis.endDate ?? undefined,
+        limit: 4,
+      })
+  }
 }
 
 export async function runRuleBasedFallback(params: {
   payload: Payload
   requestId: string
   message: string
+  history?: AIChatMessageInput[]
   config: AIResolvedConfig
   user: { id: string; collection: string } | null
   reasonCode: string
@@ -196,17 +255,22 @@ export async function runRuleBasedFallback(params: {
   startedAt: number
   disclaimer: string
   fallbackLinks: { label: string; href: string }[]
-  buildFollowUps: (args: { intent: string; cards: AIVehicleCard[]; hasQuote: boolean }) => string[]
+  buildFollowUps: (args: {
+    intent: string
+    cards: AIVehicleCard[]
+    hasQuote: boolean
+    sessionContext?: AISessionContextSummary
+  }) => string[]
 }): Promise<{
   response: AIChatResponsePayload
   toolsCalled: string[]
   noResultFound: boolean
   intent: string
 }> {
-  const plan = planDeterministicToolTurn(params.message)
+  const plan = planDeterministicToolTurn(params.message, params.history ?? [])
 
   let replyBody = ''
-  let intent = 'RECOMMEND_VEHICLES'
+  const intent = plan.intent
   const toolsCalled: string[] = []
   let vehicleCards: AIVehicleCard[] = []
   let comparison: AIComparisonTable | null = null
@@ -217,7 +281,6 @@ export async function runRuleBasedFallback(params: {
 
   if (plan.kind === 'ASK') {
     replyBody = plan.text
-    intent = plan.intent
   } else {
     toolsCalled.push(plan.toolName)
     const executed = await executeAllowedTool(
@@ -238,26 +301,9 @@ export async function runRuleBasedFallback(params: {
     citations = (res.citations ?? []).slice(0, 5)
     noResultFound = Boolean(res.noResultFound)
     replyBody = synthesizeDeterministicReply(res.toolOutputForLLM)
-    intent =
-      plan.toolName === 'prepareBooking'
-        ? 'PREPARE_BOOKING'
-        : plan.toolName === 'calculateRentalPrice'
-          ? 'CALCULATE_PRICE'
-          : plan.toolName === 'checkAvailability'
-            ? 'CHECK_AVAILABILITY'
-            : plan.toolName === 'compareVehicles'
-              ? 'COMPARE_VEHICLES'
-              : plan.toolName === 'getActivePromotions'
-                ? 'PROMOTIONS'
-                : plan.toolName === 'getRentalPolicy'
-                  ? 'POLICY_QA'
-                  : plan.toolName === 'getVehicleDetails'
-                    ? 'VEHICLE_DETAILS'
-                    : 'RECOMMEND_VEHICLES'
   }
 
   const latencyMs = Math.round(performance.now() - params.startedAt)
-  const fullReply = `[${RULE_BASED_MODE_LABEL}] ${params.reasonMessage}\n\n${replyBody}`
 
   return {
     toolsCalled,
@@ -265,7 +311,7 @@ export async function runRuleBasedFallback(params: {
     intent,
     response: {
       requestId: params.requestId,
-      reply: fullReply,
+      reply: replyBody,
       status: 'DEGRADED',
       mode: 'RULE_BASED_FALLBACK',
       modeLabel: RULE_BASED_MODE_LABEL,
@@ -278,10 +324,12 @@ export async function runRuleBasedFallback(params: {
       bookingHandoff,
       citations,
       toolsCalled,
+      sessionContext: plan.analysis.sessionContext,
       followUpSuggestions: params.buildFollowUps({
         intent,
         cards: vehicleCards,
         hasQuote: Boolean(quote),
+        sessionContext: plan.analysis.sessionContext,
       }),
       fallbackLinks: params.fallbackLinks,
       usage: {

@@ -565,3 +565,27 @@
 - **Trạng thái**: `PASS`
 - **Mức độ ưu tiên**: `P0`
 - **Bằng chứng**: `pnpm test:e2e:isolated tests/e2e/vehicle-import.spec.ts` `PASS` (#75 `@verifier`)
+
+---
+
+### `TC-AI-01` — Regression `"innova có xe này không"`, Phân loại 14 Ý định NLU & Lọc Cứng Trước Chấm Điểm
+
+- **Module**: Trợ lý AI NORI (`src/lib/ai/nlu.ts`, `src/lib/ai/recommendation.ts`, `src/lib/ai/tools.ts`, `src/lib/ai/fallback.ts`)
+- **Tên chức năng**: Nhận diện dòng xe cụ thể, chống đề xuất sai danh mục (ô tô vs xe máy), phân loại 14 ý định khách hàng và sửa lỗi chính tả tiếng Việt
+- **Mục tiêu kiểm thử**: Đảm bảo khi khách hỏi `"innova có xe này không"` và kho chưa có Toyota Innova, hệ thống trả `vehicleCards = []` (tuyệt đối không trả 4 xe máy `Evo200`/`Wave Alpha`/`Vision`/`PCX`), trả lời rõ chưa có Innova và gợi ý ô tô 7 chỗ tương đương; khi Admin thêm/bảo dưỡng/ẩn Innova trong DB, AI phản ánh tức thời mà không cần build lại.
+- **Điều kiện trước khi kiểm thử**: Unit test stub fleet & Isolated SQLite E2E DB.
+- **Kết quả thực tế**: `PASS` trên cả Rule-based Engine, Mock Function Calling, Playwright UI E2E và Live Gemini `gemini-3.5-flash-lite`.
+- **Trạng thái**: `PASS`
+- **Mức độ ưu tiên**: `P0`
+- **Bằng chứng**: `tests/ai-assistant.test.mjs` (`AI-U09..U11`), `tests/e2e/ai-assistant.spec.ts` (`test #7`), `scripts/eval-ai-live.mjs` (`EV-13..EV-16`).
+
+---
+
+### `TC-AI-02` — Quản lý Ngữ Cảnh Hội Thoại Nhiều Lượt, Quyền Sở Hữu Đơn Thuê & Render Markdown An Toàn
+
+- **Module**: Trợ lý AI NORI (`src/lib/ai/markdown.ts`, `src/components/ai/ai-markdown.tsx`, `src/components/ai/ai-chat-panel.tsx`, `src/components/admin/ai-panel.tsx`)
+- **Tên chức năng**: Giải tham chiếu đại từ đa lượt (`"Xe đó giá bao nhiêu?"`, `"Thuê 3 ngày thì sao?"`, `"Đổi sang Xpander đi"`), cô lập phiên khi Reset, kiểm tra quyền sở hữu `getCustomerBookingStatus`, render Markdown không chứa `**` thô và chẩn đoán trạng thái kết nối Gemini trên `/dashboard/ai`.
+- **Kết quả thực tế**: `PASS` (`0` ký tự `**` thô trên UI, chặn `100%` `javascript:`/`data:` links, chặn truy xuất đơn của khách khác, xoay `sessionId` mới khi nhấn Reset, hiển thị đầy đủ trạng thái chẩn đoán trên Admin).
+- **Trạng thái**: `PASS`
+- **Mức độ ưu tiên**: `P0`
+- **Bằng chứng**: `tests/ai-assistant.test.mjs`, `tests/e2e/ai-assistant.spec.ts` (`test #5`, `test #7`).

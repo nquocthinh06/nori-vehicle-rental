@@ -1,25 +1,18 @@
-# NORI AI Assistant — Hướng Dẫn Tích Hợp, API & Vận Hành (AI Integration Guide)
+# NORI AI Assistant — Hướng Dẫn Tích Hợp, API & Vận Hành (AI Integration Guide v2.9)
 
 ---
 
-## 1. Hướng dẫn tạo Gemini API Key (Google AI Studio) & Cấu hình môi trường
+## 1. Cấu hình Gemini API (`@google/genai` v3.6.1) & Biến môi trường
 
-### 1.1. Tạo API Key & Kiểm tra Free Tier thủ công
-1. Truy cập [https://aistudio.google.com/apikey](https://aistudio.google.com/apikey) và tạo hoặc chọn Google Cloud Project dùng cho NORI.
-2. **Xác nhận thủ công trạng thái Billing (BẮT BUỘC)**: Kiểm tra trong Google AI Studio / Google Cloud Console rằng Project hiện ở gói **Free Tier** và **chưa gắn Cloud Billing trả phí**. *(Không thể suy luận Billing Tier chỉ từ việc API Key hoạt động.)*
-3. Lưu API Key vào file `.env` trên máy chủ hoặc Secret Manager (Vercel Environment Variables / GitHub Secrets).
-4. Tuyệt đối **không kích hoạt** Google Search Grounding, Google Maps Grounding hoặc bất kỳ công cụ trả phí nào nếu chưa được chủ dự án cho phép.
+### 1.1. Nguyên tắc lưu trữ & sử dụng khóa API
+1. Khóa `GEMINI_API_KEY` **chỉ được đọc trên server** qua `getGeminiApiKeyServerOnly()` (`src/lib/ai/config.ts`).
+2. Tuyệt đối **không sử dụng tiền tố `NEXT_PUBLIC_`** cho API Key (`src/lib/env.ts` tự động chặn khi khởi động).
+3. Không commit `.env` lên GitHub, không in giá trị API Key ra console/log, và không bao giờ trả về trong bất kỳ API response nào (kể cả Admin API `/nori-api/dashboard/ai`).
+4. Cả `scripts/start-dev.mjs`, `scripts/start-standalone.mjs` và `scripts/validate-env.mjs` đều tự động nạp `.env` gốc (chế độ không ghi đè biến môi trường hệ thống), đảm bảo Standalone Production Server luôn nhận đúng cấu hình `GEMINI_API_KEY`.
 
-> **QUY TẮC BẢO MẬT & CHI PHÍ TUYỆT ĐỐI**:
-> - Không commit `.env` lên GitHub.
-> - Không đặt `GEMINI_API_KEY` dưới tiền tố `NEXT_PUBLIC_*`.
-> - Không dán API Key vào mã nguồn, tài liệu, log hoặc Admin Dashboard.
-> - Không luân chuyển nhiều API Key hoặc nhiều Google Cloud Project để cố tình vượt hạn mức miễn phí.
-> - Giữ nguyên `NORI_AI_FREE_TIER_ONLY=true` và `NORI_AI_PAID_PROVIDERS_ALLOWED=false` để chặn mọi provider trả phí (bao gồm OpenAI).
+### 1.2. Cấu hình mẫu trong `.env.example`
 
-### 1.2. Các biến môi trường bắt buộc & tùy chọn
-
-Xem cấu hình mẫu tại [.env.example](../.env.example):
+Xem tệp [.env.example](file:///f:/1.%20University/2.%20Đồ%20án/3.%20Bài%20tập/nori-vehicle-rental/nori-vehicle-rental/nori-vehicle-rental/.env.example):
 
 ```env
 NORI_AI_ENABLED=true
@@ -46,87 +39,50 @@ NORI_AI_STORE_CONVERSATIONS=false
 
 ---
 
-## 2. Danh sách Model Gemini Free Tier (`GEMINI_MODEL`)
+## 2. Danh sách Model Gemini Hỗ trợ (`GEMINI_MODEL`)
 
-NORI chỉ cho phép các model Flash / Flash-Lite thuộc tài liệu chính thức Free Tier của Google Gemini API (`GEMINI_FREE_TIER_MODELS` trong `src/lib/ai/config.ts`). Mọi model không nằm trong allowlist bị từ chối với mã `AI_MODEL_NOT_FREE_TIER` và không bao giờ tự nâng cấp sang model trả phí:
+NORI sử dụng chuẩn **Interactions API** (`client.interactions.create({ store: false, ... })`) của `@google/genai` `3.6.1`:
 
-| Model (`GEMINI_MODEL`) | Function Calling | Structured Outputs | Tài liệu Free Tier | Ghi chú cho NORI |
+| Model (`GEMINI_MODEL`) | Function Calling | Structured Output | Free Tier Allowlist | Ghi chú vận hành |
 | :--- | :---: | :---: | :---: | :--- |
-| **`gemini-3.5-flash-lite`** *(Mặc định)* | Có | Có | Chính thức (`ai.google.dev`) | Ưu tiên mặc định cho tác vụ tư vấn tiếng Việt & Function Calling tốc độ cao trên Free Tier. |
-| `gemini-2.5-flash-lite` | Có | Có | Chính thức (`ai.google.dev`) | Phương án dự phòng nhẹ thuộc nhóm Flash-Lite Free Tier. |
-| `gemini-2.5-flash` | Có | Có | Chính thức (`ai.google.dev`) | Hỗ trợ tốt suy luận nhiều bước & JSON Schema trong hạn mức Free Tier. |
-| `gemini-2.0-flash` | Có | Có | Chính thức (`ai.google.dev`) | Ổn định cho hội thoại tiếng Việt và Function Calling. |
-| `gemini-2.0-flash-lite` | Có | Có | Chính thức (`ai.google.dev`) | Phiên bản tiết kiệm token thuộc dòng 2.0 Free Tier. |
+| **`gemini-3.5-flash-lite`** *(Mặc định)* | Có (`thought` + `function_call`) | Có (`response_format`) | Có | Model mặc định tốc độ cao cho tư vấn tiếng Việt, phân loại ý định & Function Calling. |
+| `gemini-3.1-flash-lite` | Có | Có | Có | Model dự phòng ổn định thuộc dòng Flash-Lite. |
+| `gemini-4-hydrogen` | Có | Có | Có | Model suy luận đa bước thế hệ mới thuộc allowlist. |
+| `gemini-2.5-flash-lite` / `2.0-flash-lite` | Tự động ánh xạ | Tự động ánh xạ | Tương thích cấu hình cũ | Tự động nâng cấp runtime sang `gemini-3.5-flash-lite` để tránh lỗi model ngừng hỗ trợ. |
 
 ---
 
-## 3. Đặc tả API Endpoints
+## 3. Đặc tả API Endpoints & Trạng thái Chẩn đoán Admin
 
-Tất cả endpoint AI trả về header `Cache-Control: private, no-store` và mọi mutation endpoint đều bắt buộc kiểm tra CSRF `assertOrigin(request)`.
+### 3.1. `GET /nori-api/ai/config` (Public — Dành cho Chat Widget)
+Trả về trạng thái sẵn sàng công khai, lời chào và gợi ý câu hỏi nhanh. **Không bao giờ hiển thị thông báo lỗi kỹ thuật về `API Key` cho khách hàng** (sử dụng nhãn thân thiện `Chế độ tư vấn cơ bản`).
 
-### 3.1. `GET /nori-api/ai/config` (Public — An toàn)
-Trả về trạng thái sẵn sàng công khai của AI Assistant (tuyệt đối không chứa `GEMINI_API_KEY` hay tham số bảo mật nội bộ):
-```json
-{
-  "success": true,
-  "data": {
-    "enabled": true,
-    "configured": true,
-    "ready": true,
-    "fallbackReady": true,
-    "freeTierOnly": true,
-    "provider": "gemini",
-    "model": "gemini-3.5-flash-lite",
-    "greetingMessage": "Xin chào! Tôi là Trợ lý AI của NORI...",
-    "quickSuggestions": [{ "label": "...", "prompt": "..." }],
-    "fallbackLinks": [
-      { "label": "Tìm xe bằng bộ lọc", "href": "/vehicles" },
-      { "label": "Xem chính sách & hỗ trợ", "href": "/support" }
-    ],
-    "statusMessage": null
-  }
-}
-```
+### 3.2. `POST /nori-api/ai/chat` (Hội thoại nhiều lượt)
+- **Body**: `{ message: string, history?: Array<{ role: "user"|"assistant", content: string }>, sessionId?: string }`.
+- **Response**: `{ requestId, reply, status, mode, modeLabel, fallbackMode, fallbackReason, intent, sessionContext, vehicleCards, comparison, quote, bookingHandoff, citations, toolsCalled, followUpSuggestions, fallbackLinks, usage, disclaimer }`.
 
-### 3.2. `POST /nori-api/ai/chat` (Khách vãng lai & Khách đã đăng nhập)
-- **Allowlist Body**: `{ message: string, history?: Array<{ role: "user"|"assistant", content: string }>, sessionId?: string }` (tối đa 18 KB, message tối đa 1.000 ký tự).
-- **Response**: `{ requestId, reply, status, mode, modeLabel, fallbackMode, fallbackReason, intent, vehicleCards, comparison, quote, bookingHandoff, citations, toolsCalled, followUpSuggestions, fallbackLinks, usage, disclaimer }`.
-- **Fallback Engine behavior (`NORI_AI_FALLBACK_ENABLED=true`)**: Khi `GEMINI_API_KEY` chưa cấu hình, hết quota, lỗi 429, timeout hoặc model không khả dụng, Orchestrator tự động chuyển sang **Rule-based Recommendation Engine** (`status: "DEGRADED"`, `mode: "rule-based-fallback"`, `modeLabel: "Chế độ tư vấn cơ bản (Rule-based Engine)"`), truy vấn trực tiếp dữ liệu thật + tính giá bằng BRE — website NORI vẫn tư vấn và đặt xe bình thường.
-
-### 3.3. `POST /nori-api/ai/feedback`
-Gửi đánh giá chất lượng `HELPFUL` / `NOT_HELPFUL` cho một `requestId` cụ thể. Lưu vào collection `ai-feedback` (Admin-only read).
-
-### 3.4. `POST /nori-api/ai/event`
-Ghi nhận sự kiện attribution (`VEHICLE_CLICK`, `CHECKOUT_HANDOFF`) phục vụ thống kê tỷ lệ chuyển đổi thực tế trên Admin Dashboard.
-
-### 3.5. `GET /nori-api/dashboard/ai` & `PATCH /nori-api/dashboard/ai` (Admin RBAC)
-- Yêu cầu phiên `admins` có quyền `ai` hoặc `settings`/`reports`.
-- `GET`: trả trạng thái runtime an toàn (`apiKeyConfigured: boolean`, `freeTierOnly`, `paidProvidersAllowed`, `fallbackEnabled`, `model`, `modelCapabilities`, `billingVerificationRequired: true`), cấu hình `ai-settings`, thống kê token/request/fallback thực tế (`fallbackRequests`), danh sách lỗi, câu hỏi không có kết quả và phản hồi khách hàng.
-- `PATCH`: bật/tắt AI, cập nhật lời chào, quick suggestions, giới hạn trong ngưỡng an toàn server, trọng số Recommendation Engine, ghi chú kiến thức công khai hoặc đánh dấu rà soát feedback (tự động ghi `audit-logs`).
-
-### 3.6. `POST /nori-api/dashboard/ai/test` (Admin RBAC)
-Thực hiện kiểm tra metadata kết nối tới Gemini API qua `client.models.get({ model })` (không tiêu tốn quota sinh token văn bản, không tự suy luận Billing Tier), trả độ trễ, model khả dụng và thông báo nhắc chủ dự án xác nhận thủ công trạng thái Free Tier / Cloud Billing.
+### 3.3. `GET /nori-api/dashboard/ai` & `POST /nori-api/dashboard/ai/test` (Admin Diagnostics)
+Trả về trạng thái chẩn đoán tường minh (`connectionStatus` & `connectionStatusLabel`) trên `/dashboard/ai`:
+- `Gemini Connected` (`GEMINI_CONNECTED`): Kết nối Gemini hoạt động bình thường.
+- `Fallback Active` (`FALLBACK_ACTIVE`): Hệ thống đang phục vụ bằng Rule-based Engine dự phòng.
+- `API Configuration Missing` (`API_CONFIG_MISSING`): Máy chủ chưa được cấu hình `GEMINI_API_KEY`.
+- `Quota Exceeded` (`QUOTA_EXCEEDED`): Chạm hạn mức `429` / Quota của Gemini API.
+- `Connection Error` (`CONNECTION_ERROR`): Lỗi xác thực, timeout hoặc mạng tới nhà cung cấp AI.
 
 ---
 
-## 4. Danh sách 9 Function Calling Tools (Allowlisted)
+## 4. Danh sách 11 Allowlisted Function Calling Tools
 
-| # | Tên hàm | Nguồn nghiệp vụ tái sử dụng | Ghi chú toàn vẹn |
+| # | Tên hàm | Mục đích nghiệp vụ | Nguồn dữ liệu / Service xác thực |
 | :-: | :--- | :--- | :--- |
-| 1 | `searchVehicles` | Payload `vehicle-models`, `vehicles` (`overrideAccess: false`) | Chỉ trả xe đang kinh doanh, không trả biển số nội bộ |
-| 2 | `getVehicleDetails` | Payload `vehicle-models`, `vehicles`, `reviews` (`PUBLISHED`) | Phân biệt rõ dòng xe catalogue và từng cá thể xe thực tế |
-| 3 | `checkAvailability` | `evaluateVehicleBookingAvailabilityAndPricing` | Kiểm tra trạng thái, booking holds, bảo dưỡng, điều chuyển & `rental_days` |
-| 4 | `calculateRentalPrice` | `evaluateVehicleBookingAvailabilityAndPricing` & `rental-rules.ts` | Backend là nguồn xác thực duy nhất, timezone `Asia/Ho_Chi_Minh` |
-| 5 | `getActivePromotions` | `promotions` + `evaluatePromotion` | Chỉ trả mã công khai còn hiệu lực & còn lượt dùng |
-| 6 | `compareVehicles` | Payload live + optional quote theo cùng khoảng ngày | Thiếu dữ liệu hiển thị chính xác `"Chưa cập nhật"` |
-| 7 | `getRentalPolicy` | `knowledge.ts` RAG (`nori-site`, published `posts`, `branches`) | Chống Indirect Prompt Injection, kèm link chính sách |
-| 8 | `recommendVehicles` | `recommendVehiclesEngine` + live availability | Lọc cứng + Weighted Scoring minh bạch + lý do đề xuất |
-| 9 | `prepareBooking` | Validation DB + sinh URL `/checkout?...` hoặc `/vehicles/[slug]` | Chỉ điều hướng; không tự tạo đơn, không duyệt đơn, không thu tiền |
-
----
-
-## 5. Hướng dẫn vận hành & đồng bộ dữ liệu
-
-- **Tính đồng bộ thời gian thực**: Mọi tool AI truy vấn trực tiếp từ Payload CMS / SQLite theo từng yêu cầu. Khi Admin thay đổi giá xe, trạng thái vận hành (`MAINTENANCE`/`INACTIVE`), khuyến mãi hoặc chính sách CMS tại `/dashboard/*`, Trợ lý AI phản ánh dữ liệu mới ngay ở lượt hỏi tiếp theo mà không cần restart hay đồng bộ thủ công.
-- **Hướng dẫn phía Khách hàng**: Nhấn nút **Trợ lý AI** ở góc dưới phải (tự động tránh thanh điều hướng Mobile Bottom Navigation và Sticky Booking Bar), chọn gợi ý nhanh hoặc nhập nhu cầu bằng tiếng Việt tự nhiên, xem thẻ xe đề xuất và nhấn **Xem chi tiết** / **Chọn thuê** / **So sánh xe**.
-- **Hướng dẫn phía Admin**: Truy cập `/dashboard/ai` để bật/tắt AI, kiểm tra kết nối metadata Gemini Free Tier, theo dõi số lượt chuyển sang **Chế độ tư vấn cơ bản**, tinh chỉnh giới hạn an toàn, điều chỉnh trọng số đề xuất, theo dõi token thực tế và rà soát phản hồi khách hàng.
+| 1 | `searchVehicles` | Tìm kiếm danh sách xe theo từ khóa, hãng, loại xe, số chỗ, giá | Payload `vehicle-models`, `vehicles` (`overrideAccess: false`) |
+| 2 | `getVehicleDetails` | Kiểm tra dòng xe cụ thể (VD: `"innova có không"`), thông số, giá theo ngày/số ngày, trạng thái thực tế vs `MAINTENANCE` vs `DEMO` | Payload `vehicle-models`, `vehicles`, `reviews` |
+| 3 | `checkAvailability` | Kiểm tra lịch trống thực tế theo `startDate` & `endDate` | `evaluateVehicleBookingAvailabilityAndPricing` + `rental_days` |
+| 4 | `calculateRentalPrice` | Báo giá thuê chính xác đồng nhất với Checkout | `evaluateVehicleBookingAvailabilityAndPricing` & `rental-rules.ts` |
+| 5 | `getActivePromotions` | Tra cứu và xác thực điều kiện mã khuyến mãi | `promotions` + `evaluatePromotion` |
+| 6 | `compareVehicles` | So sánh 2–3 dòng xe theo thông số & báo giá cùng ngày | Payload live + Business Rule Engine |
+| 7 | `getRentalPolicy` | Tra cứu điều kiện thuê, đặt cọc, hủy đơn, chi nhánh, hỗ trợ | `knowledge.ts` RAG (`nori-site`, `posts`, `branches`) |
+| 8 | `recommendVehicles` | Tư vấn phương tiện theo nhu cầu (lọc cứng trước khi chấm điểm) | `recommendVehiclesEngine` + live availability |
+| 9 | `prepareBooking` | Chuẩn bị liên kết chuyển sang `/checkout` để khách tự xác nhận | Validation DB + URL builder (không tự tạo đơn) |
+| 10 | `getCustomerBookingStatus` | Tra cứu trạng thái đơn thuê của chính khách hàng đang đăng nhập | Payload `bookings` (`overrideAccess: false` + kiểm tra `customer === user.id`) |
+| 11 | `getPurchaseConsultationInfo` | Tư vấn xe mở bán, ước tính giá lăn bánh & đăng ký lái thử | Payload `vehicles` (`SALE`/`BOTH`) + `calculateRollingPrice` |

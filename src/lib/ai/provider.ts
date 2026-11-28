@@ -4,6 +4,7 @@ import { planDeterministicToolTurn, synthesizeDeterministicReply } from './fallb
 import { GeminiProvider } from './gemini.ts'
 import { OpenAIResponsesProvider } from './openai.ts'
 import type {
+  AIChatMessageInput,
   AIProvider,
   AIProviderInputItem,
   AIProviderToolCall,
@@ -14,7 +15,7 @@ import type {
 /**
  * Isolated deterministic MockAIProvider strictly for automated Unit/Integration/E2E tests
  * when `NORI_AI_TEST_MOCK=1`. NEVER activated on real production traffic to fake AI.
- * It still routes all vehicle/price/availability/promo/policy work through real NORI tools!
+ * Routes all 14 intents & multi-turn session history through real NORI tools and SQLite DB!
  */
 export class MockTestAIProvider implements AIProvider {
   readonly name = 'mock' as const
@@ -70,13 +71,18 @@ export class MockTestAIProvider implements AIProvider {
       (i): i is Extract<AIProviderInputItem, { type: 'function_call_output' }> =>
         i.type === 'function_call_output',
     )
-    const lastUserMessage = [...params.input]
-      .reverse()
-      .find(
-        (i): i is Extract<AIProviderInputItem, { type: 'message' }> =>
-          i.type === 'message' && i.role === 'user',
-      )
+    const messageItems = params.input.filter(
+      (i): i is Extract<AIProviderInputItem, { type: 'message' }> => i.type === 'message',
+    )
+    const lastUserMessage = [...messageItems].reverse().find((i) => i.role === 'user')
     const userText = lastUserMessage?.content ?? ''
+
+    // Prior conversation messages before the current user turn
+    const lastUserIdx = messageItems.lastIndexOf(lastUserMessage!)
+    const priorHistory: AIChatMessageInput[] =
+      lastUserIdx > 0
+        ? messageItems.slice(0, lastUserIdx).map((m) => ({ role: m.role, content: m.content }))
+        : []
 
     // Round 2: Synthesize concise Vietnamese summary strictly from actual backend tool output
     if (toolOutputs.length > 0) {
@@ -101,8 +107,8 @@ export class MockTestAIProvider implements AIProvider {
       }
     }
 
-    // Round 1: Deterministic function calling based on shared planner
-    const plan = planDeterministicToolTurn(userText)
+    // Round 1: Context-aware deterministic function calling based on shared NLU planner
+    const plan = planDeterministicToolTurn(userText, priorHistory)
     if (plan.kind === 'ASK') {
       return {
         responseId: `mock-resp-ask-${Date.now()}`,

@@ -15,12 +15,16 @@ export type GeminiModelCapability = {
   supportsFunctionCalling: boolean
   supportsStructuredOutputs: boolean
   documentedFreeTier: true
+  deprecatedAliasTo?: string
   docsUrl: string
 }
 
 /**
- * Models officially documented by Google Gemini API (ai.google.dev/gemini-api/docs/models & pricing)
- * as having a Free Tier quota. NORI never auto-upgrades or falls back to paid-only models.
+ * Models allowed under NORI's Free Tier policy (`@google/genai` >= 3.5).
+ * - Current production models: `gemini-3.5-flash-lite` (default), `gemini-3.1-flash-lite`, `gemini-4-hydrogen`.
+ * - Legacy `gemini-2.5-*` / `gemini-2.0-*` Flash-Lite/Flash entries are auto-remapped to current
+ *   models (`gemini-3.5-flash-lite` / `gemini-4-hydrogen`) so deprecated endpoints are never invoked.
+ * - Paid Pro/Ultra/Carbon/Neon models remain strictly blocked when `freeTierOnly=true`.
  */
 export const GEMINI_FREE_TIER_MODELS: Readonly<Record<string, GeminiModelCapability>> = {
   'gemini-3.5-flash-lite': {
@@ -28,35 +32,54 @@ export const GEMINI_FREE_TIER_MODELS: Readonly<Record<string, GeminiModelCapabil
     supportsFunctionCalling: true,
     supportsStructuredOutputs: true,
     documentedFreeTier: true,
-    docsUrl: 'https://ai.google.dev/gemini-api/docs/models',
+    docsUrl: 'https://aistudio.google.com/docs/latest-model.md',
   },
-  'gemini-2.5-flash-lite': {
-    label: 'Gemini 2.5 Flash-Lite',
+  'gemini-3.1-flash-lite': {
+    label: 'Gemini 3.1 Flash-Lite',
     supportsFunctionCalling: true,
     supportsStructuredOutputs: true,
     documentedFreeTier: true,
-    docsUrl: 'https://ai.google.dev/gemini-api/docs/models',
+    docsUrl: 'https://aistudio.google.com/docs/latest-model.md',
+  },
+  'gemini-4-hydrogen': {
+    label: 'Gemini 4 Hydrogen',
+    supportsFunctionCalling: true,
+    supportsStructuredOutputs: true,
+    documentedFreeTier: true,
+    docsUrl: 'https://aistudio.google.com/docs/latest-model.md',
+  },
+  // Legacy config aliases — automatically upgraded at runtime to non-deprecated models
+  'gemini-2.5-flash-lite': {
+    label: 'Gemini 3.5 Flash-Lite (remapped from legacy 2.5-flash-lite)',
+    supportsFunctionCalling: true,
+    supportsStructuredOutputs: true,
+    documentedFreeTier: true,
+    deprecatedAliasTo: 'gemini-3.5-flash-lite',
+    docsUrl: 'https://aistudio.google.com/docs/latest-model.md',
   },
   'gemini-2.5-flash': {
-    label: 'Gemini 2.5 Flash',
+    label: 'Gemini 4 Hydrogen (remapped from legacy 2.5-flash)',
     supportsFunctionCalling: true,
     supportsStructuredOutputs: true,
     documentedFreeTier: true,
-    docsUrl: 'https://ai.google.dev/gemini-api/docs/models',
+    deprecatedAliasTo: 'gemini-4-hydrogen',
+    docsUrl: 'https://aistudio.google.com/docs/latest-model.md',
   },
   'gemini-2.0-flash': {
-    label: 'Gemini 2.0 Flash',
+    label: 'Gemini 4 Hydrogen (remapped from legacy 2.0-flash)',
     supportsFunctionCalling: true,
     supportsStructuredOutputs: true,
     documentedFreeTier: true,
-    docsUrl: 'https://ai.google.dev/gemini-api/docs/models',
+    deprecatedAliasTo: 'gemini-4-hydrogen',
+    docsUrl: 'https://aistudio.google.com/docs/latest-model.md',
   },
   'gemini-2.0-flash-lite': {
-    label: 'Gemini 2.0 Flash-Lite',
+    label: 'Gemini 3.5 Flash-Lite (remapped from legacy 2.0-flash-lite)',
     supportsFunctionCalling: true,
     supportsStructuredOutputs: true,
     documentedFreeTier: true,
-    docsUrl: 'https://ai.google.dev/gemini-api/docs/models',
+    deprecatedAliasTo: 'gemini-3.5-flash-lite',
+    docsUrl: 'https://aistudio.google.com/docs/latest-model.md',
   },
 }
 
@@ -65,6 +88,27 @@ export function normalizeGeminiModelId(model: string): string {
     .trim()
     .replace(/^models\//i, '')
     .toLowerCase()
+}
+
+export function resolveSupportedGeminiModel(model: string): {
+  effectiveModel: string
+  rawNormalized: string
+  remapped: boolean
+} {
+  const norm = normalizeGeminiModelId(model || DEFAULT_GEMINI_MODEL)
+  const cap = GEMINI_FREE_TIER_MODELS[norm]
+  if (cap?.deprecatedAliasTo) {
+    return {
+      effectiveModel: cap.deprecatedAliasTo,
+      rawNormalized: norm,
+      remapped: true,
+    }
+  }
+  return {
+    effectiveModel: norm,
+    rawNormalized: norm,
+    remapped: false,
+  }
 }
 
 export function isGeminiModelInFreeTierAllowlist(model: string): boolean {
@@ -77,8 +121,28 @@ export function getGeminiModelCapabilities(model: string): GeminiModelCapability
   return GEMINI_FREE_TIER_MODELS[norm] ?? null
 }
 
+function cleanSecretEnvValue(raw: string | undefined): string | null {
+  if (!raw) return null
+  let val = raw.trim()
+  if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+    val = val.slice(1, -1).trim()
+  }
+  if (!val) return null
+  const lower = val.toLowerCase()
+  if (
+    lower === 'change_me' ||
+    lower === 'your_gemini_api_key' ||
+    lower.startsWith('your-') ||
+    lower === 'null' ||
+    lower === 'undefined'
+  ) {
+    return null
+  }
+  return val
+}
+
 export const DEFAULT_GREETING_MESSAGE =
-  'Xin chào! Tôi là Trợ lý AI của NORI. Tôi có thể giúp bạn tìm xe phù hợp nhu cầu & ngân sách, kiểm tra lịch trống, tính báo giá thuê xe và giải đáp chính sách của NORI.'
+  'Xin chào! Tôi là Trợ lý AI của NORI. Tôi có thể giúp bạn tra cứu dòng xe cụ thể, tư vấn xe theo nhu cầu & ngân sách, kiểm tra lịch trống, tính báo giá thuê xe và giải đáp chính sách của NORI.'
 
 export const DEFAULT_QUICK_SUGGESTIONS: AIQuickSuggestion[] = [
   {
@@ -86,12 +150,12 @@ export const DEFAULT_QUICK_SUGGESTIONS: AIQuickSuggestion[] = [
     prompt: 'Tư vấn giúp tôi xe ô tô đi gia đình 5-7 chỗ ngân sách dưới 1.5 triệu/ngày',
   },
   {
-    label: 'Xe máy đi phố tiết kiệm',
-    prompt: 'Gợi ý xe máy tay ga tiết kiệm nhiên liệu đi trong thành phố',
+    label: 'Kiểm tra dòng xe cụ thể',
+    prompt: 'Có xe Toyota Fortuner hoặc Mitsubishi Xpander không?',
   },
   {
-    label: 'Tính giá thuê 3 ngày cuối tuần',
-    prompt: 'Tính giúp tôi chi phí thuê Toyota Fortuner 3 ngày từ ngày mai',
+    label: 'Xe máy đi phố dưới 200k',
+    prompt: 'Gợi ý xe máy tay ga tiết kiệm nhiên liệu đi phố ngân sách dưới 200k/ngày',
   },
   {
     label: 'Khuyến mãi đang có',
@@ -142,6 +206,28 @@ function parseFloatClamped(
 }
 
 /**
+ * Server-internal helper to fetch the Gemini API key at provider invocation time.
+ * Supports GEMINI_API_KEY (primary) and GOOGLE_API_KEY (official @google/genai fallback).
+ * Never log, serialize, or return this value to clients.
+ */
+export function getGeminiApiKeyServerOnly(): string | null {
+  return (
+    cleanSecretEnvValue(process.env.GEMINI_API_KEY) ??
+    cleanSecretEnvValue(process.env.GOOGLE_API_KEY)
+  )
+}
+
+/**
+ * Server-internal helper to fetch the OpenAI API key at provider invocation time.
+ * Blocked when `freeTierOnly` is true or `paidProvidersAllowed` is false.
+ */
+export function getOpenAIApiKeyServerOnly(): string | null {
+  const runtime = getAIRuntimeConfig()
+  if (runtime.freeTierOnly || !runtime.paidProvidersAllowed) return null
+  return cleanSecretEnvValue(process.env.OPENAI_API_KEY)
+}
+
+/**
  * Reads runtime environment config for NORI AI.
  * NEVER returns or exposes GEMINI_API_KEY / OPENAI_API_KEY value — only boolean `apiKeyConfigured`.
  */
@@ -163,59 +249,49 @@ export function getAIRuntimeConfig(): AIRuntimeConfig {
       ? 'openai'
       : 'gemini'
 
-  const model =
+  const configuredModelRaw =
     provider === 'openai'
       ? process.env.OPENAI_MODEL?.trim() || DEFAULT_OPENAI_MODEL
       : process.env.GEMINI_MODEL?.trim() || DEFAULT_GEMINI_MODEL
 
+  const resolvedGem =
+    provider === 'openai'
+      ? { effectiveModel: configuredModelRaw, remapped: false }
+      : resolveSupportedGeminiModel(configuredModelRaw)
+
   const apiKeyConfigured =
     provider === 'openai'
-      ? Boolean(process.env.OPENAI_API_KEY?.trim())
-      : Boolean(process.env.GEMINI_API_KEY?.trim())
+      ? Boolean(cleanSecretEnvValue(process.env.OPENAI_API_KEY))
+      : Boolean(
+          cleanSecretEnvValue(process.env.GEMINI_API_KEY) ??
+          cleanSecretEnvValue(process.env.GOOGLE_API_KEY),
+        )
 
   return {
     envEnabled,
     provider,
-    model,
+    model: resolvedGem.effectiveModel,
+    configuredModelRaw,
+    modelRemappedFromDeprecated: resolvedGem.remapped,
     apiKeyConfigured,
     freeTierOnly,
     paidProvidersAllowed,
     fallbackEnabled,
     maxOutputTokensCap: parseIntClamped(process.env.NORI_AI_MAX_OUTPUT_TOKENS, 1024, 150, 2048),
     maxToolRoundsCap: parseIntClamped(process.env.NORI_AI_MAX_TOOL_ROUNDS, 3, 1, 6),
-    rateLimitPerMinuteCap: parseIntClamped(process.env.NORI_AI_RATE_LIMIT_PER_MINUTE, 3, 1, 60),
-    rateLimitPerDayCap: parseIntClamped(process.env.NORI_AI_RATE_LIMIT_PER_DAY, 20, 1, 1000),
-    projectRateLimitPerMinuteCap: parseIntClamped(process.env.NORI_AI_PROJECT_RPM_CAP, 10, 1, 60),
-    projectRateLimitPerDayCap: parseIntClamped(process.env.NORI_AI_PROJECT_RPD_CAP, 200, 1, 1500),
-    ipRateLimitPerMinuteCap: parseIntClamped(process.env.NORI_AI_IP_RPM_CAP, 6, 1, 60),
-    ipRateLimitPerDayCap: parseIntClamped(process.env.NORI_AI_IP_RPD_CAP, 40, 1, 500),
-    timeoutMs: parseIntClamped(process.env.NORI_AI_TIMEOUT_MS, 30_000, 3_000, 60_000),
+    rateLimitPerMinuteCap: parseIntClamped(process.env.NORI_AI_RATE_LIMIT_PER_MINUTE, 6, 1, 60),
+    rateLimitPerDayCap: parseIntClamped(process.env.NORI_AI_RATE_LIMIT_PER_DAY, 40, 1, 1000),
+    projectRateLimitPerMinuteCap: parseIntClamped(process.env.NORI_AI_PROJECT_RPM_CAP, 15, 1, 120),
+    projectRateLimitPerDayCap: parseIntClamped(process.env.NORI_AI_PROJECT_RPD_CAP, 300, 1, 2000),
+    ipRateLimitPerMinuteCap: parseIntClamped(process.env.NORI_AI_IP_RPM_CAP, 10, 1, 80),
+    ipRateLimitPerDayCap: parseIntClamped(process.env.NORI_AI_IP_RPD_CAP, 60, 1, 800),
+    timeoutMs: parseIntClamped(process.env.NORI_AI_TIMEOUT_MS, 25_000, 3_000, 60_000),
     dailyBudgetUsdCap: freeTierOnly
       ? 0
       : parseFloatClamped(process.env.NORI_AI_DAILY_BUDGET_USD, 5, 0, 500),
     storeConversations: parseBoolEnv(process.env.NORI_AI_STORE_CONVERSATIONS, false),
     testMockEnabled,
   }
-}
-
-/**
- * Server-internal helper to fetch the Gemini API key at provider invocation time.
- * Never log, serialize, or return this value to clients.
- */
-export function getGeminiApiKeyServerOnly(): string | null {
-  const key = process.env.GEMINI_API_KEY?.trim()
-  return key && key.length > 0 ? key : null
-}
-
-/**
- * Server-internal helper to fetch the OpenAI API key at provider invocation time.
- * Blocked when `freeTierOnly` is true or `paidProvidersAllowed` is false.
- */
-export function getOpenAIApiKeyServerOnly(): string | null {
-  const runtime = getAIRuntimeConfig()
-  if (runtime.freeTierOnly || !runtime.paidProvidersAllowed) return null
-  const key = process.env.OPENAI_API_KEY?.trim()
-  return key && key.length > 0 ? key : null
 }
 
 export function normalizeRecommendationWeights(
@@ -354,15 +430,15 @@ export function mapGlobalDocToAISettings(
     maxToolRounds:
       typeof raw.maxToolRounds === 'number' && Number.isFinite(raw.maxToolRounds)
         ? raw.maxToolRounds
-        : 5,
+        : 3,
     rateLimitPerMinute:
       typeof raw.rateLimitPerMinute === 'number' && Number.isFinite(raw.rateLimitPerMinute)
         ? raw.rateLimitPerMinute
-        : 5,
+        : 6,
     rateLimitPerDay:
       typeof raw.rateLimitPerDay === 'number' && Number.isFinite(raw.rateLimitPerDay)
         ? raw.rateLimitPerDay
-        : 30,
+        : 40,
     dailyBudgetUsd:
       typeof raw.dailyBudgetUsd === 'number' && Number.isFinite(raw.dailyBudgetUsd)
         ? raw.dailyBudgetUsd

@@ -125,15 +125,15 @@ export async function retrieveNoriKnowledge(
     openingHours: string
   }
 }> {
+  // Primary site global read must propagate real DB outages (SQLITE_BUSY / connection failures)
+  // rather than silently masking them as missing CMS data.
   const [site, postsRes, branchesRes] = await Promise.all([
-    payload
-      .findGlobal({
-        slug: 'nori-site',
-        overrideAccess: false,
-        draft: false,
-        depth: 0,
-      })
-      .catch(() => null),
+    payload.findGlobal({
+      slug: 'nori-site',
+      overrideAccess: false,
+      draft: false,
+      depth: 0,
+    }),
     payload
       .find({
         collection: 'posts',

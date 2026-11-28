@@ -8,9 +8,21 @@ import {
   normalizeRecommendationWeights,
   resolveEffectiveAIConfig,
 } from '@/lib/ai/config'
+import { getGeminiRuntimeHealthSnapshot } from '@/lib/ai/gemini'
 import { checkCircuitBreaker } from '@/lib/ai/rate-limit'
+import type { AIConnectionStatus } from '@/lib/ai/types'
 import { MODEL_PRICING_PER_1M_USD, resolveModelPricing } from '@/lib/ai/usage'
 import { apiError, assertOrigin, body, fail, json, text } from '@/lib/api-utils'
+
+const CONNECTION_STATUS_LABELS: Record<AIConnectionStatus, string> = {
+  GEMINI_CONNECTED: 'Gemini Connected',
+  FALLBACK_ACTIVE: 'Fallback Active',
+  API_CONFIG_MISSING: 'API Configuration Missing',
+  QUOTA_EXCEEDED: 'Quota Exceeded',
+  CONNECTION_ERROR: 'Connection Error',
+  DISABLED: 'Disabled',
+  MOCK_ACTIVE: 'Mock Provider Active',
+}
 
 export async function GET() {
   try {
@@ -183,13 +195,109 @@ export async function GET() {
     const geminiCap = getGeminiModelCapabilities(runtime.model)
     const documentedFreeTierModel =
       runtime.provider === 'gemini' && isGeminiModelInFreeTierAllowlist(runtime.model)
+    const geminiHealth = getGeminiRuntimeHealthSnapshot()
+
+    const intentBreakdown: Record<string, number> = {}
+    for (const l of chatLogs) {
+      const intentKey = typeof l.intent === 'string' && l.intent ? l.intent : 'UNKNOWN'
+      intentBreakdown[intentKey] = (intentBreakdown[intentKey] ?? 0) + 1
+    }
+
+    const latestProviderLog = logs.find(
+      (l) =>
+        l.provider === 'gemini' ||
+        l.eventType === 'CONNECTION_TEST' ||
+        (typeof l.errorCode === 'string' && l.errorCode.startsWith('FALLBACK_')),
+    )
+
+    let connectionStatus: AIConnectionStatus = 'API_CONFIG_MISSING'
+    let connectionDiagnosticNote = ''
+
+    if (!effective.enabled) {
+      connectionStatus = 'DISABLED'
+      connectionDiagnosticNote = 'Trợ lý AI đang được tắt tạm thời trong cấu hình quản trị.'
+    } else if (runtime.testMockEnabled) {
+      connectionStatus = 'MOCK_ACTIVE'
+      connectionDiagnosticNote = 'Máy chủ đang chạy ở chế độ AI_TEST_MOCK phục vụ kiểm thử tự động.'
+    } else if (!runtime.apiKeyConfigured) {
+      connectionStatus = 'API_CONFIG_MISSING'
+      connectionDiagnosticNote = runtime.fallbackEnabled
+        ? 'Chưa cấu hình GEMINI_API_KEY trên máy chủ. Hệ thống đang kích hoạt Rule-based Fallback (Fallback Active).'
+        : 'Chưa cấu hình GEMINI_API_KEY trên máy chủ và chế độ Fallback đang tắt.'
+    } else if (
+      geminiHealth.lastStatus === 'QUOTA_EXCEEDED' ||
+      circuit.lastErrorCode === 'AI_QUOTA_EXCEEDED' ||
+      circuit.lastErrorCode === 'AI_RATE_LIMITED'
+    ) {
+      connectionStatus = 'QUOTA_EXCEEDED'
+      connectionDiagnosticNote =
+        'Hạn mức Gemini API (429 / Quota / RPM) đang tạm chạm trần. Rule-based Fallback tự động đảm nhận tư vấn.'
+    } else if (geminiHealth.lastStatus === 'CONNECTION_ERROR' || circuit.open) {
+      connectionStatus = 'CONNECTION_ERROR'
+      connectionDiagnosticNote =
+        'Phát hiện lỗi kết nối hoặc xác thực với Gemini API gần nhất. Vui lòng kiểm tra lại kết nối.'
+    } else if (
+      geminiHealth.lastStatus === 'GEMINI_CONNECTED' ||
+      (latestProviderLog &&
+        latestProviderLog.provider === 'gemini' &&
+        latestProviderLog.status === 'SUCCESS')
+    ) {
+      connectionStatus = 'GEMINI_CONNECTED'
+      connectionDiagnosticNote = `Đã xác thực kết nối thành công với Google Gemini (${runtime.model}).`
+    } else if (
+      latestProviderLog &&
+      typeof latestProviderLog.errorCode === 'string' &&
+      (latestProviderLog.errorCode.includes('QUOTA') ||
+        latestProviderLog.errorCode.includes('RATE_LIMITED'))
+    ) {
+      connectionStatus = 'QUOTA_EXCEEDED'
+      connectionDiagnosticNote =
+        'Nhật ký gần nhất ghi nhận vượt hạn mức Gemini API. Rule-based Fallback đang sẵn sàng.'
+    } else if (
+      latestProviderLog &&
+      (latestProviderLog.status === 'ERROR' ||
+        (typeof latestProviderLog.errorCode === 'string' &&
+          latestProviderLog.errorCode.startsWith('FALLBACK_') &&
+          !latestProviderLog.errorCode.includes('UNCONFIGURED')))
+    ) {
+      connectionStatus = 'CONNECTION_ERROR'
+      connectionDiagnosticNote =
+        'Nhật ký gần nhất ghi nhận lỗi phản hồi từ nhà cung cấp AI; hệ thống đã chuyển sang Fallback.'
+    } else {
+      connectionStatus = 'GEMINI_CONNECTED'
+      connectionDiagnosticNote =
+        'Khóa GEMINI_API_KEY đã được nạp trên server. Nhấn "Kiểm tra kết nối Gemini" để thực hiện handshake trực tiếp.'
+    }
+
+    const fallbackCurrentlyServing =
+      effective.enabled &&
+      effective.fallbackEnabled &&
+      (connectionStatus === 'API_CONFIG_MISSING' ||
+        connectionStatus === 'QUOTA_EXCEEDED' ||
+        connectionStatus === 'CONNECTION_ERROR')
 
     return json({
       runtime: {
         envEnabled: runtime.envEnabled,
         provider: runtime.provider,
         model: runtime.model,
+        configuredModelRaw: runtime.configuredModelRaw,
+        modelRemappedFromDeprecated: runtime.modelRemappedFromDeprecated,
         apiKeyConfigured: runtime.apiKeyConfigured,
+        connectionStatus,
+        connectionStatusLabel: CONNECTION_STATUS_LABELS[connectionStatus],
+        fallbackActive: fallbackCurrentlyServing,
+        fallbackStatusLabel: fallbackCurrentlyServing
+          ? CONNECTION_STATUS_LABELS.FALLBACK_ACTIVE
+          : effective.fallbackEnabled
+            ? 'Fallback Standby'
+            : 'Fallback Disabled',
+        connectionDiagnosticNote,
+        healthSnapshot: {
+          lastCheckedAt: geminiHealth.lastCheckedAt,
+          lastLatencyMs: geminiHealth.lastLatencyMs,
+          verifiedLiveRequest: geminiHealth.verifiedLiveRequest,
+        },
         freeTierOnly: runtime.freeTierOnly,
         paidProvidersAllowed: runtime.paidProvidersAllowed,
         fallbackEnabled: runtime.fallbackEnabled,
@@ -254,6 +362,7 @@ export async function GET() {
         helpfulCount,
         notHelpfulCount,
         noResultCount: noResultQueries.length,
+        intentBreakdown,
         costDisclaimer: runtime.freeTierOnly
           ? 'NORI đang khóa chế độ Gemini Free Tier Only (không bật API trả phí hoặc Grounding có phí). Chi phí ước tính trong app là $0.00 theo chính sách; chủ dự án vẫn cần kiểm tra thủ công trong Google AI Studio rằng Cloud Billing chưa được liên kết.'
           : 'Chi phí hiển thị là số liệu ước tính phía NORI dựa trên token usage và bảng giá tham khảo của model.',

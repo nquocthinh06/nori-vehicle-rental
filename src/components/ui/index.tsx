@@ -227,7 +227,8 @@ export function Badge({
   children,
   tone = 'muted',
   className,
-}: {
+  ...props
+}: HTMLAttributes<HTMLSpanElement> & {
   children: ReactNode
   tone?: 'brand' | 'muted' | 'warning' | 'danger' | 'inverse'
   className?: string
@@ -246,6 +247,7 @@ export function Badge({
         tones[tone],
         className,
       )}
+      {...props}
     >
       {children}
     </span>

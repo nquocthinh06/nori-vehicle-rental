@@ -4,6 +4,8 @@ import {
   toolCheckAvailability,
   toolCompareVehicles,
   toolGetActivePromotions,
+  toolGetCustomerBookingStatus,
+  toolGetPurchaseConsultationInfo,
   toolGetRentalPolicy,
   toolGetVehicleDetails,
   toolPrepareBooking,
@@ -133,6 +135,18 @@ export async function executeAllowedTool(
         ok: true,
         toolName: rawName,
         result: await toolPrepareBooking(ctx, validation.data as never),
+      }
+    case 'getCustomerBookingStatus':
+      return {
+        ok: true,
+        toolName: rawName,
+        result: await toolGetCustomerBookingStatus(ctx, validation.data as never),
+      }
+    case 'getPurchaseConsultationInfo':
+      return {
+        ok: true,
+        toolName: rawName,
+        result: await toolGetPurchaseConsultationInfo(ctx, validation.data as never),
       }
   }
 }

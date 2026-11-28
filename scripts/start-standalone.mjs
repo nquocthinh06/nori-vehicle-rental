@@ -7,6 +7,24 @@ const rootDir = process.cwd()
 const standaloneDir = path.join(rootDir, '.next', 'standalone')
 const serverEntry = path.join(standaloneDir, 'server.js')
 
+// Load root .env for unset variables so standalone server receives GEMINI_API_KEY / server config
+// without overriding any explicit environment variables passed by isolated E2E / CI runners.
+const dotEnvPath = path.join(rootDir, '.env')
+if (fs.existsSync(dotEnvPath)) {
+  for (const rawLine of fs.readFileSync(dotEnvPath, 'utf8').split(/\r?\n/)) {
+    const line = rawLine.trim()
+    if (!line || line.startsWith('#') || !line.includes('=')) continue
+    const eqIdx = line.indexOf('=')
+    const key = line.slice(0, eqIdx).trim()
+    if (!key || process.env[key] !== undefined) continue
+    let val = line.slice(eqIdx + 1).trim()
+    if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+      val = val.slice(1, -1)
+    }
+    process.env[key] = val
+  }
+}
+
 if (!fs.existsSync(serverEntry)) {
   console.error(
     '[start:standalone] Missing .next/standalone/server.js. Run `pnpm build` before starting standalone production server.',

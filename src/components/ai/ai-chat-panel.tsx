@@ -13,6 +13,7 @@ import type {
 } from '@/lib/ai/types'
 import { Badge, Button, ButtonLink, IconButton, Notice, Text } from '@/components/ui'
 import { Icon } from '@/components/ui/icon'
+import { AIMarkdown } from './ai-markdown'
 import {
   AIBookingHandoffCard,
   AIComparisonCard,
@@ -60,20 +61,35 @@ type ChatEntry = {
   }
 }
 
+function createClientSessionId(): string {
+  return typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+    ? crypto.randomUUID().slice(0, 16)
+    : `s-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+}
+
 function getOrCreateClientSessionId(): string {
   if (typeof window === 'undefined') return 'ssr'
   try {
     const existing = window.sessionStorage.getItem('nori_ai_session_id')
     if (existing) return existing
-    const created =
-      typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
-        ? crypto.randomUUID().slice(0, 16)
-        : `s-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    const created = createClientSessionId()
     window.sessionStorage.setItem('nori_ai_session_id', created)
     return created
   } catch {
-    return `s-${Date.now()}`
+    return createClientSessionId()
   }
+}
+
+function rotateClientSessionId(): string {
+  const nextId = createClientSessionId()
+  if (typeof window !== 'undefined') {
+    try {
+      window.sessionStorage.setItem('nori_ai_session_id', nextId)
+    } catch {
+      // ignore storage quota errors in private browsing
+    }
+  }
+  return nextId
 }
 
 export function AIChatPanel({ onClose }: { onClose: () => void }) {
@@ -85,6 +101,7 @@ export function AIChatPanel({ onClose }: { onClose: () => void }) {
   const [sending, setSending] = useState(false)
   const [expanded, setExpanded] = useState(false)
   const [isOnline, setIsOnline] = useState(true)
+  const [mobileViewportHeight, setMobileViewportHeight] = useState<number | null>(null)
 
   const abortRef = useRef<AbortController | null>(null)
   const listEndRef = useRef<HTMLDivElement>(null)
@@ -104,16 +121,23 @@ export function AIChatPanel({ onClose }: { onClose: () => void }) {
     }
   }, [])
 
-  // Lock background scroll on mobile full-screen sheet
+  // Lock background scroll & sync visualViewport height on mobile virtual keyboard
   useEffect(() => {
     const mq = window.matchMedia('(max-width: 767px)')
-    const syncBodyLock = () => {
+    const syncViewport = () => {
       document.body.style.overflow = mq.matches ? 'hidden' : ''
+      if (mq.matches && window.visualViewport) {
+        setMobileViewportHeight(Math.round(window.visualViewport.height))
+      } else {
+        setMobileViewportHeight(null)
+      }
     }
-    syncBodyLock()
-    mq.addEventListener('change', syncBodyLock)
+    syncViewport()
+    mq.addEventListener('change', syncViewport)
+    window.visualViewport?.addEventListener('resize', syncViewport)
     return () => {
-      mq.removeEventListener('change', syncBodyLock)
+      mq.removeEventListener('change', syncViewport)
+      window.visualViewport?.removeEventListener('resize', syncViewport)
       document.body.style.overflow = ''
     }
   }, [])
@@ -334,6 +358,7 @@ export function AIChatPanel({ onClose }: { onClose: () => void }) {
 
   const handleReset = () => {
     abortRef.current?.abort()
+    sessionIdRef.current = rotateClientSessionId()
     setMessages([])
     setInput('')
     setSending(false)
@@ -379,6 +404,7 @@ export function AIChatPanel({ onClose }: { onClose: () => void }) {
       role="dialog"
       aria-label="Trợ lý AI NORI"
       data-testid="nori-ai-panel"
+      style={mobileViewportHeight ? { height: `${mobileViewportHeight}px` } : undefined}
       className={[
         'fixed z-50 flex flex-col overflow-hidden bg-canvas text-ink shadow-float',
         // Mobile full-screen with safe-area & dynamic viewport height (keyboard-safe)
@@ -557,17 +583,13 @@ export function AIChatPanel({ onClose }: { onClose: () => void }) {
                 <div className="rounded-card border border-line bg-canvas p-3.5 shadow-card">
                   {(msg.fallbackMode || msg.status === 'DEGRADED') && (
                     <div className="mb-2 flex flex-wrap items-center gap-2">
-                      <Badge tone="warning">
-                        {msg.modeLabel || 'Chế độ tư vấn cơ bản (Rule-based Engine)'}
-                      </Badge>
+                      <Badge tone="warning">{msg.modeLabel || 'Chế độ tư vấn cơ bản'}</Badge>
                       <span className="text-micro text-muted">
                         Dữ liệu xe & giá thuê trực tiếp từ NORI
                       </span>
                     </div>
                   )}
-                  <div className="whitespace-pre-line text-small leading-relaxed text-ink">
-                    {msg.content}
-                  </div>
+                  <AIMarkdown content={msg.content} onNavigate={onClose} />
 
                   {msg.quote && (
                     <AIQuoteCard

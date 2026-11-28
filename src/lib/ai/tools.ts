@@ -3,18 +3,30 @@ import { evaluateVehicleBookingAvailabilityAndPricing } from '../multi-branch-se
 import { findPromotionByCode } from '../promo-service.ts'
 import {
   RENTAL_ADDONS,
+  bookingStatusLabels,
   businessToday,
+  calculateRollingPrice,
   evaluatePromotion,
   formatMoney,
   formatVnd,
   operationStatusLabels,
+  paymentSummaryLabels,
   relationId,
   subCategoryLabels,
 } from '../rental-rules.ts'
 import { sanitizeUntrustedCmsText, stripVietnameseAccents } from './guardrails.ts'
 import { retrieveNoriKnowledge } from './knowledge.ts'
 import {
+  AUTOMOTIVE_MODEL_LEXICON,
+  editDistance,
+  matchLexiconModels,
+  normalizeVietnameseNLU,
+} from './nlu.ts'
+import {
   extractStructuredIntent,
+  matchesFuel,
+  matchesModelQueryStrict,
+  matchesTransmission,
   recommendVehiclesEngine,
   type RecommendationCandidate,
 } from './recommendation.ts'
@@ -23,6 +35,8 @@ import type {
   ValidatedCheckAvailabilityArgs,
   ValidatedCompareVehiclesArgs,
   ValidatedGetActivePromotionsArgs,
+  ValidatedGetCustomerBookingStatusArgs,
+  ValidatedGetPurchaseConsultationArgs,
   ValidatedGetRentalPolicyArgs,
   ValidatedGetVehicleDetailsArgs,
   ValidatedPrepareBookingArgs,
@@ -75,6 +89,7 @@ function isPublicPromotion(code: string, appliesTo?: string | null): boolean {
  * Loads LIVE visible models, active vehicles, and published verified reviews directly
  * from Payload with `overrideAccess: false` for public catalogue/fleet integrity.
  * Never returns internal fields like `licensePlate` or private operational notes.
+ * Propagates real database errors so DB outages map cleanly to AI_DB_UNAVAILABLE.
  */
 async function loadLiveFleetSnapshot(payload: Payload): Promise<LiveFleetSnapshot> {
   const [modelsRes, vehiclesRes, reviewsRes] = await Promise.all([
@@ -82,7 +97,7 @@ async function loadLiveFleetSnapshot(payload: Payload): Promise<LiveFleetSnapsho
       collection: 'vehicle-models',
       overrideAccess: false,
       depth: 1,
-      limit: 100,
+      limit: 200,
       sort: 'sortOrder',
     }),
     payload.find({
@@ -168,8 +183,13 @@ async function loadLiveFleetSnapshot(payload: Payload): Promise<LiveFleetSnapsho
     }
   }
 
+  // Filter strictly to visible catalogue models so Admin hiding a model takes effect immediately
+  const visibleModels = (modelsRes.docs as unknown as Record<string, unknown>[]).filter(
+    (m) => m.visible !== false,
+  )
+
   return {
-    models: modelsRes.docs as unknown as Record<string, unknown>[],
+    models: visibleModels,
     vehicles: vehiclesRes.docs as unknown as Record<string, unknown>[],
     reviewsByModelId,
     mediaById,
@@ -197,30 +217,86 @@ function resolveModelCover(model: Record<string, unknown>): { url: string | null
   return { url: null, alt: name }
 }
 
+function getAllActiveVehiclesForModel(
+  modelId: string,
+  vehicles: Record<string, unknown>[],
+): {
+  rentable: Record<string, unknown>[]
+  maintenanceOrReserved: Record<string, unknown>[]
+  saleEligible: Record<string, unknown>[]
+} {
+  const rentable: Record<string, unknown>[] = []
+  const maintenanceOrReserved: Record<string, unknown>[] = []
+  const saleEligible: Record<string, unknown>[] = []
+
+  for (const v of vehicles) {
+    const mId = String(relationId(v.model as string | { id: string } | null) ?? '')
+    if (mId !== modelId || v.status === 'INACTIVE') continue
+
+    if (
+      (v.intent === 'SALE' || v.intent === 'BOTH') &&
+      v.operationStatus !== 'SOLD' &&
+      v.operationStatus !== 'INACTIVE'
+    ) {
+      saleEligible.push(v)
+    }
+
+    if (v.intent === 'SALE') continue
+    if (v.operationStatus === 'SOLD' || v.operationStatus === 'INACTIVE') continue
+
+    if (v.operationStatus === 'MAINTENANCE' || v.operationStatus === 'RESERVED') {
+      maintenanceOrReserved.push(v)
+      continue
+    }
+    if (v.status === 'ACTIVE') {
+      rentable.push(v)
+    }
+  }
+
+  rentable.sort((a, b) => {
+    const pA = typeof a.pricePerDay === 'number' ? a.pricePerDay : Number.MAX_SAFE_INTEGER
+    const pB = typeof b.pricePerDay === 'number' ? b.pricePerDay : Number.MAX_SAFE_INTEGER
+    return pA - pB
+  })
+
+  return { rentable, maintenanceOrReserved, saleEligible }
+}
+
 function getRentableVehiclesForModel(
   modelId: string,
   vehicles: Record<string, unknown>[],
 ): Record<string, unknown>[] {
-  return vehicles
-    .filter((v) => {
-      const mId = relationId(v.model as string | { id: string } | null)
-      return (
-        String(mId ?? '') === modelId &&
-        v.status === 'ACTIVE' &&
-        v.intent !== 'SALE' &&
-        v.operationStatus !== 'SOLD' &&
-        v.operationStatus !== 'INACTIVE' &&
-        v.operationStatus !== 'MAINTENANCE' &&
-        v.operationStatus !== 'RESERVED'
-      )
-    })
-    .sort((a, b) => {
-      const pA = typeof a.pricePerDay === 'number' ? a.pricePerDay : Number.MAX_SAFE_INTEGER
-      const pB = typeof b.pricePerDay === 'number' ? b.pricePerDay : Number.MAX_SAFE_INTEGER
-      return pA - pB
-    })
+  return getAllActiveVehiclesForModel(modelId, vehicles).rentable
 }
 
+const NON_DISTINCTIVE_BRAND_TOKENS = new Set([
+  'toyota',
+  'honda',
+  'ford',
+  'mitsubishi',
+  'mazda',
+  'hyundai',
+  'kia',
+  'mercedes',
+  'benz',
+  'vinfast',
+  'yamaha',
+  'kawasaki',
+  'suzuki',
+  'nissan',
+  'xe',
+  'o',
+  'to',
+  'may',
+  'ban',
+  'tai',
+])
+
+/**
+ * Precision model + vehicle matcher against LIVE Payload/SQLite data.
+ * - Never matches "Toyota Innova" to "Toyota Fortuner" or "Toyota Vios" just because of "Toyota"!
+ * - Supports exact reference, exact slug, normalized alias/lexicon resolution, and bounded typo tolerance.
+ */
 function findMatchingModelAndVehicle(
   snapshot: LiveFleetSnapshot,
   params: { vehicleId?: string; slug?: string; query?: string },
@@ -228,18 +304,23 @@ function findMatchingModelAndVehicle(
   model: Record<string, unknown> | null
   vehicle: Record<string, unknown> | null
   rentableVehicles: Record<string, unknown>[]
+  maintenanceVehicles: Record<string, unknown>[]
+  saleVehicles: Record<string, unknown>[]
 } {
   if (params.vehicleId) {
     const veh = snapshot.vehicles.find((v) => String(v.id) === params.vehicleId) ?? null
     if (veh) {
       const mId = String(relationId(veh.model as string | { id: string } | null) ?? '')
       const model = snapshot.models.find((m) => String(m.id) === mId) ?? null
+      const grouped = model
+        ? getAllActiveVehiclesForModel(String(model.id), snapshot.vehicles)
+        : { rentable: [], maintenanceOrReserved: [], saleEligible: [] }
       return {
         model,
         vehicle: veh,
-        rentableVehicles: model
-          ? getRentableVehiclesForModel(String(model.id), snapshot.vehicles)
-          : [],
+        rentableVehicles: grouped.rentable,
+        maintenanceVehicles: grouped.maintenanceOrReserved,
+        saleVehicles: grouped.saleEligible,
       }
     }
   }
@@ -249,54 +330,128 @@ function findMatchingModelAndVehicle(
     const model =
       snapshot.models.find((m) => String(m.slug ?? '').toLowerCase() === slugLower) ?? null
     if (model) {
-      const rentables = getRentableVehiclesForModel(String(model.id), snapshot.vehicles)
-      return { model, vehicle: rentables[0] ?? null, rentableVehicles: rentables }
+      const grouped = getAllActiveVehiclesForModel(String(model.id), snapshot.vehicles)
+      return {
+        model,
+        vehicle: grouped.rentable[0] ?? null,
+        rentableVehicles: grouped.rentable,
+        maintenanceVehicles: grouped.maintenanceOrReserved,
+        saleVehicles: grouped.saleEligible,
+      }
     }
   }
 
   if (params.query) {
-    const normQ = stripVietnameseAccents(params.query).toLowerCase().trim()
-    // 1. Exact vehicle reference match
+    const rawQuery = params.query.trim()
+    const normQ = normalizeVietnameseNLU(rawQuery)
+
+    // 1. Exact vehicle reference match (e.g. NR-OT-01)
     const byRef = snapshot.vehicles.find(
-      (v) => stripVietnameseAccents(String(v.reference ?? '')).toLowerCase() === normQ,
+      (v) =>
+        v.status !== 'INACTIVE' &&
+        stripVietnameseAccents(String(v.reference ?? '')).toLowerCase() ===
+          stripVietnameseAccents(rawQuery).toLowerCase(),
     )
     if (byRef) {
       const mId = String(relationId(byRef.model as string | { id: string } | null) ?? '')
       const model = snapshot.models.find((m) => String(m.id) === mId) ?? null
+      const grouped = model
+        ? getAllActiveVehiclesForModel(String(model.id), snapshot.vehicles)
+        : { rentable: [], maintenanceOrReserved: [], saleEligible: [] }
       return {
         model,
         vehicle: byRef,
-        rentableVehicles: model
-          ? getRentableVehiclesForModel(String(model.id), snapshot.vehicles)
-          : [],
+        rentableVehicles: grouped.rentable,
+        maintenanceVehicles: grouped.maintenanceOrReserved,
+        saleVehicles: grouped.saleEligible,
       }
     }
 
-    // 2. Model slug or name match (ranked by token overlap)
-    const tokens = normQ.split(/\s+/).filter((t) => t.length >= 2)
+    // 2. Normalize through automotive lexicon if known (e.g. "fotuner" -> "fortuner", "inova" -> "innova")
+    const lexMatch = matchLexiconModels(rawQuery)[0] ?? null
+    const effectiveQuery = lexMatch ? lexMatch.canonicalQuery : normQ
+
+    // Extract distinctive model tokens (excluding brand-only words if a model token is present)
+    const allTokens = effectiveQuery.split(/\s+/).filter((t) => t.length >= 2)
+    const modelSpecificTokens = allTokens.filter((t) => !NON_DISTINCTIVE_BRAND_TOKENS.has(t))
+    const requiredTokens = modelSpecificTokens.length > 0 ? modelSpecificTokens : allTokens
+
     let bestModel: Record<string, unknown> | null = null
     let bestScore = 0
+
     for (const m of snapshot.models) {
-      const hay = stripVietnameseAccents(
-        `${String(m.name ?? '')} ${String(m.officialName ?? '')} ${String(m.brand ?? '')} ${String(m.slug ?? '')}`,
-      ).toLowerCase()
-      let score = 0
-      if (hay.includes(normQ)) score += 10
-      for (const tok of tokens) {
-        if (hay.includes(tok)) score += 3
+      const nameNorm = normalizeVietnameseNLU(String(m.name ?? ''))
+      const officialNorm = normalizeVietnameseNLU(String(m.officialName ?? ''))
+      const slugNorm = normalizeVietnameseNLU(String(m.slug ?? '').replace(/-/g, ' '))
+      const hay = `${nameNorm} ${officialNorm} ${slugNorm}`.trim()
+      const hayTokens = hay.split(/\s+/).filter((t) => t.length >= 2)
+
+      // Exact phrase match on effectiveQuery
+      const escapedEff = effectiveQuery
+        .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+        .replace(/[-\s]+/g, '[-\\s]?')
+      if (new RegExp(`(?:^|\\b)${escapedEff}(?:\\b|$)`, 'i').test(hay)) {
+        const score = 100 + effectiveQuery.length
+        if (score > bestScore) {
+          bestScore = score
+          bestModel = m
+        }
+        continue
       }
-      if (score > bestScore) {
-        bestScore = score
+
+      // Every distinctive model token must match (exact or close typo) — prevents "Toyota Innova" matching "Toyota Vios"!
+      if (requiredTokens.length === 0) continue
+      let matchedAllRequired = true
+      let tokenScore = 0
+
+      for (const reqTok of requiredTokens) {
+        const exactHit = hayTokens.some((ht) => ht === reqTok)
+        if (exactHit) {
+          tokenScore += 20
+          continue
+        }
+        const fuzzyHit =
+          reqTok.length >= 5 &&
+          hayTokens.some((ht) => {
+            if (ht.length < 5 || ht[0] !== reqTok[0]) return false
+            const dist = editDistance(reqTok, ht)
+            const maxDist = reqTok.length >= 7 ? 2 : 1
+            const sim = 1 - dist / Math.max(reqTok.length, ht.length)
+            return dist <= maxDist && sim >= 0.78
+          })
+        if (fuzzyHit) {
+          tokenScore += 14
+          continue
+        }
+        matchedAllRequired = false
+        break
+      }
+
+      if (matchedAllRequired && tokenScore > bestScore) {
+        bestScore = tokenScore
         bestModel = m
       }
     }
-    if (bestModel && bestScore >= 3) {
-      const rentables = getRentableVehiclesForModel(String(bestModel.id), snapshot.vehicles)
-      return { model: bestModel, vehicle: rentables[0] ?? null, rentableVehicles: rentables }
+
+    if (bestModel && bestScore >= 14) {
+      const grouped = getAllActiveVehiclesForModel(String(bestModel.id), snapshot.vehicles)
+      return {
+        model: bestModel,
+        vehicle: grouped.rentable[0] ?? null,
+        rentableVehicles: grouped.rentable,
+        maintenanceVehicles: grouped.maintenanceOrReserved,
+        saleVehicles: grouped.saleEligible,
+      }
     }
   }
 
-  return { model: null, vehicle: null, rentableVehicles: [] }
+  return {
+    model: null,
+    vehicle: null,
+    rentableVehicles: [],
+    maintenanceVehicles: [],
+    saleVehicles: [],
+  }
 }
 
 function buildBookingUrl(params: {
@@ -330,7 +485,8 @@ function buildCandidateFromModel(
   snapshot: LiveFleetSnapshot,
 ): RecommendationCandidate {
   const modelId = String(model.id)
-  const rentables = getRentableVehiclesForModel(modelId, snapshot.vehicles)
+  const grouped = getAllActiveVehiclesForModel(modelId, snapshot.vehicles)
+  const rentables = grouped.rentable
   const bestVeh = rentables[0] ?? null
   const cover = resolveModelCover(model)
   const rev = snapshot.reviewsByModelId.get(modelId)
@@ -339,10 +495,14 @@ function buildCandidateFromModel(
     .map((v) => v.pricePerDay)
     .filter((p): p is number => typeof p === 'number' && p > 0)
 
+  const demoCount = rentables.filter((v) => v.isDemo !== false).length
+  const realCount = rentables.length - demoCount
+
   return {
     modelId,
     slug: String(model.slug ?? modelId),
     name: String(model.name ?? 'Chưa cập nhật'),
+    officialName: typeof model.officialName === 'string' ? model.officialName : null,
     brand: String(model.brand ?? 'Chưa cập nhật'),
     category: (model.category as 'CAR' | 'MOTORBIKE' | 'PICKUP') ?? 'CAR',
     subCategory: typeof model.subCategory === 'string' ? model.subCategory : null,
@@ -363,7 +523,11 @@ function buildCandidateFromModel(
     bestVehicleId: bestVeh ? String(bestVeh.id) : null,
     bestVehicleReference: bestVeh ? String(bestVeh.reference ?? '') : null,
     availableRentCount: rentables.length,
-    isDemo: rentables.length > 0 ? rentables.some((v) => v.isDemo !== false) : true,
+    maintenanceCount: grouped.maintenanceOrReserved.length,
+    realVehicleCount: realCount,
+    demoVehicleCount: demoCount,
+    // Only mark DEMO if no real commercial vehicle exists among rentable instances
+    isDemo: rentables.length > 0 ? realCount === 0 : true,
     businessActive: model.visible !== false,
     ratingAvg: rev?.avg ?? null,
     ratingCount: rev?.count ?? 0,
@@ -384,17 +548,19 @@ function candidateToVehicleCard(
       ? 'AVAILABLE_REFERENCE'
       : candidate.availableForDates === false
         ? 'UNAVAILABLE'
-        : 'NOT_CHECKED'
+        : candidate.availableRentCount === 0
+          ? 'UNAVAILABLE'
+          : 'NOT_CHECKED'
 
   const availabilityNote =
     candidate.availabilityNote ??
     (availabilityStatus === 'AVAILABLE_REFERENCE'
       ? 'Còn lịch tham khảo trong khoảng ngày đã kiểm tra'
       : availabilityStatus === 'UNAVAILABLE'
-        ? 'Không khả dụng trong khoảng ngày đã chọn'
-        : candidate.availableRentCount > 0
-          ? `Có ${candidate.availableRentCount} xe đang kinh doanh — chọn ngày để kiểm tra lịch`
-          : 'Hiện chưa có xe sẵn sàng cho thuê')
+        ? candidate.availableRentCount === 0
+          ? 'Hiện chưa có xe sẵn sàng cho thuê (đang bảo dưỡng hoặc tạm ngưng)'
+          : 'Không khả dụng trong khoảng ngày đã chọn'
+        : `Có ${candidate.availableRentCount} xe đang kinh doanh — chọn ngày để kiểm tra lịch`)
 
   return {
     modelId: candidate.modelId,
@@ -441,7 +607,6 @@ async function enrichCandidatesWithDateAvailability(
   startDate: string,
   endDate: string,
 ): Promise<void> {
-  // Check top 12 candidates with bounded parallelism to respect SQLite concurrency & latency budgets
   const slice = candidates.slice(0, 12)
   await Promise.all(
     slice.map(async (c) => {
@@ -493,12 +658,8 @@ export async function toolSearchVehicles(
     ) {
       return false
     }
-    if (args.query) {
-      const q = stripVietnameseAccents(args.query).toLowerCase()
-      const hay = stripVietnameseAccents(
-        `${c.name} ${c.brand} ${c.slug} ${c.bodyStyle ?? ''} ${c.usagePurpose ?? ''}`,
-      ).toLowerCase()
-      if (!hay.includes(q)) return false
+    if (args.query && !matchesModelQueryStrict(c, args.query)) {
+      return false
     }
     if (args.minSeats && (c.seats === null || c.seats < args.minSeats)) return false
     if (args.maxPricePerDay && (c.pricePerDay === null || c.pricePerDay > args.maxPricePerDay)) {
@@ -507,22 +668,10 @@ export async function toolSearchVehicles(
     if (args.minPricePerDay && (c.pricePerDay === null || c.pricePerDay < args.minPricePerDay)) {
       return false
     }
-    if (
-      args.fuelType &&
-      (!c.fuelType ||
-        !stripVietnameseAccents(c.fuelType)
-          .toLowerCase()
-          .includes(stripVietnameseAccents(args.fuelType).toLowerCase()))
-    ) {
+    if (args.fuelType && !matchesFuel(c.fuelType, args.fuelType)) {
       return false
     }
-    if (
-      args.transmission &&
-      (!c.transmission ||
-        !stripVietnameseAccents(c.transmission)
-          .toLowerCase()
-          .includes(stripVietnameseAccents(args.transmission).toLowerCase()))
-    ) {
+    if (args.transmission && !matchesTransmission(c.transmission, args.transmission)) {
       return false
     }
     return true
@@ -549,7 +698,7 @@ export async function toolSearchVehicles(
           ? `Giá thuê từ ${formatMoney(c.pricePerDay)}/ngày`
           : 'Giá thuê: Chưa cập nhật',
         c.seats
-          ? `${c.seats} chỗ · ${c.fuelType ?? 'Chưa cập nhật'}`
+          ? `${c.seats} chỗ · ${c.fuelType ?? 'Chưa cập nhật'}${c.transmission ? ` · ${c.transmission}` : ''}`
           : (c.fuelType ?? 'Đang kinh doanh'),
       ],
       score: null,
@@ -563,6 +712,15 @@ export async function toolSearchVehicles(
     noResultFound: cards.length === 0,
     toolOutputForLLM: {
       foundCount: cards.length,
+      appliedFilters: {
+        query: args.query ?? null,
+        brand: args.brand ?? null,
+        category: args.category ?? null,
+        minSeats: args.minSeats ?? null,
+        maxPricePerDay: args.maxPricePerDay ?? null,
+        transmission: args.transmission ?? null,
+        fuelType: args.fuelType ?? null,
+      },
       dateRangeChecked:
         args.startDate && args.endDate
           ? { startDate: args.startDate, endDate: args.endDate }
@@ -583,8 +741,15 @@ export async function toolSearchVehicles(
       })),
       summary:
         cards.length > 0
-          ? `Tìm thấy ${cards.length} phương tiện phù hợp đang kinh doanh tại NORI: ${cards.map((c) => `${c.name} (${formatMoney(c.pricePerDay)}/ngày)`).join(', ')}.`
-          : 'Không tìm thấy phương tiện nào khớp đúng tiêu chí tìm kiếm hiện tại trong đội xe NORI. Bạn có thể mở rộng ngân sách hoặc điều chỉnh điều kiện lọc.',
+          ? `Hiện tại NORI đang có ${cards.length} dòng xe phù hợp tiêu chí của bạn:\n${cards
+              .map(
+                (c, idx) =>
+                  `${idx + 1}. **${c.name}** (${c.seats ? `${c.seats} chỗ` : c.brand}, ${c.transmission ?? c.fuelType ?? 'đang kinh doanh'}) — giá từ **${formatMoney(c.pricePerDay)}/ngày**${c.isDemo ? ' *(DEMO)*' : ''}.`,
+              )
+              .join(
+                '\n',
+              )}\n\nBạn muốn kiểm tra lịch trống hoặc tính báo giá chi tiết cho dòng xe nào?`
+          : `Hiện tại NORI chưa có phương tiện nào đáp ứng đúng tiêu chí bạn vừa chọn${args.brand ? ` (hãng ${args.brand})` : ''}${args.maxPricePerDay ? ` trong mức ngân sách tối đa ${formatMoney(args.maxPricePerDay)}/ngày` : ''}. Bạn có muốn mở rộng ngân sách hoặc điều chỉnh tiêu chí tìm kiếm không?`,
     },
   }
 }
@@ -594,25 +759,114 @@ export async function toolGetVehicleDetails(
   args: ValidatedGetVehicleDetailsArgs,
 ): Promise<AIToolExecutionResult> {
   const snapshot = await loadLiveFleetSnapshot(ctx.payload)
-  const { model, rentableVehicles } = findMatchingModelAndVehicle(snapshot, {
-    slug: args.slug,
-    query: args.query,
-  })
+  const rawLookup = args.query || args.slug || ''
+  const lexInfo =
+    matchLexiconModels(rawLookup)[0] ??
+    AUTOMOTIVE_MODEL_LEXICON.find((e) => e.canonicalQuery === rawLookup.toLowerCase()) ??
+    null
 
+  const { model, rentableVehicles, maintenanceVehicles, saleVehicles } =
+    findMatchingModelAndVehicle(snapshot, {
+      slug: args.slug,
+      query: args.query,
+    })
+
+  // Case 1: Model does NOT exist in NORI's live catalogue
   if (!model) {
+    const displayName = lexInfo?.displayName ?? rawLookup.trim()
+    const impliedCategory = lexInfo?.category ?? null
+    const impliedSeats = lexInfo?.seats ?? null
+
+    // Find up to 3 same-category (and same-seat-tier if known) active alternatives from LIVE DB
+    // without forcing VehicleCards (vehicleCards stays empty per strict anti-padding rule!)
+    const allCandidates = snapshot.models
+      .map((m) => buildCandidateFromModel(m, snapshot))
+      .filter((c) => c.businessActive && c.availableRentCount > 0)
+
+    const sameSegmentAlternatives = impliedCategory
+      ? allCandidates
+          .filter((c) => {
+            if (c.category !== impliedCategory) return false
+            if (impliedSeats && impliedSeats >= 7) return (c.seats ?? 0) >= 7
+            return true
+          })
+          .slice(0, 3)
+      : []
+
+    const altLine =
+      sameSegmentAlternatives.length > 0
+        ? `\n\nNếu bạn đang tìm ${impliedCategory === 'CAR' ? (impliedSeats && impliedSeats >= 7 ? 'ô tô 7 chỗ' : 'ô tô') : impliedCategory === 'PICKUP' ? 'xe bán tải' : 'xe máy'} tương đương, NORI hiện đang cho thuê: ${sameSegmentAlternatives.map((a) => `**${a.name}** (từ ${formatMoney(a.pricePerDay)}/ngày)`).join(', ')}. Bạn có muốn mở rộng tiêu chí để xem các dòng xe này không?`
+        : '\n\nBạn có muốn cho tôi biết nhu cầu sử dụng (loại xe ô tô/xe máy/bán tải, số chỗ ngồi, ngân sách/ngày) để tôi gợi ý dòng xe đang có sẵn tại NORI không?'
+
     return {
+      vehicleCards: [],
       noResultFound: true,
       toolOutputForLLM: {
         found: false,
-        error: 'Không tìm thấy dòng xe này trong catalogue công khai của NORI.',
+        queriedModel: displayName,
+        impliedCategory,
+        impliedSeats,
+        sameSegmentAlternatives: sameSegmentAlternatives.map((a) => ({
+          name: a.name,
+          slug: a.slug,
+          category: a.category,
+          seats: a.seats,
+          pricePerDay: a.pricePerDay ? formatMoney(a.pricePerDay) : 'Chưa cập nhật',
+          detailHref: `/vehicles/${a.slug}`,
+        })),
+        summary: `Hiện tại NORI chưa có dòng xe **${displayName}** trong danh mục cho thuê.${altLine}`,
       },
     }
   }
 
   const candidate = buildCandidateFromModel(model, snapshot)
+
+  // Case 2: Model exists in catalogue, but has 0 active rentable instances (e.g. all in MAINTENANCE or SALE-only)
+  if (rentableVehicles.length === 0) {
+    const statusExplanation =
+      maintenanceVehicles.length > 0
+        ? `Hiện tại dòng xe **${candidate.name}** có trong danh mục của NORI nhưng cả ${maintenanceVehicles.length} xe thực tế đang trong lịch **bảo dưỡng / tạm khóa vận hành**, nên tạm thời chưa thể nhận lịch thuê mới.`
+        : saleVehicles.length > 0
+          ? `Dòng xe **${candidate.name}** hiện đang được NORI mở cho nhu cầu **tư vấn mua xe**, chưa có cá thể xe mở cho thuê theo ngày.`
+          : `Dòng xe **${candidate.name}** có trong danh mục Catalogue của NORI nhưng hiện chưa có cá thể xe thực tế nào ở trạng thái sẵn sàng cho thuê.`
+
+    const unavailableCard = candidateToVehicleCard(candidate, {
+      reasons: [
+        maintenanceVehicles.length > 0
+          ? `Đang bảo dưỡng (${maintenanceVehicles.length} xe)`
+          : 'Tạm chưa có xe mở lịch thuê',
+      ],
+      score: null,
+    })
+
+    return {
+      vehicleCards: [unavailableCard],
+      noResultFound: true,
+      toolOutputForLLM: {
+        found: true,
+        hasRentableInventory: false,
+        maintenanceCount: maintenanceVehicles.length,
+        saleOnlyCount: saleVehicles.length,
+        catalogueModel: {
+          name: candidate.name,
+          slug: candidate.slug,
+          brand: candidate.brand,
+          category: candidate.category,
+          seats: candidate.seats ?? 'Chưa cập nhật',
+          detailHref: unavailableCard.detailHref,
+        },
+        summary: `${statusExplanation} Bạn có muốn tôi gợi ý một dòng xe cùng phân khúc đang sẵn sàng cho thuê không?`,
+      },
+    }
+  }
+
+  // Case 3: Model exists AND has active rentable vehicles!
   const card = candidateToVehicleCard(candidate, {
     reasons: [
-      `Catalogue ${candidate.brand} · ${candidate.availableRentCount} xe thực tế sẵn sàng cho thuê`,
+      candidate.pricePerDay
+        ? `Giá thuê tham khảo từ ${formatMoney(candidate.pricePerDay)}/ngày`
+        : 'Giá thuê: Chưa cập nhật',
+      `Có ${candidate.availableRentCount} xe đang kinh doanh (${candidate.realVehicleCount ? `${candidate.realVehicleCount} xe thực tế` : ''}${candidate.realVehicleCount && candidate.demoVehicleCount ? ', ' : ''}${candidate.demoVehicleCount ? `${candidate.demoVehicleCount} xe DEMO` : ''}) — cần chọn ngày để kiểm tra lịch trống`,
     ],
     score: null,
   })
@@ -629,17 +883,6 @@ export async function toolGetVehicleDetails(
         .filter((f) => f.status === 'EQUIPPED')
         .slice(0, 12)
         .map((f) => sanitizeUntrustedCmsText(f.name, 80))
-    : []
-
-  const variants = Array.isArray(model.variants)
-    ? (model.variants as Array<{ name?: string; year?: number; seats?: number; fuelType?: string }>)
-        .slice(0, 6)
-        .map((v) => ({
-          name: sanitizeUntrustedCmsText(v.name, 80),
-          year: v.year ?? 'Chưa cập nhật',
-          seats: v.seats ?? candidate.seats ?? 'Chưa cập nhật',
-          fuelType: v.fuelType ?? candidate.fuelType ?? 'Chưa cập nhật',
-        }))
     : []
 
   const actualInstances = rentableVehicles.slice(0, 5).map((v) => ({
@@ -659,10 +902,33 @@ export async function toolGetVehicleDetails(
       typeof v.pickupLocation === 'string' && v.pickupLocation ? v.pickupLocation : 'Chưa cập nhật',
   }))
 
+  const minDeposit = rentableVehicles
+    .map((v) => v.depositAmount)
+    .filter((d): d is number => typeof d === 'number' && d >= 0)
+  const depositLabel = minDeposit.length > 0 ? formatVnd(Math.min(...minDeposit)) : 'Chưa cập nhật'
+
+  let durationEstimateNote = ''
+  let estimatedBaseForDuration: number | null = null
+  if (args.durationDays && candidate.pricePerDay) {
+    const discountRate = args.durationDays >= 30 ? 0.12 : args.durationDays >= 7 ? 0.05 : 0
+    const rawBase = candidate.pricePerDay * args.durationDays
+    estimatedBaseForDuration = Math.round(rawBase * (1 - discountRate))
+    durationEstimateNote = `\n\nVới thời lượng **${args.durationDays} ngày**, tiền thuê cơ bản ước tính khoảng **${formatMoney(estimatedBaseForDuration)}** (${formatMoney(candidate.pricePerDay)}/ngày${discountRate > 0 ? `, đã tính ưu đãi dài ngày ${Math.round(discountRate * 100)}%` : ''}, chưa bao gồm phụ phí cuối tuần/ngày lễ nếu có) và tiền ký quỹ đảm bảo tham khảo **${depositLabel}**. Vui lòng cho tôi biết **ngày nhận xe cụ thể** (ví dụ: từ ngày mai hoặc YYYY-MM-DD) để tôi kiểm tra lịch trống thực tế và tính báo giá chính xác!`
+  } else {
+    durationEstimateNote = `\n\nLưu ý: Tôi chưa xác nhận lịch trống vì chưa có ngày thuê cụ thể. Bạn dự kiến **nhận xe và trả xe ngày nào** để tôi kiểm tra lịch trống và tính báo giá chính xác cho bạn?`
+  }
+
+  const demoNotice = candidate.isDemo ? ' *(hiện là bản ghi xe minh họa DEMO)*' : ''
+
   return {
     vehicleCards: [card],
     toolOutputForLLM: {
       found: true,
+      hasRentableInventory: true,
+      requestedDurationDays: args.durationDays ?? null,
+      estimatedBaseForDuration: estimatedBaseForDuration
+        ? formatMoney(estimatedBaseForDuration)
+        : null,
       catalogueModel: {
         name: candidate.name,
         slug: candidate.slug,
@@ -672,22 +938,28 @@ export async function toolGetVehicleDetails(
         seats: candidate.seats ?? 'Chưa cập nhật',
         fuelType: candidate.fuelType ?? 'Chưa cập nhật',
         transmission: candidate.transmission ?? 'Chưa cập nhật',
+        pricePerDayFrom: candidate.pricePerDay
+          ? formatMoney(candidate.pricePerDay)
+          : 'Chưa cập nhật',
+        depositFrom: depositLabel,
         shortDescription:
           sanitizeUntrustedCmsText(candidate.shortDescription, 320) || 'Chưa cập nhật',
-        suitableFor: sanitizeUntrustedCmsText(candidate.suitableFor, 160) || 'Chưa cập nhật',
-        usagePurpose: sanitizeUntrustedCmsText(candidate.usagePurpose, 160) || 'Chưa cập nhật',
         verifiedRating:
           candidate.ratingCount > 0 && candidate.ratingAvg !== null
             ? `${candidate.ratingAvg}/5 (${candidate.ratingCount} đánh giá đã xác minh)`
             : 'Chưa có đánh giá đã xác minh',
         specifications: specs,
         equippedFeatures: features,
-        variants,
         detailHref: card.detailHref,
       },
+      fleetStatusSummary: {
+        rentableCount: rentableVehicles.length,
+        maintenanceCount: maintenanceVehicles.length,
+        realCount: candidate.realVehicleCount ?? 0,
+        demoCount: candidate.demoVehicleCount ?? 0,
+      },
       actualFleetInstances: actualInstances,
-      note: 'Thông tin catalogue là mô tả chung của dòng xe; mỗi cá thể xe thực tế có mã quản lý, ODO, giá thuê và tình trạng riêng. Không cung cấp biển số nội bộ.',
-      summary: `${candidate.name} (${candidate.brand}): ${candidate.seats ?? 'Chưa cập nhật'} chỗ, ${candidate.fuelType ?? 'Chưa cập nhật'}, hộp số ${candidate.transmission ?? 'Chưa cập nhật'}, giá thuê từ ${formatMoney(candidate.pricePerDay)}/ngày. Hiện có ${actualInstances.length} xe thực tế sẵn sàng.`,
+      summary: `NORI hiện **có kinh doanh dòng xe ${candidate.name}** (${candidate.brand}): ${candidate.seats ? `${candidate.seats} chỗ` : 'Chưa cập nhật số chỗ'}, nhiên liệu ${candidate.fuelType ?? 'Chưa cập nhật'}, hộp số ${candidate.transmission ?? 'Chưa cập nhật'}, giá thuê từ **${formatMoney(candidate.pricePerDay)}/ngày** (ký quỹ tham khảo: ${depositLabel}). Hiện có **${rentableVehicles.length} xe** đang mở cho thuê${demoNotice}${maintenanceVehicles.length > 0 ? ` và ${maintenanceVehicles.length} xe đang bảo dưỡng` : ''}.${durationEstimateNote}`,
     },
   }
 }
@@ -697,17 +969,26 @@ export async function toolCheckAvailability(
   args: ValidatedCheckAvailabilityArgs,
 ): Promise<AIToolExecutionResult> {
   const snapshot = await loadLiveFleetSnapshot(ctx.payload)
-  const { model, vehicle, rentableVehicles } = findMatchingModelAndVehicle(snapshot, {
-    vehicleId: args.vehicleId,
-    query: args.vehicleQuery,
-  })
+  const rawLookup = args.vehicleQuery || ''
+  const lexInfo = matchLexiconModels(rawLookup)[0] ?? null
+  const { model, vehicle, rentableVehicles, maintenanceVehicles } = findMatchingModelAndVehicle(
+    snapshot,
+    {
+      vehicleId: args.vehicleId,
+      query: args.vehicleQuery,
+    },
+  )
 
   if (!model) {
+    const displayName = lexInfo?.displayName ?? (rawLookup.trim() || 'phương tiện này')
     return {
+      vehicleCards: [],
       noResultFound: true,
       toolOutputForLLM: {
         available: false,
-        error: 'Không tìm thấy phương tiện khớp yêu cầu trong hệ thống NORI.',
+        queriedModel: displayName,
+        error: `Hiện tại NORI chưa có dòng xe **${displayName}** trong danh mục cho thuê nên không thể kiểm tra lịch trống.`,
+        summary: `Hiện tại NORI chưa có dòng xe **${displayName}** trong danh mục cho thuê. Bạn có muốn kiểm tra lịch trống của một dòng xe tương đương đang có tại NORI trong khoảng ${args.startDate} → ${args.endDate} không?`,
       },
     }
   }
@@ -722,8 +1003,9 @@ export async function toolCheckAvailability(
         startDate: args.startDate,
         endDate: args.endDate,
         reasonCode: 'NO_ACTIVE_INVENTORY',
+        maintenanceCount: maintenanceVehicles.length,
         reason: `Dòng xe ${String(model.name)} hiện không có cá thể xe nào ở trạng thái sẵn sàng cho thuê.`,
-        summary: `${String(model.name)} hiện không còn xe sẵn sàng cho thuê (có thể đang bảo dưỡng, đã bán hoặc tạm ngừng cung cấp).`,
+        summary: `**${String(model.name)}** hiện không còn xe sẵn sàng cho thuê${maintenanceVehicles.length > 0 ? ' (xe đang trong lịch bảo dưỡng)' : ' (đang bảo dưỡng, đã bán hoặc tạm ngừng cung cấp)'}.`,
       },
     }
   }
@@ -798,8 +1080,8 @@ export async function toolCheckAvailability(
       disclaimer:
         'Kết quả khả dụng chỉ mang tính tham khảo tại thời điểm tra cứu. Hệ thống Checkout sẽ kiểm tra lại nguyên tử khi tạo đơn để chống đặt trùng xe.',
       summary: availableResult?.available
-        ? `${candidate.name} (mã ${String(chosenVehicle?.reference ?? '')}) hiện còn trống tham khảo từ ${args.startDate} đến ${args.endDate} (${availableResult.quote?.totalDays} ngày, dự kiến ${formatMoney(availableResult.quote?.estimatedTotal)}). Kết quả mang tính tham khảo và sẽ được xác thực lại tại bước Checkout.`
-        : `${candidate.name} không khả dụng từ ${args.startDate} đến ${args.endDate}. Lý do: ${lastFailReason}`,
+        ? `**${candidate.name}** (mã ${String(chosenVehicle?.reference ?? '')}${chosenVehicle?.isDemo !== false ? ', DEMO' : ''}) hiện **còn trống tham khảo** từ **${args.startDate}** đến **${args.endDate}** (${availableResult.quote?.totalDays} ngày, tổng tiền thuê dự kiến **${formatMoney(availableResult.quote?.estimatedTotal)}**). Kết quả mang tính tham khảo và sẽ được xác thực nguyên tử tại bước Checkout.`
+        : `**${candidate.name}** hiện **không khả dụng** từ ${args.startDate} đến ${args.endDate}. Lý do: ${lastFailReason}`,
     },
   }
 }
@@ -809,18 +1091,40 @@ export async function toolCalculateRentalPrice(
   args: ValidatedCalculateRentalPriceArgs,
 ): Promise<AIToolExecutionResult> {
   const snapshot = await loadLiveFleetSnapshot(ctx.payload)
-  const { model, vehicle, rentableVehicles } = findMatchingModelAndVehicle(snapshot, {
-    vehicleId: args.vehicleId,
-    query: args.vehicleQuery,
-  })
+  const rawLookup = args.vehicleQuery || ''
+  const lexInfo = matchLexiconModels(rawLookup)[0] ?? null
+  const { model, vehicle, rentableVehicles, maintenanceVehicles } = findMatchingModelAndVehicle(
+    snapshot,
+    {
+      vehicleId: args.vehicleId,
+      query: args.vehicleQuery,
+    },
+  )
+
+  if (!model) {
+    const displayName = lexInfo?.displayName ?? (rawLookup.trim() || 'phương tiện này')
+    return {
+      vehicleCards: [],
+      noResultFound: true,
+      toolOutputForLLM: {
+        ok: false,
+        queriedModel: displayName,
+        error: `Hiện tại NORI chưa có dòng xe **${displayName}** trong danh mục cho thuê nên chưa thể tính báo giá.`,
+        summary: `Hiện tại NORI chưa có dòng xe **${displayName}** trong danh mục cho thuê nên chưa thể tính báo giá. Bạn có muốn tính báo giá cho một dòng xe khác đang kinh doanh tại NORI không?`,
+      },
+    }
+  }
 
   const chosen = vehicle ?? rentableVehicles[0] ?? null
-  if (!model || !chosen) {
+  if (!chosen) {
     return {
       noResultFound: true,
       toolOutputForLLM: {
         ok: false,
-        error: 'Không tìm thấy phương tiện đang kinh doanh khớp yêu cầu để tính báo giá.',
+        modelName: String(model.name),
+        maintenanceCount: maintenanceVehicles.length,
+        error: `Dòng xe **${String(model.name)}** hiện không có cá thể xe sẵn sàng cho thuê${maintenanceVehicles.length > 0 ? ' (đang bảo dưỡng)' : ''} nên chưa thể lập báo giá.`,
+        summary: `Dòng xe **${String(model.name)}** hiện đang tạm ngưng hoặc trong lịch bảo dưỡng nên chưa có xe sẵn sàng để tính báo giá thuê.`,
       },
     }
   }
@@ -844,6 +1148,8 @@ export async function toolCalculateRentalPrice(
         ok: false,
         modelName: String(model.name),
         reason: evalRes.reason ?? 'Giá thuê của xe chưa được cập nhật.',
+        summary:
+          evalRes.reason ?? `Giá thuê của **${String(model.name)}** hiện chưa được cập nhật.`,
       },
     }
   }
@@ -903,8 +1209,8 @@ export async function toolCalculateRentalPrice(
     reasons: [
       `Tổng dự kiến ${q.totalDays} ngày: ${formatMoney(q.estimatedTotal)}`,
       q.depositAmount > 0
-        ? `Tiền cọc đảm bảo: ${formatVnd(q.depositAmount)}`
-        : 'Cọc: Chưa cập nhật',
+        ? `Tiền ký quỹ đảm bảo: ${formatVnd(q.depositAmount)}`
+        : 'Ký quỹ: Chưa cập nhật',
     ],
     score: null,
     startDate: args.startDate,
@@ -936,7 +1242,7 @@ export async function toolCalculateRentalPrice(
         price: formatMoney(a.price),
         perDay: a.perDay,
       })),
-      summary: `Báo giá dự kiến cho ${quoteSummary.modelName} (${quoteSummary.vehicleReference}) từ ${args.startDate} đến ${args.endDate} (${q.totalDays} ngày): Đơn giá ${formatMoney(q.dailyPrice)}/ngày, tổng tiền thuê dự kiến ${formatMoney(q.estimatedTotal)}, tiền cọc đảm bảo ${formatVnd(q.depositAmount)}. ${evalRes.available ? 'Xe hiện còn trống tham khảo.' : `Lưu ý: ${evalRes.reason ?? 'Xe không trống trong lịch này.'}`}${evalRes.promoEval ? ` Khuyến mãi: ${evalRes.promoEval.message}` : ''}`,
+      summary: `Báo giá dự kiến cho **${quoteSummary.modelName}** (${quoteSummary.vehicleReference}) từ **${args.startDate}** đến **${args.endDate}** (**${q.totalDays} ngày**): Đơn giá **${formatMoney(q.dailyPrice)}/ngày**, tổng tiền thuê dự kiến **${formatMoney(q.estimatedTotal)}**, tiền ký quỹ bảo đảm tài sản **${formatVnd(q.depositAmount)}**. ${evalRes.available ? 'Xe hiện còn trống tham khảo.' : `Lưu ý: ${evalRes.reason ?? 'Xe không trống trong lịch này.'}`}${evalRes.promoEval ? ` Khuyến mãi: ${evalRes.promoEval.message}` : ''}`,
     },
   }
 }
@@ -953,7 +1259,7 @@ export async function toolGetActivePromotions(
         toolOutputForLLM: {
           valid: false,
           code: args.code,
-          summary: `Mã khuyến mãi "${args.code}" không tồn tại trong danh sách ưu đãi công khai của NORI.`,
+          summary: `Mã khuyến mãi **${args.code}** không tồn tại trong danh sách ưu đãi công khai của NORI.`,
         },
       }
     }
@@ -973,7 +1279,7 @@ export async function toolGetActivePromotions(
           valid: false,
           code: args.code,
           status: 'NOT_FOUND',
-          summary: `Mã giảm giá "${args.code}" không tồn tại trong hệ thống NORI. Bạn có thể kiểm tra danh sách ưu đãi công khai đang hiệu lực.`,
+          summary: `Mã giảm giá **${args.code}** không tồn tại trong hệ thống NORI. Bạn có thể xem các chương trình ưu đãi công khai đang hiệu lực.`,
         },
       }
     }
@@ -998,8 +1304,8 @@ export async function toolGetActivePromotions(
             : 'Không giới hạn',
         message: evalRes.message,
         summary: evalRes.valid
-          ? `Mã ${promo.code} (${promo.name}) đang có hiệu lực: ${promo.discountType === 'PERCENT' ? `giảm ${promo.discountValue}%` : `giảm ${formatMoney(promo.discountValue)}`}, áp dụng từ ${promo.minDays ?? 1} ngày thuê.`
-          : `Mã ${promo.code} hiện chưa thể áp dụng: ${evalRes.message}`,
+          ? `Mã **${promo.code}** (${promo.name}) đang có hiệu lực: ${promo.discountType === 'PERCENT' ? `giảm ${promo.discountValue}%${promo.maxDiscount ? ` (tối đa ${formatMoney(promo.maxDiscount)})` : ''}` : `giảm ${formatMoney(promo.discountValue)}`}, áp dụng cho đơn từ **${promo.minDays ?? 1} ngày thuê**.`
+          : `Mã **${promo.code}** hiện chưa thể áp dụng: ${evalRes.message}`,
       },
     }
   }
@@ -1065,8 +1371,8 @@ export async function toolGetActivePromotions(
       promotions: validPromos,
       summary:
         validPromos.length > 0
-          ? `NORI hiện có ${validPromos.length} chương trình ưu đãi công khai đang hiệu lực: ${validPromos.map((p) => `${p.code} (${p.name} — ${p.discountLabel}, từ ${p.minDays} ngày)`).join('; ')}.`
-          : 'Hiện tại chưa có chương trình khuyến mãi công khai nào đang có hiệu lực. Lưu ý NORI vẫn áp dụng chiết khấu thuê dài ngày (5% từ 7 ngày, 12% từ 30 ngày).',
+          ? `NORI hiện có **${validPromos.length} chương trình ưu đãi** công khai đang hiệu lực:\n${validPromos.map((p) => `- **${p.code}** (${p.name}): ${p.discountLabel}, áp dụng từ ${p.minDays} ngày thuê.`).join('\n')}`
+          : 'Hiện tại chưa có mã khuyến mãi công khai nào đang mở. Tuy nhiên NORI vẫn tự động áp dụng **chiết khấu thuê dài ngày** (giảm **5%** từ 7 ngày, giảm **12%** từ 30 ngày).',
     },
   }
 }
@@ -1077,6 +1383,7 @@ export async function toolCompareVehicles(
 ): Promise<AIToolExecutionResult> {
   const snapshot = await loadLiveFleetSnapshot(ctx.payload)
   const matchedModels: Record<string, unknown>[] = []
+  const missingQueries: string[] = []
   const seenIds = new Set<string>()
 
   for (const slug of args.slugs) {
@@ -1084,6 +1391,8 @@ export async function toolCompareVehicles(
     if (res.model && !seenIds.has(String(res.model.id))) {
       seenIds.add(String(res.model.id))
       matchedModels.push(res.model)
+    } else if (!res.model) {
+      missingQueries.push(slug)
     }
   }
   for (const query of args.queries) {
@@ -1091,15 +1400,23 @@ export async function toolCompareVehicles(
     if (res.model && !seenIds.has(String(res.model.id))) {
       seenIds.add(String(res.model.id))
       matchedModels.push(res.model)
+    } else if (!res.model) {
+      missingQueries.push(query)
     }
   }
 
   if (matchedModels.length < 2) {
+    const missingNote =
+      missingQueries.length > 0
+        ? ` Dòng xe chưa có trong danh mục NORI: **${missingQueries.join(', ')}**.`
+        : ''
     return {
       noResultFound: true,
       toolOutputForLLM: {
         ok: false,
-        error: 'Cần tìm thấy ít nhất 2 dòng xe thực tế trong hệ thống NORI để so sánh.',
+        missingQueries,
+        error: `Cần tìm thấy ít nhất 2 dòng xe đang kinh doanh trong hệ thống NORI để lập bảng so sánh.${missingNote}`,
+        summary: `Chưa đủ 2 dòng xe thực tế trong danh mục NORI để so sánh trực tiếp.${missingNote} Bạn có thể chọn so sánh giữa các mẫu xe đang có sẵn như Toyota Fortuner, Mitsubishi Xpander, Honda CR-V hoặc VinFast VF 8.`,
       },
     }
   }
@@ -1218,7 +1535,8 @@ export async function toolCompareVehicles(
     toolOutputForLLM: {
       ok: true,
       comparison,
-      summary: `Bảng so sánh dữ liệu thực tế giữa ${candidates.map((c) => `${c.name} (${formatMoney(c.pricePerDay)}/ngày)`).join(' và ')}. Các mục chưa có dữ liệu được ghi rõ là "Chưa cập nhật".`,
+      missingQueries,
+      summary: `Bảng so sánh dữ liệu thực tế giữa ${candidates.map((c) => `**${c.name}** (${formatMoney(c.pricePerDay)}/ngày)`).join(' và ')}.${missingQueries.length > 0 ? ` Lưu ý: chưa tìm thấy **${missingQueries.join(', ')}** trong danh mục NORI.` : ''}`,
     },
   }
 }
@@ -1227,6 +1545,10 @@ export async function toolGetRentalPolicy(
   ctx: AIToolExecutionContext,
   args: ValidatedGetRentalPolicyArgs,
 ): Promise<AIToolExecutionResult> {
+  const normQ = normalizeVietnameseNLU(args.query)
+  const isUnpublishedCrossBorder =
+    /\b(qua bien gioi|sang lao|sang campuchia|xuat canh|di nuoc ngoai)\b/.test(normQ)
+
   const { chunks, citations, contactInfo } = await retrieveNoriKnowledge(ctx.payload, {
     query: args.query,
     topic: args.topic,
@@ -1234,7 +1556,7 @@ export async function toolGetRentalPolicy(
     limit: 5,
   })
 
-  if (chunks.length === 0) {
+  if (chunks.length === 0 || isUnpublishedCrossBorder) {
     return {
       noResultFound: true,
       citations: [
@@ -1248,7 +1570,7 @@ export async function toolGetRentalPolicy(
       toolOutputForLLM: {
         found: false,
         contactInfo,
-        summary: `Chưa tìm thấy nội dung công bố chính thức cho câu hỏi này trong hệ thống NORI. Vui lòng liên hệ NORI qua trang Hỗ trợ (/support), Hotline: ${contactInfo.phone}, Email: ${contactInfo.email}.`,
+        summary: `Hiện tại **chưa có thông tin công bố chính thức** cho nội dung này trong quy định trực tuyến của NORI. Bạn vui lòng liên hệ trực tiếp đội ngũ hỗ trợ NORI qua trang Hỗ trợ (/support), Hotline: **${contactInfo.phone}** hoặc Email: **${contactInfo.email}** để được xác nhận cụ thể.`,
       },
     }
   }
@@ -1268,8 +1590,8 @@ export async function toolGetRentalPolicy(
       contactInfo,
       summary: chunks
         .slice(0, 3)
-        .map((c) => `${c.title}: ${c.content}`)
-        .join('\n\n'),
+        .map((c) => `- **${c.title}**: ${c.content}`)
+        .join('\n'),
     },
   }
 }
@@ -1278,13 +1600,32 @@ export async function toolRecommendVehicles(
   ctx: AIToolExecutionContext,
   args: ValidatedRecommendVehiclesArgs,
 ): Promise<AIToolExecutionResult> {
-  const snapshot = await loadLiveFleetSnapshot(ctx.payload)
   const parsedIntent = extractStructuredIntent(args.userQuery)
 
+  // Safety guard: if a specific vehicle model was actually asked in `userQuery` without generic recommendation intent,
+  // route to `toolGetVehicleDetails` first so we answer directly about that model instead of suggesting random vehicles!
+  if (
+    parsedIntent.modelQuery &&
+    parsedIntent.intentType === 'VEHICLE_LOOKUP' &&
+    !args.maxBudgetPerDay &&
+    !args.seats
+  ) {
+    return toolGetVehicleDetails(ctx, {
+      query: parsedIntent.modelQuery,
+      durationDays: parsedIntent.durationDays ?? undefined,
+    })
+  }
+
+  const snapshot = await loadLiveFleetSnapshot(ctx.payload)
+
   const effectiveCategory = args.category ?? parsedIntent.category
+  const effectiveBrand = args.brand ?? parsedIntent.brand
   const effectiveSeats = args.seats ?? parsedIntent.minSeats
   const effectiveBudget = args.maxBudgetPerDay ?? parsedIntent.maxBudgetPerDay
-  const effectiveStrictBudget = args.strictBudget || parsedIntent.strictBudget
+  const effectiveStrictBudget =
+    effectiveBudget !== null && effectiveBudget !== undefined
+      ? args.strictBudget !== false || parsedIntent.strictBudget
+      : false
   const effectiveFuel = args.fuelType ?? parsedIntent.fuelType
   const effectiveTrans = args.transmission ?? parsedIntent.transmission
   const effectivePurpose = args.purpose ?? parsedIntent.purpose
@@ -1306,8 +1647,9 @@ export async function toolRecommendVehicles(
   const engineRes = recommendVehiclesEngine(
     candidates,
     {
+      modelQuery: parsedIntent.modelQuery,
       category: effectiveCategory,
-      brand: parsedIntent.brand,
+      brand: effectiveBrand,
       minSeats: effectiveSeats,
       maxBudgetPerDay: effectiveBudget,
       strictBudget: effectiveStrictBudget,
@@ -1329,6 +1671,19 @@ export async function toolRecommendVehicles(
     }),
   )
 
+  const criteriaLabels: string[] = []
+  if (effectiveCategory === 'CAR') criteriaLabels.push('ô tô')
+  else if (effectiveCategory === 'MOTORBIKE') criteriaLabels.push('xe máy')
+  else if (effectiveCategory === 'PICKUP') criteriaLabels.push('bán tải')
+  if (effectiveBrand) criteriaLabels.push(`hãng ${effectiveBrand}`)
+  if (effectiveSeats) criteriaLabels.push(`từ ${effectiveSeats} chỗ`)
+  if (effectiveTrans) criteriaLabels.push(`hộp số ${effectiveTrans.toLowerCase()}`)
+  if (effectiveFuel) criteriaLabels.push(`nhiên liệu ${effectiveFuel}`)
+  if (effectiveBudget) criteriaLabels.push(`ngân sách tối đa ${formatMoney(effectiveBudget)}/ngày`)
+  if (effectiveStartDate && effectiveEndDate) {
+    criteriaLabels.push(`lịch ${effectiveStartDate} → ${effectiveEndDate}`)
+  }
+
   return {
     vehicleCards: cards,
     noResultFound: cards.length === 0,
@@ -1337,6 +1692,7 @@ export async function toolRecommendVehicles(
       weightsUsed: engineRes.weightsUsed,
       appliedCriteria: {
         category: effectiveCategory,
+        brand: effectiveBrand,
         seats: effectiveSeats,
         maxBudgetPerDay: effectiveBudget,
         strictBudget: effectiveStrictBudget,
@@ -1374,13 +1730,13 @@ export async function toolRecommendVehicles(
       })),
       summary:
         cards.length > 0
-          ? `Dựa trên nhu cầu của bạn, NORI đề xuất ${cards.length} phương tiện phù hợp nhất:\n${cards
+          ? `Dựa trên yêu cầu của bạn${criteriaLabels.length > 0 ? ` (${criteriaLabels.join(', ')})` : ''}, NORI đề xuất **${cards.length} phương tiện** phù hợp:\n${cards
               .map(
                 (c, i) =>
-                  `${i + 1}. **${c.name}** — ${formatMoney(c.pricePerDay)}/ngày${c.estimatedTotal ? ` (dự kiến ${formatMoney(c.estimatedTotal)}/${c.totalDays} ngày)` : ''}${c.isDemo ? ' [DEMO]' : ''}: ${c.reasons.slice(0, 2).join('; ')}.`,
+                  `${i + 1}. **${c.name}** — **${formatMoney(c.pricePerDay)}/ngày**${c.estimatedTotal ? ` (dự kiến ${formatMoney(c.estimatedTotal)}/${c.totalDays} ngày)` : ''}${c.isDemo ? ' *(DEMO)*' : ''}: ${c.reasons.slice(0, 2).join('; ')}.`,
               )
               .join('\n')}`
-          : 'Hiện chưa tìm thấy phương tiện đáp ứng đầy đủ toàn bộ tiêu chí nghiêm ngặt bạn yêu cầu trong đội xe NORI. Bạn có thể nới lỏng ngân sách, thay đổi khoảng ngày thuê hoặc xem toàn bộ danh mục tại /vehicles.',
+          : `Hiện tại NORI chưa có phương tiện nào đáp ứng đồng thời toàn bộ điều kiện bắt buộc của bạn${criteriaLabels.length > 0 ? ` (${criteriaLabels.join(', ')})` : ''}. Bạn có muốn mở rộng ngân sách, đổi khoảng ngày thuê hoặc điều chỉnh tiêu chí để tôi tìm phương án gần nhất không?`,
     },
   }
 }
@@ -1390,6 +1746,18 @@ export async function toolPrepareBooking(
   args: ValidatedPrepareBookingArgs,
 ): Promise<AIToolExecutionResult> {
   const snapshot = await loadLiveFleetSnapshot(ctx.payload)
+  const rawLookup = args.vehicleQuery || args.modelSlug || ''
+  if (!args.vehicleId && !rawLookup.trim()) {
+    return {
+      toolOutputForLLM: {
+        readyForCheckout: false,
+        summary:
+          'Để đặt thuê xe trên NORI, bạn thực hiện 3 bước đơn giản:\n1. Chọn dòng xe phù hợp tại trang **Tìm xe** (`/vehicles`) hoặc cho tôi biết tên dòng xe bạn muốn thuê.\n2. Chọn **ngày nhận xe** và **ngày trả xe** (1–30 ngày) để hệ thống kiểm tra lịch trống.\n3. Nhấn **Đặt xe** để chuyển sang trang **Checkout**, kiểm tra chi tiết báo giá & ký quỹ và xác nhận tạo đơn `PENDING` (chưa thu tiền ngay).',
+      },
+    }
+  }
+
+  const lexInfo = matchLexiconModels(rawLookup)[0] ?? null
   const { model, vehicle, rentableVehicles } = findMatchingModelAndVehicle(snapshot, {
     vehicleId: args.vehicleId,
     slug: args.modelSlug,
@@ -1397,11 +1765,13 @@ export async function toolPrepareBooking(
   })
 
   if (!model) {
+    const displayName = lexInfo?.displayName ?? rawLookup.trim()
     return {
       noResultFound: true,
       toolOutputForLLM: {
         readyForCheckout: false,
-        error: 'Không tìm thấy phương tiện hợp lệ để chuẩn bị đặt thuê.',
+        error: `Hiện tại NORI chưa có dòng xe **${displayName}** trong danh mục nên chưa thể chuẩn bị đặt thuê.`,
+        summary: `Hiện tại NORI chưa có dòng xe **${displayName}** trong danh mục cho thuê. Bạn có thể chọn một dòng xe khác đang có sẵn tại trang Tìm xe (/vehicles).`,
       },
     }
   }
@@ -1429,7 +1799,7 @@ export async function toolPrepareBooking(
       bookingHandoff: handoff,
       toolOutputForLLM: {
         ...handoff,
-        summary: `${modelName} hiện chưa có xe thực tế sẵn sàng cho thuê. Bạn có thể xem thông tin dòng xe tại ${handoff.targetUrl}.`,
+        summary: `**${modelName}** hiện chưa có xe thực tế sẵn sàng cho thuê (đang bảo dưỡng hoặc tạm ngưng). Bạn có thể xem thông tin dòng xe tại ${handoff.targetUrl}.`,
       },
     }
   }
@@ -1498,8 +1868,228 @@ export async function toolPrepareBooking(
     toolOutputForLLM: {
       ...handoff,
       summary: readyForCheckout
-        ? `Tôi đã chuẩn bị liên kết Checkout cho ${modelName} (${handoff.vehicleReference}) từ ${args.startDate} đến ${args.endDate}. Lưu ý tôi không tự tạo đơn hay thu tiền — bạn hãy nhấn "Chuyển đến trang Checkout" để kiểm tra lại và tự xác nhận đặt thuê.`
-        : handoff.note,
+        ? `Tôi đã chuẩn bị liên kết Checkout cho **${modelName}** (${handoff.vehicleReference}) từ **${args.startDate}** đến **${args.endDate}**. Lưu ý tôi không tự tạo đơn hay thu tiền — bạn hãy nhấn **Chuyển đến trang Checkout** bên dưới để kiểm tra lại và tự xác nhận đặt thuê.`
+        : `Để đặt thuê **${modelName}**, ${handoff.note.charAt(0).toLowerCase()}${handoff.note.slice(1)}`,
+    },
+  }
+}
+
+export async function toolGetCustomerBookingStatus(
+  ctx: AIToolExecutionContext,
+  args: ValidatedGetCustomerBookingStatusArgs,
+): Promise<AIToolExecutionResult> {
+  // Strict ownership & authentication guard
+  if (!ctx.user || ctx.user.collection !== 'users' || !ctx.user.id) {
+    return {
+      citations: [
+        {
+          title: 'Tra cứu đơn thuê của tôi',
+          sourceType: 'POLICY',
+          href: '/my-bookings',
+          excerpt: 'Đăng nhập tài khoản khách hàng NORI để xem trạng thái đơn thuê và thanh toán.',
+        },
+      ],
+      toolOutputForLLM: {
+        authenticated: false,
+        summary:
+          'Để bảo mật thông tin cá nhân, tôi chỉ có thể tra cứu trạng thái đơn thuê khi bạn **đã đăng nhập tài khoản khách hàng NORI**. Vui lòng đăng nhập tại `/login` hoặc truy cập trực tiếp trang **Đơn thuê của tôi** (`/my-bookings`).',
+      },
+    }
+  }
+
+  const whereClause = args.bookingKey
+    ? {
+        and: [{ customer: { equals: ctx.user.id } }, { bookingKey: { equals: args.bookingKey } }],
+      }
+    : { customer: { equals: ctx.user.id } }
+
+  const bookingsRes = await ctx.payload.find({
+    collection: 'bookings',
+    overrideAccess: false,
+    user: { id: ctx.user.id, collection: 'users' } as never,
+    depth: 1,
+    limit: args.limit,
+    sort: '-createdAt',
+    where: whereClause as never,
+  })
+
+  // Defense-in-depth ownership check in memory in addition to Payload `where` + `overrideAccess: false`
+  const ownedDocs = bookingsRes.docs.filter((b) => {
+    const rec = b as unknown as Record<string, unknown>
+    const ownerId = relationId(rec.customer as string | { id: string } | null)
+    const keyMatches = !args.bookingKey || String(rec.bookingKey ?? '') === args.bookingKey
+    return String(ownerId ?? '') === String(ctx.user!.id) && keyMatches
+  })
+
+  if (ownedDocs.length === 0) {
+    return {
+      noResultFound: true,
+      citations: [
+        {
+          title: 'Quản lý đơn thuê của tôi',
+          sourceType: 'POLICY',
+          href: '/my-bookings',
+          excerpt: 'Xem toàn bộ lịch sử đơn thuê và trạng thái thanh toán của tài khoản hiện tại.',
+        },
+      ],
+      toolOutputForLLM: {
+        authenticated: true,
+        foundCount: 0,
+        bookingKeyQueried: args.bookingKey ?? null,
+        summary: args.bookingKey
+          ? `Không tìm thấy đơn thuê mã **${args.bookingKey}** thuộc tài khoản của bạn (vì lý do bảo mật, hệ thống không truy xuất đơn của tài khoản khác). Bạn có thể kiểm tra lại tại mục **Đơn thuê của tôi** (\`/my-bookings\`).`
+          : 'Tài khoản của bạn hiện chưa có đơn thuê xe nào trên NORI. Bạn muốn tôi tư vấn dòng xe phù hợp cho chuyến đi sắp tới không?',
+      },
+    }
+  }
+
+  const items = ownedDocs.map((b) => {
+    const rec = b as unknown as Record<string, unknown>
+    const vehObj =
+      rec.vehicle && typeof rec.vehicle === 'object'
+        ? (rec.vehicle as Record<string, unknown>)
+        : null
+    const statusCode = String(rec.status ?? 'PENDING')
+    const statusLabel = bookingStatusLabels[statusCode] ?? statusCode
+    const paySummaryCode = String(rec.paymentSummaryStatus ?? 'UNPAID')
+    const payLabel = paymentSummaryLabels[paySummaryCode] ?? paySummaryCode
+    return {
+      bookingKey: String(rec.bookingKey ?? rec.id),
+      vehicleLabel: String(rec.vehicleNameSnapshot ?? vehObj?.reference ?? 'Phương tiện NORI'),
+      startDate: String(rec.startDate ?? ''),
+      endDate: String(rec.endDate ?? ''),
+      totalPrice:
+        typeof rec.totalPrice === 'number' ? formatMoney(rec.totalPrice) : 'Chưa cập nhật',
+      status: statusCode,
+      statusLabel,
+      paymentStatusLabel: payLabel,
+    }
+  })
+
+  return {
+    citations: [
+      {
+        title: 'Chi tiết & thao tác đơn thuê (/my-bookings)',
+        sourceType: 'POLICY',
+        href: '/my-bookings',
+        excerpt: 'Xem chi tiết hợp đồng, thanh toán đặt cọc hoặc quản lý đơn thuê.',
+      },
+    ],
+    toolOutputForLLM: {
+      authenticated: true,
+      foundCount: items.length,
+      bookings: items,
+      summary: `Tôi tìm thấy **${items.length} đơn thuê** gần nhất của tài khoản bạn:\n${items
+        .map(
+          (it) =>
+            `- **${it.bookingKey}** (${it.vehicleLabel}, ${it.startDate} → ${it.endDate}): Trạng thái **${it.statusLabel}** · Thanh toán: ${it.paymentStatusLabel} · Tổng tiền thuê: ${it.totalPrice}.`,
+        )
+        .join(
+          '\n',
+        )}\n\nBạn có thể mở trang **Đơn thuê của tôi** (\`/my-bookings\`) để xem chi tiết hoặc thực hiện các thao tác được phép.`,
+    },
+  }
+}
+
+export async function toolGetPurchaseConsultationInfo(
+  ctx: AIToolExecutionContext,
+  args: ValidatedGetPurchaseConsultationArgs,
+): Promise<AIToolExecutionResult> {
+  const [snapshot, knowledge] = await Promise.all([
+    loadLiveFleetSnapshot(ctx.payload),
+    retrieveNoriKnowledge(ctx.payload, {
+      query: 'mua xe lái thử tư vấn mua',
+      topic: 'CONDITIONS',
+      knowledgeNote: ctx.knowledgeNote,
+      limit: 3,
+    }),
+  ])
+
+  const modelById = new Map(snapshot.models.map((m) => [String(m.id), m]))
+  const saleVehicles = snapshot.vehicles.filter((v) => {
+    if (
+      v.status === 'INACTIVE' ||
+      v.operationStatus === 'SOLD' ||
+      v.operationStatus === 'INACTIVE'
+    ) {
+      return false
+    }
+    if (v.intent !== 'SALE' && v.intent !== 'BOTH') return false
+    const mId = String(relationId(v.model as string | { id: string } | null) ?? '')
+    const m = modelById.get(mId)
+    if (!m) return false
+    if (args.category && m.category !== args.category) return false
+    if (args.query) {
+      const cand = buildCandidateFromModel(m, snapshot)
+      if (!matchesModelQueryStrict(cand, args.query)) return false
+    }
+    return true
+  })
+
+  const groupedByModel = new Map<
+    string,
+    { model: Record<string, unknown>; vehicle: Record<string, unknown> }
+  >()
+  for (const v of saleVehicles) {
+    const mId = String(relationId(v.model as string | { id: string } | null) ?? '')
+    const m = modelById.get(mId)
+    if (m && !groupedByModel.has(mId)) {
+      groupedByModel.set(mId, { model: m, vehicle: v })
+    }
+  }
+
+  const items = Array.from(groupedByModel.values())
+    .slice(0, 4)
+    .map(({ model, vehicle }) => {
+      const category = (model.category as 'CAR' | 'MOTORBIKE' | 'PICKUP') ?? 'CAR'
+      const salePrice = typeof vehicle.salePrice === 'number' ? vehicle.salePrice : null
+      const isNew = String(vehicle.vehicleConditionType ?? '').toUpperCase() === 'NEW'
+      const rolling = calculateRollingPrice(
+        salePrice,
+        category,
+        typeof model.fuelType === 'string' ? model.fuelType : null,
+        isNew,
+      )
+      return {
+        modelName: String(model.name ?? ''),
+        slug: String(model.slug ?? ''),
+        brand: String(model.brand ?? ''),
+        category,
+        salePriceLabel: salePrice ? formatMoney(salePrice) : 'Liên hệ báo giá',
+        rollingPriceLabel: rolling ? formatMoney(rolling.totalEstimated) : null,
+        isDemo: vehicle.isDemo !== false,
+        detailHref: `/vehicles/${encodeURIComponent(String(model.slug ?? ''))}?intent=buy`,
+      }
+    })
+
+  return {
+    noResultFound: Boolean(args.query && items.length === 0),
+    citations: [
+      {
+        title: 'Danh mục xe mở bán & đăng ký lái thử',
+        sourceType: 'POLICY',
+        href: '/vehicles?intent=buy',
+        excerpt:
+          'Xem các xe hỗ trợ tư vấn mua, ước tính giá lăn bánh và đặt lịch xem xe / lái thử.',
+      },
+      ...knowledge.citations.slice(0, 2),
+    ],
+    toolOutputForLLM: {
+      foundCount: items.length,
+      saleListings: items,
+      summary:
+        items.length > 0
+          ? `NORI hiện hỗ trợ **tư vấn mua xe & đăng ký xem xe / lái thử** cho các mẫu xe phù hợp:\n${items
+              .map(
+                (it) =>
+                  `- **${it.modelName}** (${it.brand}): Giá niêm yết **${it.salePriceLabel}**${it.rollingPriceLabel ? ` · Ước tính lăn bánh tham khảo: **${it.rollingPriceLabel}**` : ''}${it.isDemo ? ' *(DEMO)*' : ''}.`,
+              )
+              .join(
+                '\n',
+              )}\n\nBạn có thể truy cập mục **Mua xe** (\`/vehicles?intent=buy\`) để gửi yêu cầu tư vấn hoặc đặt lịch lái thử trực tiếp.`
+          : args.query
+            ? `Hiện tại NORI chưa có xe mở bán khớp với **${args.query}**. Bạn có thể xem toàn bộ danh sách xe hỗ trợ mua & lái thử tại \`/vehicles?intent=buy\` hoặc liên hệ Hotline **${knowledge.contactInfo.phone}**.`
+            : `Bạn có thể xem danh sách phương tiện đang hỗ trợ tư vấn mua & đăng ký lái thử tại \`/vehicles?intent=buy\`, hoặc cho tôi biết dòng xe / ngân sách bạn đang quan tâm để tôi kiểm tra ngay.`,
     },
   }
 }

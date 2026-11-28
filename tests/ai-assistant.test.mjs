@@ -10,6 +10,8 @@ import {
 } from '../src/lib/ai/config.ts'
 import { mapToNoriAIError, NoriAIError, sanitizeErrorMessage } from '../src/lib/ai/errors.ts'
 import { GeminiProvider } from '../src/lib/ai/gemini.ts'
+import { parseSafeMarkdownBlocks, sanitizeMarkdownHref } from '../src/lib/ai/markdown.ts'
+import { analyzeConversationTurn, normalizeVietnameseNLU } from '../src/lib/ai/nlu.ts'
 import {
   evaluateInputGuardrails,
   MAX_USER_MESSAGE_CHARS,
@@ -809,7 +811,7 @@ describe('NORI AI Assistant — Unit & Security Test Suite', () => {
       assert.equal(unconfFallback.status, 'DEGRADED')
       assert.equal(unconfFallback.fallbackMode, true)
       assert.ok(unconfFallback.modeLabel?.includes('Chế độ tư vấn cơ bản'))
-      assert.ok(unconfFallback.reply.includes('Chế độ tư vấn cơ bản'))
+      assert.equal(unconfFallback.reply.includes('API Key'), false)
       assert.ok(unconfFallback.vehicleCards.length === 1)
       assert.equal(unconfFallback.vehicleCards[0]?.slug, 'toyota-fortuner')
 
@@ -847,5 +849,616 @@ describe('NORI AI Assistant — Unit & Security Test Suite', () => {
         else delete process.env[k]
       }
     }
+  })
+
+  it('REGRESSION: "innova có xe này không" never recommends motorbikes, answers accurately when absent, active, or in maintenance', async () => {
+    resetAIRateLimitStateForTests()
+    const baseFleetModels = [
+      {
+        id: 'm-evo200',
+        name: 'VinFast Evo200',
+        slug: 'vinfast-evo200',
+        brand: 'VinFast',
+        category: 'MOTORBIKE',
+        seats: 2,
+        fuelType: 'Điện',
+        transmission: 'Tự động',
+        referenceRentPrice: 150_000,
+        visible: true,
+      },
+      {
+        id: 'm-wave',
+        name: 'Honda Wave Alpha',
+        slug: 'honda-wave-alpha',
+        brand: 'Honda',
+        category: 'MOTORBIKE',
+        seats: 2,
+        fuelType: 'Xăng',
+        transmission: 'Số tròn 4 cấp',
+        referenceRentPrice: 120_000,
+        visible: true,
+      },
+      {
+        id: 'm-vision',
+        name: 'Honda Vision',
+        slug: 'honda-vision',
+        brand: 'Honda',
+        category: 'MOTORBIKE',
+        seats: 2,
+        fuelType: 'Xăng',
+        transmission: 'Vô cấp CVT',
+        referenceRentPrice: 150_000,
+        visible: true,
+      },
+      {
+        id: 'm-pcx',
+        name: 'Honda PCX',
+        slug: 'honda-pcx',
+        brand: 'Honda',
+        category: 'MOTORBIKE',
+        seats: 2,
+        fuelType: 'Xăng',
+        transmission: 'Vô cấp CVT',
+        referenceRentPrice: 220_000,
+        visible: true,
+      },
+      {
+        id: 'm-fortuner',
+        name: 'Toyota Fortuner',
+        slug: 'toyota-fortuner',
+        brand: 'Toyota',
+        category: 'CAR',
+        seats: 7,
+        fuelType: 'Dầu (Diesel)',
+        transmission: 'Số tự động',
+        referenceRentPrice: 1_200_000,
+        visible: true,
+      },
+      {
+        id: 'm-xpander',
+        name: 'Mitsubishi Xpander',
+        slug: 'mitsubishi-xpander',
+        brand: 'Mitsubishi',
+        category: 'CAR',
+        seats: 7,
+        fuelType: 'Xăng',
+        transmission: 'Số tự động',
+        referenceRentPrice: 850_000,
+        visible: true,
+      },
+      {
+        id: 'm-vios',
+        name: 'Toyota Vios',
+        slug: 'toyota-vios',
+        brand: 'Toyota',
+        category: 'CAR',
+        seats: 5,
+        fuelType: 'Xăng',
+        transmission: 'Số sàn',
+        referenceRentPrice: 650_000,
+        visible: true,
+      },
+    ]
+
+    const baseFleetVehicles = [
+      {
+        id: 'v-evo',
+        reference: 'NR-XM-01',
+        model: 'm-evo200',
+        operationStatus: 'READY',
+        status: 'ACTIVE',
+        intent: 'RENT',
+        pricePerDay: 150_000,
+        depositAmount: 2_000_000,
+        isDemo: true,
+      },
+      {
+        id: 'v-wave',
+        reference: 'NR-XM-02',
+        model: 'm-wave',
+        operationStatus: 'READY',
+        status: 'ACTIVE',
+        intent: 'RENT',
+        pricePerDay: 120_000,
+        depositAmount: 1_500_000,
+        isDemo: true,
+      },
+      {
+        id: 'v-vis',
+        reference: 'NR-XM-03',
+        model: 'm-vision',
+        operationStatus: 'READY',
+        status: 'ACTIVE',
+        intent: 'RENT',
+        pricePerDay: 150_000,
+        depositAmount: 2_000_000,
+        isDemo: true,
+      },
+      {
+        id: 'v-pcx',
+        reference: 'NR-XM-04',
+        model: 'm-pcx',
+        operationStatus: 'READY',
+        status: 'ACTIVE',
+        intent: 'RENT',
+        pricePerDay: 220_000,
+        depositAmount: 3_000_000,
+        isDemo: true,
+      },
+      {
+        id: 'v-for',
+        reference: 'NR-OT-01',
+        model: 'm-fortuner',
+        operationStatus: 'READY',
+        status: 'ACTIVE',
+        intent: 'RENT',
+        pricePerDay: 1_200_000,
+        depositAmount: 5_000_000,
+        isDemo: false,
+      },
+      {
+        id: 'v-xpa',
+        reference: 'NR-OT-02',
+        model: 'm-xpander',
+        operationStatus: 'READY',
+        status: 'ACTIVE',
+        intent: 'RENT',
+        pricePerDay: 850_000,
+        depositAmount: 3_000_000,
+        isDemo: false,
+      },
+      {
+        id: 'v-vio',
+        reference: 'NR-OT-03',
+        model: 'm-vios',
+        operationStatus: 'READY',
+        status: 'ACTIVE',
+        intent: 'RENT',
+        pricePerDay: 650_000,
+        depositAmount: 3_000_000,
+        isDemo: false,
+      },
+    ]
+
+    const makeFleetPayload = (extraModels = [], extraVehicles = []) => ({
+      async findGlobal() {
+        return { enabled: true }
+      },
+      async find(args) {
+        if (args.collection === 'vehicle-models') {
+          return { docs: [...baseFleetModels, ...extraModels].filter((m) => m.visible !== false) }
+        }
+        if (args.collection === 'vehicles') {
+          return { docs: [...baseFleetVehicles, ...extraVehicles] }
+        }
+        return { docs: [] }
+      },
+      async create() {
+        return { id: 'log-innova' }
+      },
+    })
+
+    const prevEnv = {
+      GEMINI_API_KEY: process.env.GEMINI_API_KEY,
+      NORI_AI_FALLBACK_ENABLED: process.env.NORI_AI_FALLBACK_ENABLED,
+      NORI_AI_TEST_MOCK: process.env.NORI_AI_TEST_MOCK,
+    }
+
+    try {
+      // Subcase A1: Rule-based Fallback (no GEMINI_API_KEY) when Innova is NOT in fleet
+      delete process.env.GEMINI_API_KEY
+      delete process.env.NORI_AI_TEST_MOCK
+      process.env.NORI_AI_FALLBACK_ENABLED = 'true'
+
+      const resFallbackAbsent = await runNoriAIChat({
+        payload: makeFleetPayload(),
+        message: 'innova có xe này không',
+        sessionKey: 'reg-innova-absent-fb',
+        user: null,
+        userRole: 'GUEST',
+      })
+      assert.equal(resFallbackAbsent.intent, 'VEHICLE_LOOKUP')
+      assert.equal(resFallbackAbsent.vehicleCards.length, 0)
+      assert.match(resFallbackAbsent.reply, /Innova/i)
+      assert.match(resFallbackAbsent.reply, /chưa có|không có/i)
+      assert.equal(/Evo200|Wave Alpha|Vision|PCX/i.test(resFallbackAbsent.reply), false)
+      assert.equal(/API Key/i.test(resFallbackAbsent.reply), false)
+      assert.match(resFallbackAbsent.reply, /Toyota Fortuner|Mitsubishi Xpander/i)
+
+      // Subcase A2: Mock AI Provider (Function Calling path) when Innova is NOT in fleet
+      process.env.NORI_AI_TEST_MOCK = '1'
+      const resMockAbsent = await runNoriAIChat({
+        payload: makeFleetPayload(),
+        message: 'innova có xe này không',
+        sessionKey: 'reg-innova-absent-mock',
+        user: null,
+        userRole: 'GUEST',
+        providerOverride: new MockTestAIProvider(),
+      })
+      assert.equal(resMockAbsent.vehicleCards.length, 0)
+      assert.ok(resMockAbsent.toolsCalled.includes('getVehicleDetails'))
+      assert.match(resMockAbsent.reply, /Innova/i)
+      assert.equal(/Evo200|Wave Alpha|Vision|PCX/i.test(resMockAbsent.reply), false)
+
+      // Subcase B: Innova EXISTS and has active rentable vehicle
+      const innovaModel = {
+        id: 'm-innova',
+        name: 'Toyota Innova Cross',
+        slug: 'toyota-innova-cross',
+        brand: 'Toyota',
+        category: 'CAR',
+        seats: 7,
+        fuelType: 'Xăng',
+        transmission: 'Số tự động',
+        referenceRentPrice: 980_000,
+        visible: true,
+      }
+      const innovaActiveVeh = {
+        id: 'v-innova-1',
+        reference: 'NR-OT-99',
+        model: 'm-innova',
+        operationStatus: 'READY',
+        status: 'ACTIVE',
+        intent: 'RENT',
+        pricePerDay: 980_000,
+        depositAmount: 4_000_000,
+        isDemo: false,
+      }
+      const resPresent = await runNoriAIChat({
+        payload: makeFleetPayload([innovaModel], [innovaActiveVeh]),
+        message: 'innova có xe này không',
+        sessionKey: 'reg-innova-present',
+        user: null,
+        userRole: 'GUEST',
+        providerOverride: new MockTestAIProvider(),
+      })
+      assert.equal(resPresent.vehicleCards.length, 1)
+      assert.equal(resPresent.vehicleCards[0]?.slug, 'toyota-innova-cross')
+      assert.equal(resPresent.vehicleCards[0]?.pricePerDay, 980_000)
+
+      // Subcase C: Innova EXISTS in catalogue, but all units are in MAINTENANCE
+      const innovaMaintVeh = { ...innovaActiveVeh, operationStatus: 'MAINTENANCE' }
+      const resMaint = await runNoriAIChat({
+        payload: makeFleetPayload([innovaModel], [innovaMaintVeh]),
+        message: 'innova có xe này không',
+        sessionKey: 'reg-innova-maint',
+        user: null,
+        userRole: 'GUEST',
+        providerOverride: new MockTestAIProvider(),
+      })
+      assert.equal(resMaint.vehicleCards.length, 1)
+      assert.equal(resMaint.vehicleCards[0]?.availabilityStatus, 'UNAVAILABLE')
+      assert.match(resMaint.reply, /bảo dưỡng|tạm ngưng|chưa có xe sẵn sàng/i)
+    } finally {
+      resetAIRateLimitStateForTests()
+      for (const [k, v] of Object.entries(prevEnv)) {
+        if (v !== undefined) process.env[k] = v
+        else delete process.env[k]
+      }
+    }
+  })
+
+  it('NLU classifies all 14 business intents, non-accented Vietnamese, typos, abbreviations, and multi-turn context without cross-session leakage', async () => {
+    const today = '2026-12-01'
+    assert.equal(normalizeVietnameseNLU('Có xe Đắk Lắk ko?'), 'co xe dak lak khong')
+
+    // Verify all 14 intents
+    const intentSamples = [
+      ['innova có không', 'VEHICLE_LOOKUP'],
+      ['có xe hãng Toyota nào không', 'BRAND_LOOKUP'],
+      ['tư vấn xe đi gia đình 7 chỗ dưới 1.2 triệu', 'VEHICLE_RECOMMENDATION'],
+      ['kiểm tra lịch trống xpander ngày mai', 'AVAILABILITY_CHECK'],
+      ['xe vf8 giá sao', 'PRICE_QUOTE'],
+      ['so sánh fortuner và xpander', 'VEHICLE_COMPARISON'],
+      ['hiện có mã giảm giá khuyến mãi nào không', 'PROMOTION_QUERY'],
+      ['hướng dẫn cách đặt xe trên web', 'BOOKING_GUIDANCE'],
+      ['kiểm tra trạng thái đơn thuê của tôi', 'BOOKING_STATUS'],
+      ['thủ tục giấy tờ và tiền đặt cọc thuê xe thế nào', 'RENTAL_POLICY'],
+      ['tư vấn mua xe ô tô trả góp giá lăn bánh', 'PURCHASE_CONSULTATION'],
+      ['xin chào shop', 'GREETING'],
+      ['tôi cần hỏi thêm', 'CLARIFICATION'],
+      ['thời tiết hôm nay và giá vàng bao nhiêu', 'OUT_OF_SCOPE'],
+    ]
+    for (const [utterance, expectedIntent] of intentSamples) {
+      const turn = analyzeConversationTurn({ message: utterance, today })
+      assert.equal(
+        turn.intent,
+        expectedIntent,
+        `Expected intent ${expectedIntent} for "${utterance}", got ${turn.intent}`,
+      )
+    }
+
+    // Verify typo tolerance & colloquial entity extraction
+    const tInova = analyzeConversationTurn({ message: 'inova co ko', today })
+    assert.equal(tInova.modelQuery, 'innova')
+    assert.equal(tInova.modelDisplayName, 'Toyota Innova')
+    const tFotuner = analyzeConversationTurn({ message: 'co xe fotuner ko', today })
+    assert.equal(tFotuner.modelQuery, 'fortuner')
+    assert.equal(tFotuner.modelDisplayName, 'Toyota Fortuner')
+    const tExpander = analyzeConversationTurn({ message: 'cho minh xem expander', today })
+    assert.equal(tExpander.modelQuery, 'xpander')
+    assert.equal(tExpander.modelDisplayName, 'Mitsubishi Xpander')
+    const tMotoBudget = analyzeConversationTurn({ message: 'xe may duoi 200k', today })
+    assert.equal(tMotoBudget.category, 'MOTORBIKE')
+    assert.equal(tMotoBudget.maxBudgetPerDay, 200_000)
+    const tFormattedVndBudget = analyzeConversationTurn({
+      message: 'Tìm ô tô 7 chỗ giá tối đa dưới 50.000đ mỗi ngày',
+      today,
+    })
+    assert.equal(tFormattedVndBudget.maxBudgetPerDay, 50_000)
+    assert.equal(tFormattedVndBudget.strictBudget, true)
+
+    // Multi-turn anaphora resolution & model switching ("Fortuner" -> "Xe đó giá bao nhiêu?" -> "Thuê 3 ngày thì sao?" -> "Đổi sang Xpander đi")
+    const history1 = [
+      { role: 'user', content: 'Có Fortuner không?' },
+      {
+        role: 'assistant',
+        content: 'NORI hiện có Toyota Fortuner (7 chỗ) giá từ 1.200.000đ/ngày.',
+      },
+    ]
+    const turn2 = analyzeConversationTurn({
+      message: 'Xe đó giá bao nhiêu?',
+      history: history1,
+      today,
+    })
+    assert.equal(turn2.intent, 'PRICE_QUOTE')
+    assert.equal(turn2.modelDisplayName, 'Toyota Fortuner')
+
+    const history2 = [
+      ...history1,
+      { role: 'user', content: 'Xe đó giá bao nhiêu?' },
+      { role: 'assistant', content: 'Toyota Fortuner có giá thuê tham khảo 1.200.000đ/ngày.' },
+    ]
+    const turn3 = analyzeConversationTurn({
+      message: 'Thuê 3 ngày thì sao?',
+      history: history2,
+      today,
+    })
+    assert.equal(turn3.modelDisplayName, 'Toyota Fortuner')
+    assert.equal(turn3.durationDays, 3)
+
+    const history3 = [
+      ...history2,
+      { role: 'user', content: 'Thuê 3 ngày thì sao?' },
+      { role: 'assistant', content: 'Tạm tính 3 ngày khoảng 3.600.000đ.' },
+    ]
+    const turn4 = analyzeConversationTurn({
+      message: 'Đổi sang Xpander đi.',
+      history: history3,
+      today,
+    })
+    assert.equal(turn4.modelDisplayName, 'Mitsubishi Xpander')
+    assert.equal(turn4.durationDays, 3)
+
+    // Fresh session (empty history) must NOT inherit prior customer's Fortuner/Xpander
+    const freshCustomerTurn = analyzeConversationTurn({
+      message: 'Xe đó giá bao nhiêu?',
+      history: [],
+      today,
+    })
+    assert.equal(Boolean(freshCustomerTurn.modelQuery), false)
+    assert.equal(freshCustomerTurn.intent, 'CLARIFICATION')
+  })
+
+  it('Hard constraints strictly enforce transmission (Auto vs Manual), category, seats, zero-padding, booking ownership, and safe Markdown XSS stripping', async () => {
+    const candidates = [
+      {
+        modelId: 'm-manual',
+        slug: 'toyota-vios-mt',
+        name: 'Toyota Vios MT',
+        brand: 'Toyota',
+        category: 'CAR',
+        subCategory: 'SEDAN',
+        bodyStyle: 'Sedan',
+        segment: 'Sedan B',
+        seats: 5,
+        fuelType: 'Xăng',
+        transmission: 'Số sàn',
+        suitableFor: 'Đi phố',
+        usagePurpose: 'Đi phố',
+        shortDescription: 'Xe số sàn tiết kiệm',
+        highlights: [],
+        imageUrl: null,
+        imageAlt: 'Vios MT',
+        pricePerDay: 600_000,
+        bestVehicleId: 'v-mt',
+        bestVehicleReference: 'NR-MT-01',
+        availableRentCount: 1,
+        isDemo: false,
+        businessActive: true,
+        availableForDates: true,
+        ratingAvg: 4.9,
+        ratingCount: 10,
+      },
+      {
+        modelId: 'm-auto',
+        slug: 'honda-city-at',
+        name: 'Honda City RS',
+        brand: 'Honda',
+        category: 'CAR',
+        subCategory: 'SEDAN',
+        bodyStyle: 'Sedan',
+        segment: 'Sedan B',
+        seats: 5,
+        fuelType: 'Xăng',
+        transmission: 'Số tự động vô cấp CVT',
+        suitableFor: 'Đi phố',
+        usagePurpose: 'Đi phố',
+        shortDescription: 'Xe số tự động',
+        highlights: [],
+        imageUrl: null,
+        imageAlt: 'City AT',
+        pricePerDay: 750_000,
+        bestVehicleId: 'v-at',
+        bestVehicleReference: 'NR-AT-01',
+        availableRentCount: 1,
+        isDemo: false,
+        businessActive: true,
+        availableForDates: true,
+        ratingAvg: 4.7,
+        ratingCount: 5,
+      },
+      {
+        modelId: 'm-moto',
+        slug: 'honda-vision',
+        name: 'Honda Vision',
+        brand: 'Honda',
+        category: 'MOTORBIKE',
+        subCategory: 'SCOOTER',
+        bodyStyle: 'Tay ga',
+        segment: 'Phổ thông',
+        seats: 2,
+        fuelType: 'Xăng',
+        transmission: 'Tự động',
+        suitableFor: 'Đi phố',
+        usagePurpose: 'Đi phố',
+        shortDescription: 'Xe tay ga',
+        highlights: [],
+        imageUrl: null,
+        imageAlt: 'Vision',
+        pricePerDay: 150_000,
+        bestVehicleId: 'v-vis',
+        bestVehicleReference: 'NR-XM-03',
+        availableRentCount: 2,
+        isDemo: true,
+        businessActive: true,
+        availableForDates: true,
+        ratingAvg: 5,
+        ratingCount: 20,
+      },
+    ]
+
+    // Auto transmission filter must exclude Manual ("Số sàn") and CAR filter must exclude MOTORBIKE; result count = 1 (never padded to 4)
+    const autoCarRes = recommendVehiclesEngine(candidates, {
+      category: 'CAR',
+      transmission: 'Số tự động',
+      maxBudgetPerDay: 1_000_000,
+      strictBudget: true,
+    })
+    assert.equal(autoCarRes.results.length, 1)
+    assert.equal(autoCarRes.results[0]?.candidate.slug, 'honda-city-at')
+
+    // Booking status tool enforces strict customer ownership
+    const bookingPayload = {
+      async find(args) {
+        if (args.collection === 'bookings') {
+          assert.equal(args.overrideAccess, false)
+          const docs = [
+            {
+              id: 'b-1',
+              bookingKey: 'NR-BK-1001',
+              customer: 'cust-owner',
+              status: 'CONFIRMED',
+              startDate: '2026-12-10',
+              endDate: '2026-12-12',
+              totalPrice: 2_400_000,
+              depositPaid: 500_000,
+            },
+          ]
+          return { docs }
+        }
+        return { docs: [] }
+      },
+    }
+
+    const guestBookingCheck = await executeAllowedTool(
+      {
+        payload: bookingPayload,
+        weights: DEFAULT_RECOMMENDATION_WEIGHTS,
+        knowledgeNote: null,
+        user: null,
+      },
+      'getCustomerBookingStatus',
+      JSON.stringify({ bookingKey: 'NR-BK-1001' }),
+    )
+    assert.equal(guestBookingCheck.ok, true)
+    assert.equal(guestBookingCheck.result.toolOutputForLLM.authenticated, false)
+
+    const wrongUserBookingCheck = await executeAllowedTool(
+      {
+        payload: bookingPayload,
+        weights: DEFAULT_RECOMMENDATION_WEIGHTS,
+        knowledgeNote: null,
+        user: { id: 'cust-intruder', collection: 'users', email: 'intruder@nori.vn' },
+      },
+      'getCustomerBookingStatus',
+      JSON.stringify({ bookingKey: 'NR-BK-1001' }),
+    )
+    assert.equal(wrongUserBookingCheck.ok, true)
+    assert.equal(wrongUserBookingCheck.result.toolOutputForLLM.foundCount, 0)
+
+    const ownerBookingCheck = await executeAllowedTool(
+      {
+        payload: bookingPayload,
+        weights: DEFAULT_RECOMMENDATION_WEIGHTS,
+        knowledgeNote: null,
+        user: { id: 'cust-owner', collection: 'users', email: 'owner@nori.vn' },
+      },
+      'getCustomerBookingStatus',
+      JSON.stringify({ bookingKey: 'NR-BK-1001' }),
+    )
+    assert.equal(ownerBookingCheck.ok, true)
+    assert.equal(ownerBookingCheck.result.toolOutputForLLM.foundCount, 1)
+    assert.equal(ownerBookingCheck.result.toolOutputForLLM.bookings[0].bookingKey, 'NR-BK-1001')
+
+    // DB error during Rule-based Fallback surfaces AI_DB_UNAVAILABLE instead of falsely claiming "no vehicle"
+    const prevKey = process.env.GEMINI_API_KEY
+    const prevFallback = process.env.NORI_AI_FALLBACK_ENABLED
+    const prevMock = process.env.NORI_AI_TEST_MOCK
+    try {
+      delete process.env.GEMINI_API_KEY
+      delete process.env.NORI_AI_TEST_MOCK
+      process.env.NORI_AI_FALLBACK_ENABLED = 'true'
+      await assert.rejects(
+        () =>
+          runNoriAIChat({
+            payload: {
+              async findGlobal(args) {
+                if (args.slug === 'ai-settings') return { enabled: true }
+                throw new Error('SQLITE_BUSY: database is locked')
+              },
+              async find() {
+                throw new Error('SQLITE_BUSY: database is locked')
+              },
+              async create() {
+                return { id: 'err-log' }
+              },
+            },
+            message: 'innova có xe này không',
+            sessionKey: 'fb-db-error-check',
+            user: null,
+            userRole: 'GUEST',
+          }),
+        (err) => err instanceof NoriAIError && err.code === 'AI_DB_UNAVAILABLE',
+      )
+    } finally {
+      if (prevKey !== undefined) process.env.GEMINI_API_KEY = prevKey
+      else delete process.env.GEMINI_API_KEY
+      if (prevFallback !== undefined) process.env.NORI_AI_FALLBACK_ENABLED = prevFallback
+      else delete process.env.NORI_AI_FALLBACK_ENABLED
+      if (prevMock !== undefined) process.env.NORI_AI_TEST_MOCK = prevMock
+      else delete process.env.NORI_AI_TEST_MOCK
+    }
+
+    // Safe Markdown AST & XSS href sanitizer
+    assert.equal(sanitizeMarkdownHref('javascript:alert(1)'), null)
+    assert.equal(sanitizeMarkdownHref('data:text/html,<script>alert(1)</script>'), null)
+    assert.equal(sanitizeMarkdownHref('//evil.example.com/phish'), null)
+    assert.deepEqual(sanitizeMarkdownHref('/vehicles/toyota-fortuner'), {
+      href: '/vehicles/toyota-fortuner',
+      internal: true,
+    })
+    assert.equal(sanitizeMarkdownHref('https://aistudio.google.com')?.internal, false)
+
+    const mdBlocks = parseSafeMarkdownBlocks(
+      'Hiện tại NORI chưa có **Toyota Innova**.\n- Gợi ý: [Toyota Fortuner](/vehicles/toyota-fortuner)\n- Liên kết độc hại: [Bấm vào](javascript:alert(1))',
+    )
+    assert.equal(mdBlocks.length, 2)
+    assert.equal(mdBlocks[0]?.type, 'paragraph')
+    assert.equal(mdBlocks[1]?.type, 'unordered-list')
+    const serializedAst = JSON.stringify(mdBlocks)
+    assert.equal(serializedAst.includes('**'), false)
+    assert.equal(serializedAst.includes('javascript:'), false)
+    assert.ok(serializedAst.includes('"type":"strong"'))
   })
 })

@@ -1,7 +1,12 @@
 'use client'
 
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
-import type { AIQuickSuggestion, AISettingsData, RecommendationWeights } from '@/lib/ai/types'
+import type {
+  AIConnectionStatus,
+  AIQuickSuggestion,
+  AISettingsData,
+  RecommendationWeights,
+} from '@/lib/ai/types'
 import { api } from '@/lib/client-api'
 import {
   Badge,
@@ -25,7 +30,19 @@ type AdminAIDashboardPayload = {
     envEnabled: boolean
     provider: string
     model: string
+    configuredModelRaw?: string
+    modelRemappedFromDeprecated?: boolean
     apiKeyConfigured: boolean
+    connectionStatus: AIConnectionStatus
+    connectionStatusLabel: string
+    fallbackActive: boolean
+    fallbackStatusLabel: string
+    connectionDiagnosticNote: string
+    healthSnapshot?: {
+      lastCheckedAt: string | null
+      lastLatencyMs: number | null
+      verifiedLiveRequest: boolean
+    }
     freeTierOnly: boolean
     paidProvidersAllowed: boolean
     fallbackEnabled: boolean
@@ -98,6 +115,7 @@ type AdminAIDashboardPayload = {
     helpfulCount: number
     notHelpfulCount: number
     noResultCount: number
+    intentBreakdown?: Record<string, number>
     costDisclaimer: string
   }
   recentErrors: {
@@ -134,6 +152,21 @@ type AdminAIDashboardPayload = {
 
 function formatNum(n: number): string {
   return new Intl.NumberFormat('vi-VN').format(n)
+}
+
+function connectionBadgeTone(status: AIConnectionStatus): 'brand' | 'warning' | 'danger' | 'muted' {
+  switch (status) {
+    case 'GEMINI_CONNECTED':
+    case 'MOCK_ACTIVE':
+      return 'brand'
+    case 'FALLBACK_ACTIVE':
+    case 'QUOTA_EXCEEDED':
+    case 'DISABLED':
+      return 'warning'
+    case 'API_CONFIG_MISSING':
+    case 'CONNECTION_ERROR':
+      return 'danger'
+  }
 }
 
 export function AdminAIPanel() {
@@ -298,13 +331,23 @@ export function AdminAIPanel() {
               <Badge tone={data.effectiveConfig.enabled ? 'brand' : 'warning'}>
                 {data.effectiveConfig.enabled ? 'Đang bật' : 'Đang tắt'}
               </Badge>
-              <Badge tone={data.runtime.apiKeyConfigured ? 'brand' : 'danger'}>
-                API Key: {data.runtime.apiKeyConfigured ? 'Đã cấu hình (Server)' : 'Chưa cấu hình'}
+              <Badge
+                data-testid="ai-connection-status-badge"
+                tone={connectionBadgeTone(data.runtime.connectionStatus)}
+              >
+                {data.runtime.connectionStatusLabel}
               </Badge>
+              {data.runtime.fallbackActive && (
+                <Badge data-testid="ai-fallback-status-badge" tone="warning">
+                  {data.runtime.fallbackStatusLabel}
+                </Badge>
+              )}
+              {!data.runtime.fallbackActive && data.runtime.fallbackEnabled && (
+                <Badge tone="muted">{data.runtime.fallbackStatusLabel}</Badge>
+              )}
               {data.runtime.freeTierOnly && (
                 <Badge tone="brand">Free Tier Only (Khóa trả phí)</Badge>
               )}
-              {data.runtime.fallbackEnabled && <Badge tone="muted">Rule-based Fallback: Bật</Badge>}
               {data.runtime.circuitBreaker.open && (
                 <Badge tone="danger">
                   Circuit Breaker đang mở ({data.runtime.circuitBreaker.retryAfterSeconds}s)
@@ -313,12 +356,16 @@ export function AdminAIPanel() {
             </div>
             <Text className="text-small text-muted">
               Provider: <strong className="text-ink">{data.runtime.provider.toUpperCase()}</strong>{' '}
-              (@google/genai) · Model: <strong className="text-ink">{data.runtime.model}</strong> ·
-              Lưu hội thoại:{' '}
+              (@google/genai) · Model: <strong className="text-ink">{data.runtime.model}</strong>
+              {data.runtime.modelRemappedFromDeprecated && data.runtime.configuredModelRaw
+                ? ` (tự động nâng cấp từ ${data.runtime.configuredModelRaw})`
+                : ''}{' '}
+              · Lưu hội thoại:{' '}
               <strong className="text-ink">
                 {data.runtime.storeConversations ? 'Có (ẩn danh)' : 'Tắt (mặc định bảo mật)'}
               </strong>
             </Text>
+            <Text className="text-caption text-muted">{data.runtime.connectionDiagnosticNote}</Text>
           </div>
           <div className="flex flex-wrap gap-2">
             {data.canUpdate && (
@@ -472,6 +519,27 @@ export function AdminAIPanel() {
             : ${data.runtime.pricingReferenceUsdPer1M.input}/1M input tokens · $
             {data.runtime.pricingReferenceUsdPer1M.output}/1M output tokens.)
           </Notice>
+
+          {data.stats.intentBreakdown && Object.keys(data.stats.intentBreakdown).length > 0 && (
+            <section className="rounded-card border border-line bg-canvas p-5">
+              <Heading as="h2" size="subtitle" className="mb-3">
+                Phân bổ ý định khách hàng (Intent Classification)
+              </Heading>
+              <div className="flex flex-wrap gap-2">
+                {Object.entries(data.stats.intentBreakdown)
+                  .sort((a, b) => b[1] - a[1])
+                  .map(([intentName, count]) => (
+                    <span
+                      key={intentName}
+                      className="inline-flex items-center gap-1.5 rounded-pill border border-line bg-subtle px-3 py-1 text-caption font-medium text-ink"
+                    >
+                      <span>{intentName}</span>
+                      <Badge tone="brand">{formatNum(count)}</Badge>
+                    </span>
+                  ))}
+              </div>
+            </section>
+          )}
         </div>
       )}
 

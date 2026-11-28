@@ -1,32 +1,76 @@
 import crypto from 'node:crypto'
-import {
-  GoogleGenAI,
-  type Content,
-  type FunctionDeclaration,
-  type Part,
-  type Tool,
-} from '@google/genai'
+import { GoogleGenAI } from '@google/genai'
 import {
   getAIRuntimeConfig,
   getGeminiApiKeyServerOnly,
   getGeminiModelCapabilities,
   isGeminiModelInFreeTierAllowlist,
-  normalizeGeminiModelId,
+  resolveSupportedGeminiModel,
 } from './config.ts'
 import { mapToNoriAIError, NoriAIError } from './errors.ts'
 import { redactSensitiveData } from './guardrails.ts'
 import type {
+  AIConnectionStatus,
   AIProvider,
   AIProviderInputItem,
   AIProviderToolCall,
   AIProviderTurnResult,
   AIToolDefinition,
+  NoriAIIntent,
 } from './types.ts'
 
 // Free-Tier policy: NEVER retry 429 / quota / auth / model errors.
 // At most 1 short retry for transient 5xx / network glitches.
 const MAX_TRANSIENT_RETRIES = 1
 const BASE_BACKOFF_MS = 450
+
+type GeminiHealthSnapshot = {
+  lastCheckedAt: string | null
+  lastStatus: AIConnectionStatus | null
+  lastLatencyMs: number | null
+  lastErrorCode: string | null
+  verifiedLiveRequest: boolean
+}
+
+const geminiHealthState: GeminiHealthSnapshot = {
+  lastCheckedAt: null,
+  lastStatus: null,
+  lastLatencyMs: null,
+  lastErrorCode: null,
+  verifiedLiveRequest: false,
+}
+
+export function getGeminiRuntimeHealthSnapshot(): GeminiHealthSnapshot {
+  return { ...geminiHealthState }
+}
+
+export function recordGeminiLiveSuccess(latencyMs: number): void {
+  geminiHealthState.lastCheckedAt = new Date().toISOString()
+  geminiHealthState.lastStatus = 'GEMINI_CONNECTED'
+  geminiHealthState.lastLatencyMs = Math.max(0, Math.round(latencyMs))
+  geminiHealthState.lastErrorCode = null
+  geminiHealthState.verifiedLiveRequest = true
+}
+
+export function recordGeminiLiveFailure(errorCode: string): void {
+  geminiHealthState.lastCheckedAt = new Date().toISOString()
+  geminiHealthState.lastErrorCode = errorCode
+  if (errorCode === 'AI_UNCONFIGURED') {
+    geminiHealthState.lastStatus = 'API_CONFIG_MISSING'
+  } else if (errorCode === 'AI_QUOTA_EXCEEDED' || errorCode === 'AI_RATE_LIMITED') {
+    geminiHealthState.lastStatus = 'QUOTA_EXCEEDED'
+  } else {
+    geminiHealthState.lastStatus = 'CONNECTION_ERROR'
+  }
+}
+
+export function resetGeminiHealthStateForTests(): void {
+  geminiHealthState.lastCheckedAt = null
+  geminiHealthState.lastStatus = null
+  geminiHealthState.lastLatencyMs = null
+  geminiHealthState.lastErrorCode = null
+  geminiHealthState.verifiedLiveRequest = false
+}
 
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -77,120 +121,204 @@ function safeParseJsonObject(raw: string): Record<string, unknown> {
   }
 }
 
+function stripUnsupportedJsonSchemaKeys(schema: unknown): Record<string, unknown> {
+  if (!schema || typeof schema !== 'object' || Array.isArray(schema)) {
+    return { type: 'object', properties: {} }
+  }
+  const src = schema as Record<string, unknown>
+  const out: Record<string, unknown> = {}
+  for (const [key, val] of Object.entries(src)) {
+    if (key === 'additionalProperties') continue
+    if (key === 'properties' && val && typeof val === 'object' && !Array.isArray(val)) {
+      const props: Record<string, unknown> = {}
+      for (const [pk, pv] of Object.entries(val as Record<string, unknown>)) {
+        props[pk] =
+          pv && typeof pv === 'object' && !Array.isArray(pv)
+            ? stripUnsupportedJsonSchemaKeys(pv)
+            : pv
+      }
+      out.properties = props
+    } else if (key === 'items' && val && typeof val === 'object' && !Array.isArray(val)) {
+      out.items = stripUnsupportedJsonSchemaKeys(val)
+    } else {
+      out[key] = val
+    }
+  }
+  return out
+}
+
+type InteractionStepPayload = Record<string, unknown>
+
 /**
- * Maps allowlisted NORI tool schemas into Gemini FunctionDeclarations.
- * Explicitly excludes Google Search Grounding, Google Maps Grounding, Code Execution, and URL Context
- * so zero paid or unapproved external grounding tools can be invoked.
+ * Maps allowlisted NORI tools to `@google/genai` v3.6+ Interactions API function tool declarations.
+ * Explicitly excludes Google Search, Google Maps, Code Execution, and URL Context.
  */
-function mapToolsToGemini(tools: AIToolDefinition[]): Tool[] | undefined {
-  if (tools.length === 0) return undefined
-  const functionDeclarations: FunctionDeclaration[] = tools.map((tool) => ({
+function mapToolsToInteractions(tools: AIToolDefinition[]): Array<Record<string, unknown>> {
+  return tools.map((tool) => ({
+    type: 'function',
     name: tool.name,
     description: tool.description,
-    parametersJsonSchema: tool.parameters,
+    parameters: stripUnsupportedJsonSchemaKeys(tool.parameters),
   }))
-  return [{ functionDeclarations }]
 }
 
 /**
- * Converts NORI's provider-agnostic conversation items to Gemini `Content[]`,
- * redacting PII/secrets from user messages before leaving NORI servers
- * and grouping consecutive function calls / responses per turn.
+ * Converts NORI's stateless conversation items into `@google/genai` Interactions API `steps` input,
+ * redacting PII/secrets from user messages and preserving `thought` signatures + `function_call` / `function_result`.
  */
-function mapInputToGeminiContents(items: AIProviderInputItem[]): Content[] {
-  const contents: Content[] = []
+function mapInputToInteractionSteps(items: AIProviderInputItem[]): InteractionStepPayload[] {
+  const steps: InteractionStepPayload[] = []
   const callNamesById = new Map<string, string>()
 
   for (const item of items) {
     if (item.type === 'message') {
-      const role = item.role === 'assistant' ? 'model' : 'user'
       const text =
         item.role === 'user' ? redactSensitiveData(item.content, 1000) : item.content.trim()
       if (!text) continue
-      const part: Part = { text }
-      const prev = contents[contents.length - 1]
-      if (prev && prev.role === role && Array.isArray(prev.parts)) {
-        prev.parts.push(part)
-      } else {
-        contents.push({ role, parts: [part] })
-      }
+      steps.push({
+        type: item.role === 'assistant' ? 'model_output' : 'user_input',
+        content: [{ type: 'text', text }],
+      })
+      continue
+    }
+
+    if (item.type === 'thought') {
+      steps.push({
+        type: 'thought',
+        signature: item.signature,
+        ...(item.summary ? { summary: item.summary } : {}),
+      })
       continue
     }
 
     if (item.type === 'function_call') {
       callNamesById.set(item.call_id, item.name)
-      const part: Part = {
-        functionCall: {
-          id: item.call_id,
-          name: item.name,
-          args: safeParseJsonObject(item.arguments),
-        },
-        ...(item.thoughtSignature ? { thoughtSignature: item.thoughtSignature } : {}),
+      if (item.thoughtSignature) {
+        const prev = steps[steps.length - 1]
+        if (!prev || prev.type !== 'thought' || prev.signature !== item.thoughtSignature) {
+          steps.push({ type: 'thought', signature: item.thoughtSignature })
+        }
       }
-      const prev = contents[contents.length - 1]
-      if (prev && prev.role === 'model' && Array.isArray(prev.parts)) {
-        prev.parts.push(part)
-      } else {
-        contents.push({ role: 'model', parts: [part] })
-      }
+      steps.push({
+        type: 'function_call',
+        id: item.call_id,
+        name: item.name,
+        arguments: safeParseJsonObject(item.arguments),
+      })
       continue
     }
 
     if (item.type === 'function_call_output') {
-      const fnName = callNamesById.get(item.call_id) ?? 'unknownTool'
-      const parsedOutput = safeParseJsonObject(item.output)
-      const part: Part = {
-        functionResponse: {
-          id: item.call_id,
-          name: fnName,
-          response: { output: parsedOutput },
-        },
-      }
-      const prev = contents[contents.length - 1]
-      if (prev && prev.role === 'user' && Array.isArray(prev.parts)) {
-        prev.parts.push(part)
-      } else {
-        contents.push({ role: 'user', parts: [part] })
-      }
+      const fnName = item.name || callNamesById.get(item.call_id) || 'unknownTool'
+      steps.push({
+        type: 'function_result',
+        call_id: item.call_id,
+        name: fnName,
+        result: [{ type: 'text', text: item.output }],
+      })
     }
   }
 
-  return contents
+  return steps
+}
+
+export type GeminiStructuredCustomerQuery = {
+  intent: NoriAIIntent
+  vehicleModel: string | null
+  brand: string | null
+  category: 'CAR' | 'MOTORBIKE' | 'PICKUP' | null
+  minSeats: number | null
+  maxBudgetPerDay: number | null
+  strictBudget: boolean
+  fuelType: string | null
+  transmission: string | null
+  startDate: string | null
+  endDate: string | null
+  durationDays: number | null
+  needsClarification: boolean
+}
+
+export const GEMINI_CUSTOMER_QUERY_JSON_SCHEMA: Record<string, unknown> = {
+  type: 'object',
+  properties: {
+    intent: {
+      type: 'string',
+      enum: [
+        'VEHICLE_LOOKUP',
+        'BRAND_LOOKUP',
+        'VEHICLE_RECOMMENDATION',
+        'AVAILABILITY_CHECK',
+        'PRICE_QUOTE',
+        'VEHICLE_COMPARISON',
+        'PROMOTION_QUERY',
+        'BOOKING_GUIDANCE',
+        'BOOKING_STATUS',
+        'RENTAL_POLICY',
+        'PURCHASE_CONSULTATION',
+        'GREETING',
+        'CLARIFICATION',
+        'OUT_OF_SCOPE',
+      ],
+    },
+    vehicleModel: { type: ['string', 'null'] },
+    brand: { type: ['string', 'null'] },
+    category: { type: ['string', 'null'], enum: ['CAR', 'MOTORBIKE', 'PICKUP', null] },
+    minSeats: { type: ['integer', 'null'] },
+    maxBudgetPerDay: { type: ['number', 'null'] },
+    strictBudget: { type: 'boolean' },
+    fuelType: { type: ['string', 'null'] },
+    transmission: { type: ['string', 'null'] },
+    startDate: { type: ['string', 'null'] },
+    endDate: { type: ['string', 'null'] },
+    durationDays: { type: ['integer', 'null'] },
+    needsClarification: { type: 'boolean' },
+  },
+  required: [
+    'intent',
+    'vehicleModel',
+    'brand',
+    'category',
+    'minSeats',
+    'maxBudgetPerDay',
+    'strictBudget',
+    'needsClarification',
+  ],
 }
 
 /**
- * Official Google Gemini Provider using `@google/genai` SDK.
- * - Strict Free-Tier-Only model allowlist guard (never upgrades/switches to paid models).
+ * Official Google Gemini Provider using `@google/genai` v3.6+ GA Interactions API (`ai.interactions.create`).
+ * - Strict Free-Tier-Only model allowlist guard & deprecated model remapping (`gemini-3.5-flash-lite` default).
  * - Server-only `GEMINI_API_KEY` (never returned or logged).
- * - Zero paid grounding tools (`googleSearch` / `googleMaps` omitted).
+ * - Stateless (`store: false`) for customer privacy with full multi-round `thought` + `function_call` + `function_result`.
+ * - Supports Structured Output (`response_format` JSON Schema) for intent/entity extraction and health verification.
  */
 export class GeminiProvider implements AIProvider {
   readonly name = 'gemini' as const
 
   private assertModelAllowed(rawModel: string): string {
     const runtime = getAIRuntimeConfig()
-    const normalizedModel = normalizeGeminiModelId(rawModel)
-    if (runtime.freeTierOnly && !isGeminiModelInFreeTierAllowlist(normalizedModel)) {
+    if (runtime.freeTierOnly && !isGeminiModelInFreeTierAllowlist(rawModel)) {
       throw new NoriAIError({
         code: 'AI_MODEL_NOT_FREE_TIER',
         status: 503,
         retryable: false,
         userMessage: `Model "${rawModel}" không nằm trong danh sách Gemini Free Tier được phép của NORI.`,
-        message: `Blocked non-free-tier Gemini model: ${normalizedModel}`,
+        message: `Blocked non-free-tier Gemini model: ${rawModel}`,
       })
     }
-    return normalizedModel
+    return resolveSupportedGeminiModel(rawModel).effectiveModel
   }
 
   private createClient(): GoogleGenAI {
     const apiKey = getGeminiApiKeyServerOnly()
     if (!apiKey) {
+      recordGeminiLiveFailure('AI_UNCONFIGURED')
       throw new NoriAIError({
         code: 'AI_UNCONFIGURED',
         status: 503,
         retryable: false,
-        userMessage:
-          'Trợ lý AI NORI chưa được cấu hình GEMINI_API_KEY trên máy chủ. Đang sử dụng chế độ tư vấn cơ bản.',
+        userMessage: 'Trợ lý AI đang hoạt động ở chế độ tư vấn cơ bản trực tiếp từ dữ liệu NORI.',
+        message: 'GEMINI_API_KEY is not configured on server',
       })
     }
     return new GoogleGenAI({ apiKey })
@@ -205,90 +333,121 @@ export class GeminiProvider implements AIProvider {
     timeoutMs: number
     signal?: AbortSignal
   }): Promise<AIProviderTurnResult> {
+    const started = performance.now()
     const model = this.assertModelAllowed(params.model)
     const client = this.createClient()
-    const contents = mapInputToGeminiContents(params.input)
-    const tools = mapToolsToGemini(params.tools)
+    const stepsInput = mapInputToInteractionSteps(params.input)
+    const tools = params.tools.length > 0 ? mapToolsToInteractions(params.tools) : undefined
 
     let lastError: unknown = null
 
     for (let attempt = 0; attempt <= MAX_TRANSIENT_RETRIES; attempt += 1) {
-      const timeoutController = new AbortController()
-      const timer = setTimeout(() => timeoutController.abort(), params.timeoutMs)
-      const onCallerAbort = () => timeoutController.abort()
+      let timedOut = false
+      let timer: ReturnType<typeof setTimeout> | null = null
+      const onCallerAbort = () => {}
       params.signal?.addEventListener('abort', onCallerAbort, { once: true })
 
       try {
-        const response = await client.models.generateContent({
-          model,
-          contents,
-          config: {
-            systemInstruction: params.instructions,
-            tools,
-            maxOutputTokens: params.maxOutputTokens,
-            temperature: 0.2,
-            abortSignal: timeoutController.signal,
-          },
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          timer = setTimeout(() => {
+            timedOut = true
+            reject(new Error('Request timed out'))
+          }, params.timeoutMs)
         })
 
-        const parts = response.candidates?.[0]?.content?.parts ?? []
-        const textChunks: string[] = []
+        const interactionPromise = client.interactions.create({
+          model,
+          store: false,
+          system_instruction: params.instructions,
+          input: stepsInput as never,
+          ...(tools ? { tools: tools as never } : {}),
+          generation_config: {
+            max_output_tokens: params.maxOutputTokens,
+            temperature: 0.15,
+          },
+        } as never)
+
+        const interaction = (await Promise.race([
+          interactionPromise,
+          timeoutPromise,
+        ])) as unknown as {
+          id?: string
+          status?: string
+          output_text?: string | null
+          steps?: Array<Record<string, unknown>>
+          usage?: {
+            total_tokens?: number
+            total_input_tokens?: number
+            total_output_tokens?: number
+            total_thought_tokens?: number
+          }
+        }
+
+        const steps = Array.isArray(interaction.steps) ? interaction.steps : []
         const toolCalls: AIProviderToolCall[] = []
         const rawItems: AIProviderInputItem[] = []
+        const textChunks: string[] = []
 
-        for (const part of parts) {
-          if (part.functionCall && part.functionCall.name) {
-            const callId = part.functionCall.id || `gem-call-${crypto.randomUUID().slice(0, 10)}`
-            const argsJson = JSON.stringify(part.functionCall.args ?? {})
+        for (const step of steps) {
+          const stepType = String(step.type ?? '')
+          if (stepType === 'thought' && typeof step.signature === 'string') {
+            rawItems.push({
+              type: 'thought',
+              signature: step.signature,
+              ...(typeof step.summary === 'string' ? { summary: step.summary } : {}),
+            })
+            continue
+          }
+          if (stepType === 'function_call' && typeof step.name === 'string' && step.name) {
+            const callId =
+              typeof step.id === 'string' && step.id
+                ? step.id
+                : `gem-call-${crypto.randomUUID().slice(0, 10)}`
+            const argsJson = JSON.stringify(
+              step.arguments && typeof step.arguments === 'object' ? step.arguments : {},
+            )
             toolCalls.push({
               callId,
-              name: part.functionCall.name,
+              name: step.name,
               argumentsJson: argsJson,
             })
             rawItems.push({
               type: 'function_call',
               call_id: callId,
-              name: part.functionCall.name,
+              name: step.name,
               arguments: argsJson,
-              ...(part.thoughtSignature ? { thoughtSignature: part.thoughtSignature } : {}),
             })
-          } else if (!part.thought && typeof part.text === 'string' && part.text.length > 0) {
-            textChunks.push(part.text)
+            continue
+          }
+          if (stepType === 'model_output' && Array.isArray(step.content)) {
+            for (const part of step.content as Array<Record<string, unknown>>) {
+              if (part?.type === 'text' && typeof part.text === 'string' && part.text) {
+                textChunks.push(part.text)
+              }
+            }
           }
         }
 
-        // Fallback extraction if SDK exposes functionCalls getter without part list
-        if (toolCalls.length === 0 && Array.isArray(response.functionCalls)) {
-          for (const fc of response.functionCalls) {
-            if (!fc.name) continue
-            const callId = fc.id || `gem-call-${crypto.randomUUID().slice(0, 10)}`
-            const argsJson = JSON.stringify(fc.args ?? {})
-            toolCalls.push({ callId, name: fc.name, argumentsJson: argsJson })
-            rawItems.push({
-              type: 'function_call',
-              call_id: callId,
-              name: fc.name,
-              arguments: argsJson,
-            })
-          }
-        }
+        const outputText = (
+          (typeof interaction.output_text === 'string' ? interaction.output_text : '') ||
+          textChunks.join('\n')
+        ).trim()
 
-        const outputText = (textChunks.join('\n').trim() || response.text?.trim() || '').trim()
         if (outputText && toolCalls.length === 0) {
           rawItems.push({ type: 'message', role: 'assistant', content: outputText })
         }
 
-        const inputTokens = Number(response.usageMetadata?.promptTokenCount ?? 0)
+        const inputTokens = Number(interaction.usage?.total_input_tokens ?? 0)
         const outputTokens =
-          Number(response.usageMetadata?.candidatesTokenCount ?? 0) +
-          Number(response.usageMetadata?.thoughtsTokenCount ?? 0)
-        const totalTokens = Number(
-          response.usageMetadata?.totalTokenCount ?? inputTokens + outputTokens,
-        )
+          Number(interaction.usage?.total_output_tokens ?? 0) +
+          Number(interaction.usage?.total_thought_tokens ?? 0)
+        const totalTokens = Number(interaction.usage?.total_tokens ?? inputTokens + outputTokens)
+
+        recordGeminiLiveSuccess(performance.now() - started)
 
         return {
-          responseId: response.responseId || `gem-resp-${crypto.randomUUID().slice(0, 10)}`,
-          model: response.modelVersion || model,
+          responseId: interaction.id || `gem-inter-${crypto.randomUUID().slice(0, 10)}`,
+          model,
           outputText,
           toolCalls,
           inputTokens,
@@ -306,13 +465,13 @@ export class GeminiProvider implements AIProvider {
             userMessage: 'Yêu cầu đã được dừng theo thao tác của bạn.',
           })
         }
-        if (timeoutController.signal.aborted && !params.signal?.aborted) {
+        if (timedOut) {
           lastError = new NoriAIError({
             code: 'AI_TIMEOUT',
             status: 504,
             retryable: true,
             userMessage:
-              'Trợ lý AI phản hồi chậm hơn dự kiến và đã hết thời gian chờ. Hệ thống có thể chuyển sang chế độ tư vấn cơ bản.',
+              'Trợ lý AI phản hồi chậm hơn dự kiến. Hệ thống đã sẵn sàng hỗ trợ qua dữ liệu NORI trực tiếp.',
           })
         }
 
@@ -320,19 +479,23 @@ export class GeminiProvider implements AIProvider {
           await sleep(BASE_BACKOFF_MS + Math.floor(Math.random() * 120), params.signal)
           continue
         }
-        throw mapToNoriAIError(lastError)
+        const mapped = mapToNoriAIError(lastError)
+        recordGeminiLiveFailure(mapped.code)
+        throw mapped
       } finally {
-        clearTimeout(timer)
+        if (timer) clearTimeout(timer)
         params.signal?.removeEventListener('abort', onCallerAbort)
       }
     }
 
-    throw mapToNoriAIError(lastError)
+    const mapped = mapToNoriAIError(lastError)
+    recordGeminiLiveFailure(mapped.code)
+    throw mapped
   }
 
   /**
-   * Optional Structured JSON extraction helper using Gemini `responseJsonSchema`
-   * (used for capability verification or structured intent parsing without paid tools).
+   * Structured Output helper using Gemini Interactions API `response_format` JSON Schema.
+   * Constrains Gemini to return strictly valid JSON for intent & entity extraction without fabricating fleet data.
    */
   async generateStructuredJson<T>(params: {
     model: string
@@ -342,39 +505,83 @@ export class GeminiProvider implements AIProvider {
     maxOutputTokens?: number
     timeoutMs: number
   }): Promise<{ data: T; inputTokens: number; outputTokens: number }> {
+    const started = performance.now()
     const model = this.assertModelAllowed(params.model)
     const client = this.createClient()
-    const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(), params.timeoutMs)
+    let timer: ReturnType<typeof setTimeout> | null = null
+
     try {
-      const response = await client.models.generateContent({
-        model,
-        contents: redactSensitiveData(params.prompt, 1000),
-        config: {
-          systemInstruction: params.instructions,
-          responseMimeType: 'application/json',
-          responseJsonSchema: params.schema,
-          maxOutputTokens: params.maxOutputTokens ?? 512,
-          temperature: 0,
-          abortSignal: controller.signal,
-        },
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error('Request timed out')), params.timeoutMs)
       })
-      const rawText = (response.text ?? '{}').trim()
+
+      const interactionPromise = client.interactions.create({
+        model,
+        store: false,
+        system_instruction: params.instructions,
+        input: redactSensitiveData(params.prompt, 1000),
+        response_format: {
+          type: 'text',
+          mime_type: 'application/json',
+          schema: stripUnsupportedJsonSchemaKeys(params.schema),
+        },
+        generation_config: {
+          max_output_tokens: params.maxOutputTokens ?? 320,
+          temperature: 0,
+        },
+      } as never)
+
+      const interaction = (await Promise.race([interactionPromise, timeoutPromise])) as unknown as {
+        output_text?: string | null
+        usage?: { total_input_tokens?: number; total_output_tokens?: number }
+      }
+
+      const rawText = (interaction.output_text ?? '{}').trim()
+      const parsed = JSON.parse(rawText) as T
+      recordGeminiLiveSuccess(performance.now() - started)
+
       return {
-        data: JSON.parse(rawText) as T,
-        inputTokens: Number(response.usageMetadata?.promptTokenCount ?? 0),
-        outputTokens: Number(response.usageMetadata?.candidatesTokenCount ?? 0),
+        data: parsed,
+        inputTokens: Number(interaction.usage?.total_input_tokens ?? 0),
+        outputTokens: Number(interaction.usage?.total_output_tokens ?? 0),
       }
     } catch (err) {
-      throw mapToNoriAIError(err)
+      const mapped = mapToNoriAIError(err)
+      recordGeminiLiveFailure(mapped.code)
+      throw mapped
     } finally {
-      clearTimeout(timer)
+      if (timer) clearTimeout(timer)
+    }
+  }
+
+  async classifyCustomerQueryStructured(params: {
+    model: string
+    prompt: string
+    timeoutMs: number
+  }): Promise<{
+    analysis: GeminiStructuredCustomerQuery
+    inputTokens: number
+    outputTokens: number
+  }> {
+    const res = await this.generateStructuredJson<GeminiStructuredCustomerQuery>({
+      model: params.model,
+      instructions:
+        'Phân tích câu hỏi tiếng Việt của khách thuê/mua xe NORI thành JSON theo đúng schema. Không tự bịa ngày thuê nếu khách không nêu.',
+      prompt: params.prompt,
+      schema: GEMINI_CUSTOMER_QUERY_JSON_SCHEMA,
+      maxOutputTokens: 256,
+      timeoutMs: params.timeoutMs,
+    })
+    return {
+      analysis: res.data,
+      inputTokens: res.inputTokens,
+      outputTokens: res.outputTokens,
     }
   }
 
   /**
-   * Checks API key authentication + model metadata availability via `ai.models.get`
-   * without consuming generation quota or inferring Cloud Billing status.
+   * Verifies real Gemini connectivity (`models.get` + lightweight `interactions.create` JSON handshake)
+   * so `Gemini Connected` is ONLY reported when a real API request succeeds!
    */
   async ping(params: {
     model: string
@@ -385,38 +592,52 @@ export class GeminiProvider implements AIProvider {
       const model = this.assertModelAllowed(params.model)
       const client = this.createClient()
       const cap = getGeminiModelCapabilities(model)
-      const timeoutPromise = new Promise<never>((_, reject) =>
-        setTimeout(
-          () => reject(new Error('Request timed out')),
-          Math.min(params.timeoutMs, 15_000),
-        ),
-      )
-      const modelMeta = await Promise.race([client.models.get({ model }), timeoutPromise])
-      const supportsGen =
-        !Array.isArray(modelMeta.supportedActions) ||
-        modelMeta.supportedActions.includes('generateContent')
-      const latencyMs = Math.round(performance.now() - started)
+      const effectiveTimeout = Math.min(params.timeoutMs, 15_000)
 
-      if (!supportsGen) {
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('Request timed out')), effectiveTimeout),
+      )
+
+      const modelMeta = await Promise.race([client.models.get({ model }), timeoutPromise])
+
+      // Execute a minimal 20-token Structured Output handshake (`store: false`) to prove live generation quota & auth
+      const probe = await this.generateStructuredJson<{ status: string }>({
+        model,
+        instructions: 'Return JSON {"status":"ok"}',
+        prompt: 'ping',
+        schema: {
+          type: 'object',
+          properties: { status: { type: 'string' } },
+          required: ['status'],
+        },
+        maxOutputTokens: 32,
+        timeoutMs: effectiveTimeout,
+      })
+
+      const latencyMs = Math.round(performance.now() - started)
+      if (!probe.data || typeof probe.data.status !== 'string') {
+        recordGeminiLiveFailure('AI_PROVIDER_ERROR')
         return {
           ok: false,
           model,
           latencyMs,
-          message: `Model ${model} không hỗ trợ generateContent trên project hiện tại.`,
+          message: 'Gemini phản hồi không đúng cấu trúc JSON kỳ vọng.',
         }
       }
 
+      recordGeminiLiveSuccess(latencyMs)
       return {
         ok: true,
         model,
         latencyMs,
-        message: `Kết nối Gemini API thành công (${modelMeta.displayName || model}, ${latencyMs}ms · Function Calling: ${cap?.supportsFunctionCalling ? 'Có' : 'Theo model'} · Structured Output: ${cap?.supportsStructuredOutputs ? 'Có' : 'Theo model'}). Lưu ý: Trạng thái Cloud Billing cần chủ dự án kiểm tra thủ công trong Google AI Studio.`,
+        message: `Gemini Connected (${modelMeta.displayName || model}, ${latencyMs}ms · Interactions API v1 · Function Calling: ${cap?.supportsFunctionCalling ? 'Có' : 'Theo model'} · Structured Output: ${cap?.supportsStructuredOutputs ? 'Có' : 'Theo model'}).`,
       }
     } catch (err) {
       const mapped = mapToNoriAIError(err)
+      recordGeminiLiveFailure(mapped.code)
       return {
         ok: false,
-        model: normalizeGeminiModelId(params.model),
+        model: resolveSupportedGeminiModel(params.model).effectiveModel,
         latencyMs: Math.round(performance.now() - started),
         message: mapped.userMessage,
       }

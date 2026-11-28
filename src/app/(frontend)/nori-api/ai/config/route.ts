@@ -39,9 +39,9 @@ export async function GET(request: Request) {
         statusMessage: !config.enabled
           ? 'Trợ lý AI hiện đang tạm tắt bởi quản trị viên.'
           : fallbackActive
-            ? 'Đang chạy ở chế độ tư vấn cơ bản (Rule-based Engine) do chưa cấu hình API Key AI trên máy chủ.'
+            ? 'Đang hoạt động ở chế độ tư vấn cơ bản — tra cứu trực tiếp dữ liệu phương tiện và bảng giá thực tế của NORI.'
             : !config.configured
-              ? 'Trợ lý AI chưa được cấu hình API Key trên máy chủ. Bạn vẫn có thể tìm xe qua bộ lọc và đặt xe bình thường.'
+              ? 'Trợ lý AI hiện chưa sẵn sàng. Bạn vẫn có thể tìm xe qua bộ lọc và đặt xe bình thường.'
               : null,
       },
       200,

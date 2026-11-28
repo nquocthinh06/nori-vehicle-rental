@@ -439,6 +439,7 @@ test.describe('NORI AI Assistant — Comprehensive E2E, Sync, Security & Mobile 
       await expect(
         adminPage.getByRole('heading', { name: /NORI AI Management Center/i }),
       ).toBeVisible()
+      await expect(adminPage.getByTestId('ai-connection-status-badge')).toBeVisible()
       await expect(adminPage.getByText('Free Tier Only (Khóa trả phí)')).toBeVisible()
       await expect(adminPage.getByText(/Cloud Billing/i).first()).toBeVisible()
       await expect(adminPage.getByText(/Chuyển sang chế độ dự phòng/i).first()).toBeVisible()
@@ -493,5 +494,134 @@ test.describe('NORI AI Assistant — Comprehensive E2E, Sync, Security & Mobile 
     await expect(panel.getByText(/ngoại tuyến/i).first()).toBeVisible()
     await mobileCtx.setOffline(false)
     await mobileCtx.close()
+  })
+
+  test('7. Regression "innova có xe này không", Safe Markdown UI rendering, Multi-turn Context, Session Reset, and Admin Add/Edit/Hide Model Sync', async ({
+    page,
+  }) => {
+    await page.goto('/')
+    await page.getByTestId('nori-ai-launcher').click()
+    const panel = page.getByTestId('nori-ai-panel')
+    await expect(panel).toBeVisible()
+
+    // Part A: Ask "innova có xe này không" when Innova is NOT in catalogue
+    const input = panel.locator('#nori-ai-input')
+    await input.fill('innova có xe này không')
+    await panel.getByRole('button', { name: 'Gửi câu hỏi' }).click()
+
+    const firstReply = panel.getByTestId('ai-assistant-message').first()
+    await expect(firstReply).toBeVisible({ timeout: 20_000 })
+
+    // Must render clean Markdown (no raw ** asterisks, no API Key jargon, and ZERO motorbike cards)
+    const replyText = (await firstReply.innerText()).trim()
+    expect(replyText).toMatch(/Innova/i)
+    expect(replyText).not.toContain('**')
+    expect(replyText).not.toMatch(/API Key/i)
+    expect(replyText).not.toMatch(/Evo200|Wave Alpha|Vision|PCX/i)
+    await expect(firstReply.getByTestId('ai-vehicle-card')).toHaveCount(0)
+    await expect(firstReply.locator('strong').first()).toBeVisible()
+
+    // Part B: Admin dynamically inserts Toyota Innova into isolated SQLite DB -> AI immediately finds it without rebuild
+    const db = new DatabaseSync(getIsolatedDbPath())
+    const nowIso = new Date().toISOString()
+    const innovaModelId = `e2e-model-innova-${Date.now()}`
+    const innovaVehicleId = `e2e-veh-innova-${Date.now()}`
+
+    try {
+      const templateModel = db
+        .prepare(`SELECT * FROM vehicle_models WHERE slug = 'toyota-fortuner' LIMIT 1`)
+        .get() as Record<string, unknown> | undefined
+      expect(templateModel).toBeTruthy()
+
+      const templateVeh = db
+        .prepare(`SELECT * FROM vehicles WHERE model_id = ? LIMIT 1`)
+        .get(String(templateModel!.id)) as Record<string, unknown> | undefined
+      expect(templateVeh).toBeTruthy()
+
+      const newModelRow: Record<string, unknown> = {
+        ...templateModel!,
+        id: innovaModelId,
+        name: 'Toyota Innova Cross',
+        slug: 'toyota-innova-cross',
+        brand: 'Toyota',
+        category: 'CAR',
+        sub_category: 'MPV',
+        seats: 7,
+        fuel_type: 'Xăng',
+        transmission: 'Số tự động',
+        reference_rent_price: 950_000,
+        visible: 1,
+        updated_at: nowIso,
+        created_at: nowIso,
+      }
+      const modelCols = Object.keys(newModelRow)
+      db.prepare(
+        `INSERT INTO vehicle_models (${modelCols.map((c) => `"${c}"`).join(', ')}) VALUES (${modelCols.map(() => '?').join(', ')})`,
+      ).run(...modelCols.map((c) => newModelRow[c] as string | number | null))
+
+      const newVehRow: Record<string, unknown> = {
+        ...templateVeh!,
+        id: innovaVehicleId,
+        reference: 'NR-IN-99',
+        license_plate: `51K-${String(Date.now()).slice(-5)}`,
+        model_id: innovaModelId,
+        intent: 'RENT',
+        status: 'ACTIVE',
+        operation_status: 'READY',
+        price_per_day: 950_000,
+        deposit_amount: 4_000_000,
+        is_demo: 0,
+        updated_at: nowIso,
+        created_at: nowIso,
+      }
+      const vehCols = Object.keys(newVehRow)
+      db.prepare(
+        `INSERT INTO vehicles (${vehCols.map((c) => `"${c}"`).join(', ')}) VALUES (${vehCols.map(() => '?').join(', ')})`,
+      ).run(...vehCols.map((c) => newVehRow[c] as string | number | null))
+
+      // Ask again -> AI immediately returns Toyota Innova Cross card
+      await input.fill('innova có không')
+      await panel.getByRole('button', { name: 'Gửi câu hỏi' }).click()
+      await expect(panel.getByTestId('ai-assistant-message')).toHaveCount(2, { timeout: 20_000 })
+      const secondReply = panel.getByTestId('ai-assistant-message').nth(1)
+      await expect(secondReply.getByTestId('ai-vehicle-card')).toHaveCount(1)
+      await expect(secondReply).toContainText('Toyota Innova Cross')
+
+      // Multi-turn follow-up: "Xe đó thuê 3 ngày giá bao nhiêu?" (resolves "Xe đó" -> Toyota Innova Cross)
+      db.prepare(`UPDATE vehicles SET price_per_day = ? WHERE id = ?`).run(
+        1_050_000,
+        innovaVehicleId,
+      )
+      await input.fill('Xe đó thuê 3 ngày thì giá sao?')
+      await panel.getByRole('button', { name: 'Gửi câu hỏi' }).click()
+      await expect(panel.getByTestId('ai-assistant-message')).toHaveCount(3, { timeout: 20_000 })
+      const thirdReply = panel.getByTestId('ai-assistant-message').nth(2)
+      await expect(thirdReply).toContainText('Toyota Innova Cross')
+      await expect(thirdReply).toContainText('1.050.000')
+
+      // Admin hides Toyota Innova Cross (visible = 0) -> AI stops returning it immediately
+      db.prepare(`UPDATE vehicle_models SET visible = 0 WHERE id = ?`).run(innovaModelId)
+      await input.fill('innova có xe này không')
+      await panel.getByRole('button', { name: 'Gửi câu hỏi' }).click()
+      await expect(panel.getByTestId('ai-assistant-message')).toHaveCount(4, { timeout: 20_000 })
+      const fourthReply = panel.getByTestId('ai-assistant-message').nth(3)
+      await expect(fourthReply.getByTestId('ai-vehicle-card')).toHaveCount(0)
+
+      // Conversation reset clears UI messages and rotates client sessionId
+      const prevSessionId = await page.evaluate(() =>
+        window.sessionStorage.getItem('nori_ai_session_id'),
+      )
+      await panel.getByRole('button', { name: 'Bắt đầu hội thoại mới' }).click()
+      await expect(panel.getByTestId('ai-assistant-message')).toHaveCount(0)
+      const nextSessionId = await page.evaluate(() =>
+        window.sessionStorage.getItem('nori_ai_session_id'),
+      )
+      expect(nextSessionId).toBeTruthy()
+      expect(nextSessionId).not.toBe(prevSessionId)
+    } finally {
+      db.prepare(`DELETE FROM vehicles WHERE id = ?`).run(innovaVehicleId)
+      db.prepare(`DELETE FROM vehicle_models WHERE id = ?`).run(innovaModelId)
+      db.close()
+    }
   })
 })

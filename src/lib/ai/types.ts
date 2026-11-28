@@ -2,6 +2,31 @@ export type AIProviderName = 'gemini' | 'openai' | 'mock' | 'rule-based-fallback
 
 export type AIUserRole = 'GUEST' | 'CUSTOMER' | 'ADMIN'
 
+export type NoriAIIntent =
+  | 'VEHICLE_LOOKUP'
+  | 'BRAND_LOOKUP'
+  | 'VEHICLE_RECOMMENDATION'
+  | 'AVAILABILITY_CHECK'
+  | 'PRICE_QUOTE'
+  | 'VEHICLE_COMPARISON'
+  | 'PROMOTION_QUERY'
+  | 'BOOKING_GUIDANCE'
+  | 'BOOKING_STATUS'
+  | 'RENTAL_POLICY'
+  | 'PURCHASE_CONSULTATION'
+  | 'GREETING'
+  | 'CLARIFICATION'
+  | 'OUT_OF_SCOPE'
+
+export type AIConnectionStatus =
+  | 'GEMINI_CONNECTED'
+  | 'FALLBACK_ACTIVE'
+  | 'API_CONFIG_MISSING'
+  | 'QUOTA_EXCEEDED'
+  | 'CONNECTION_ERROR'
+  | 'DISABLED'
+  | 'MOCK_ACTIVE'
+
 export type AIChatMessageInput = {
   role: 'user' | 'assistant'
   content: string
@@ -38,6 +63,8 @@ export type AIRuntimeConfig = {
   envEnabled: boolean
   provider: AIProviderName
   model: string
+  configuredModelRaw: string
+  modelRemappedFromDeprecated: boolean
   apiKeyConfigured: boolean
   freeTierOnly: boolean
   paidProvidersAllowed: boolean
@@ -182,6 +209,20 @@ export type AIPolicyCitation = {
   excerpt: string
 }
 
+export type AISessionContextSummary = {
+  activeModelQuery: string | null
+  activeModelName: string | null
+  brand: string | null
+  category: 'CAR' | 'MOTORBIKE' | 'PICKUP' | null
+  minSeats: number | null
+  maxBudgetPerDay: number | null
+  fuelType: string | null
+  transmission: string | null
+  startDate: string | null
+  endDate: string | null
+  durationDays: number | null
+}
+
 export type AITokenUsage = {
   inputTokens: number
   outputTokens: number
@@ -206,6 +247,7 @@ export type AIChatResponsePayload = {
   toolsCalled: string[]
   followUpSuggestions: string[]
   fallbackLinks: { label: string; href: string }[]
+  sessionContext?: AISessionContextSummary
   usage: {
     totalTokens: number
     latencyMs: number
@@ -229,6 +271,8 @@ export const ALLOWED_TOOL_NAMES = [
   'getRentalPolicy',
   'recommendVehicles',
   'prepareBooking',
+  'getCustomerBookingStatus',
+  'getPurchaseConsultationInfo',
 ] as const
 
 export type AllowedToolName = (typeof ALLOWED_TOOL_NAMES)[number]
@@ -246,6 +290,11 @@ export type AIProviderInputItem =
       content: string
     }
   | {
+      type: 'thought'
+      signature: string
+      summary?: string
+    }
+  | {
       type: 'function_call'
       call_id: string
       name: string
@@ -255,6 +304,7 @@ export type AIProviderInputItem =
   | {
       type: 'function_call_output'
       call_id: string
+      name?: string
       output: string
     }
 

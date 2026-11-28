@@ -5,12 +5,15 @@ export const AI_TOOL_DEFINITIONS: AIToolDefinition[] = [
   {
     name: 'searchVehicles',
     description:
-      'Tìm kiếm phương tiện đang kinh doanh thực tế trong database NORI theo danh mục, hãng, tên dòng xe, số chỗ, giá thuê/ngày, nhiên liệu, hộp số, mục đích sử dụng và tùy chọn kiểm tra khả dụng theo ngày nhận/trả.',
+      'Tìm kiếm phương tiện đang kinh doanh thực tế trong database NORI theo danh mục, hãng, tên dòng xe, số chỗ, ngân sách tối đa/ngày, nhiên liệu, hộp số và tùy chọn kiểm tra lịch trống theo ngày nhận/trả.',
     parameters: {
       type: 'object',
       additionalProperties: false,
       properties: {
-        query: { type: 'string', description: 'Từ khóa tìm theo tên dòng xe hoặc hãng xe' },
+        query: {
+          type: 'string',
+          description: 'Tên dòng xe cụ thể cần tìm (ví dụ: Innova, Fortuner, Xpander, VF 8)',
+        },
         category: {
           type: 'string',
           enum: ['CAR', 'MOTORBIKE', 'PICKUP'],
@@ -18,23 +21,24 @@ export const AI_TOOL_DEFINITIONS: AIToolDefinition[] = [
         },
         brand: {
           type: 'string',
-          description: 'Hãng sản xuất (ví dụ: Toyota, Honda, Ford, VinFast)',
+          description:
+            'Hãng sản xuất (ví dụ: Toyota, Honda, Ford, Mitsubishi, VinFast, Mazda, Hyundai)',
         },
         minSeats: { type: 'integer', minimum: 1, maximum: 60, description: 'Số chỗ tối thiểu' },
         maxPricePerDay: {
           type: 'number',
-          minimum: 50000,
-          description: 'Ngân sách tối đa VNĐ/ngày',
+          minimum: 40000,
+          description: 'Ngân sách tối đa VNĐ/ngày (lọc cứng không vượt ngân sách)',
         },
         minPricePerDay: { type: 'number', minimum: 0, description: 'Giá thuê tối thiểu VNĐ/ngày' },
         fuelType: {
           type: 'string',
           description: 'Loại nhiên liệu: Xăng, Dầu (Diesel), Điện (EV), Hybrid',
         },
-        transmission: { type: 'string', description: 'Hộp số: Tự động, Số sàn, CVT...' },
+        transmission: { type: 'string', description: 'Hộp số: Tự động, Số sàn' },
         purpose: {
           type: 'string',
-          description: 'Mục đích sử dụng: gia đình, đi phố, phượt, công tác, chở hàng, địa hình',
+          description: 'Mục đích sử dụng: gia đình, đi phố, phượt, công tác, chở hàng, tiết kiệm',
         },
         startDate: { type: 'string', description: 'Ngày nhận xe YYYY-MM-DD (tùy chọn)' },
         endDate: { type: 'string', description: 'Ngày trả xe YYYY-MM-DD (tùy chọn)' },
@@ -42,7 +46,7 @@ export const AI_TOOL_DEFINITIONS: AIToolDefinition[] = [
           type: 'integer',
           minimum: 1,
           maximum: 8,
-          description: 'Số kết quả tối đa (mặc định 5)',
+          description: 'Số kết quả tối đa (mặc định 4)',
         },
       },
     },
@@ -50,13 +54,23 @@ export const AI_TOOL_DEFINITIONS: AIToolDefinition[] = [
   {
     name: 'getVehicleDetails',
     description:
-      'Tra cứu chi tiết dòng xe catalogue và danh sách các cá thể xe thực tế thuộc dòng xe đó (thông số, tiện nghi, phiên bản, đánh giá đã xác minh, trạng thái kinh doanh). Không trả thông tin nội bộ như biển số.',
+      'Kiểm tra một dòng xe cụ thể có tồn tại trong danh mục NORI hay không, xem giá thuê/ngày, tình trạng xe thực tế (đang sẵn sàng, bảo dưỡng, hay xe DEMO), thông số kỹ thuật, và ước tính giá cơ bản theo số ngày thuê nếu chưa có ngày nhận cụ thể.',
     parameters: {
       type: 'object',
       additionalProperties: false,
       properties: {
-        slug: { type: 'string', description: 'Slug chính xác của dòng xe' },
-        query: { type: 'string', description: 'Tên dòng xe hoặc mã xe nếu chưa biết slug' },
+        slug: { type: 'string', description: 'Slug chính xác của dòng xe (nếu đã biết)' },
+        query: {
+          type: 'string',
+          description: 'Tên dòng xe khách đang hỏi (ví dụ: Toyota Innova, Fortuner, Xpander, VF 8)',
+        },
+        durationDays: {
+          type: 'integer',
+          minimum: 1,
+          maximum: 30,
+          description:
+            'Số ngày dự kiến thuê khi khách chưa nêu ngày nhận xe cụ thể (ví dụ: thuê 3 ngày)',
+        },
       },
     },
   },
@@ -84,7 +98,7 @@ export const AI_TOOL_DEFINITIONS: AIToolDefinition[] = [
   {
     name: 'calculateRentalPrice',
     description:
-      'Tính báo giá thuê xe chính thức bằng Business Rule Engine của NORI (giá theo ngày, số ngày thuê [startDate, endDate), chiết khấu tuần/tháng, phụ phí cuối tuần/ngày lễ, dịch vụ bổ sung, khuyến mãi, tiền cọc và số tiền còn lại).',
+      'Tính báo giá thuê xe chính thức bằng Business Rule Engine của NORI (giá theo ngày, số ngày thuê [startDate, endDate), chiết khấu tuần/tháng, phụ phí cuối tuần/ngày lễ, dịch vụ bổ sung, khuyến mãi, tiền cọc và số tiền còn lại). Bắt buộc đủ startDate và endDate.',
     parameters: {
       type: 'object',
       additionalProperties: false,
@@ -189,7 +203,7 @@ export const AI_TOOL_DEFINITIONS: AIToolDefinition[] = [
   {
     name: 'recommendVehicles',
     description:
-      'Đề xuất danh sách phương tiện phù hợp nhất bằng NORI Hybrid Recommendation Engine (lọc cứng theo điều kiện bắt buộc + chấm điểm có trọng số minh bạch + giải thích lý do đề xuất).',
+      'Đề xuất phương tiện phù hợp theo nhu cầu bằng NORI Hybrid Recommendation Engine (lọc cứng điều kiện bắt buộc về loại xe, số chỗ, ngân sách tối đa, hộp số, nhiên liệu, ngày trống trước khi chấm điểm). KHÔNG dùng hàm này khi khách đang hỏi đích danh 1 dòng xe cụ thể (hãy dùng getVehicleDetails).',
     parameters: {
       type: 'object',
       additionalProperties: false,
@@ -199,11 +213,12 @@ export const AI_TOOL_DEFINITIONS: AIToolDefinition[] = [
           description: 'Mô tả nhu cầu gốc của khách hàng bằng ngôn ngữ tự nhiên',
         },
         category: { type: 'string', enum: ['CAR', 'MOTORBIKE', 'PICKUP'] },
+        brand: { type: 'string', description: 'Hãng xe nếu khách yêu cầu hãng cụ thể' },
         seats: { type: 'integer', minimum: 1, maximum: 60 },
-        maxBudgetPerDay: { type: 'number', minimum: 50000 },
+        maxBudgetPerDay: { type: 'number', minimum: 40000 },
         strictBudget: {
           type: 'boolean',
-          description: 'True nếu khách yêu cầu nghiêm ngặt không vượt ngân sách tối đa',
+          description: 'Mặc định true khi khách có nêu mức ngân sách tối đa',
         },
         fuelType: { type: 'string' },
         transmission: { type: 'string' },
@@ -239,6 +254,43 @@ export const AI_TOOL_DEFINITIONS: AIToolDefinition[] = [
       },
     },
   },
+  {
+    name: 'getCustomerBookingStatus',
+    description:
+      'Tra cứu trạng thái đơn thuê xe của CHÍNH khách hàng đang đăng nhập (kiểm tra quyền sở hữu nghiêm ngặt với overrideAccess: false). Tuyệt đối không truy cập đơn của khách khác.',
+    parameters: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        bookingKey: {
+          type: 'string',
+          description: 'Mã đơn thuê cụ thể nếu khách cung cấp (tùy chọn)',
+        },
+        limit: {
+          type: 'integer',
+          minimum: 1,
+          maximum: 5,
+          description: 'Số đơn gần nhất cần xem (mặc định 3)',
+        },
+      },
+    },
+  },
+  {
+    name: 'getPurchaseConsultationInfo',
+    description:
+      'Tư vấn mua xe & đăng ký lái thử từ danh sách xe có hỗ trợ bán tại NORI, tính giá lăn bánh tham khảo (nếu có giá niêm yết) và trả thông tin chính sách mua xe công khai.',
+    parameters: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        query: {
+          type: 'string',
+          description: 'Tên dòng xe hoặc hãng xe khách quan tâm mua (tùy chọn)',
+        },
+        category: { type: 'string', enum: ['CAR', 'MOTORBIKE', 'PICKUP'] },
+      },
+    },
+  },
 ]
 
 export type ValidatedSearchVehiclesArgs = {
@@ -259,6 +311,7 @@ export type ValidatedSearchVehiclesArgs = {
 export type ValidatedGetVehicleDetailsArgs = {
   slug?: string
   query?: string
+  durationDays?: number
 }
 
 export type ValidatedCheckAvailabilityArgs = {
@@ -302,6 +355,7 @@ export type ValidatedGetRentalPolicyArgs = {
 export type ValidatedRecommendVehiclesArgs = {
   userQuery: string
   category?: 'CAR' | 'MOTORBIKE' | 'PICKUP'
+  brand?: string
   seats?: number
   maxBudgetPerDay?: number
   strictBudget: boolean
@@ -321,6 +375,16 @@ export type ValidatedPrepareBookingArgs = {
   endDate?: string
   addons: AddonDefinition['id'][]
   pickupBranchId?: string
+}
+
+export type ValidatedGetCustomerBookingStatusArgs = {
+  bookingKey?: string
+  limit: number
+}
+
+export type ValidatedGetPurchaseConsultationArgs = {
+  query?: string
+  category?: 'CAR' | 'MOTORBIKE' | 'PICKUP'
 }
 
 function safeStr(v: unknown, max = 160): string | undefined {
@@ -384,14 +448,14 @@ export function validateToolArguments(
         category: safeCategory(obj.category),
         brand: safeStr(obj.brand, 60),
         minSeats: safeNum(obj.minSeats, 1, 60),
-        maxPricePerDay: safeNum(obj.maxPricePerDay, 50_000, 100_000_000),
+        maxPricePerDay: safeNum(obj.maxPricePerDay, 40_000, 100_000_000),
         minPricePerDay: safeNum(obj.minPricePerDay, 0, 100_000_000),
         fuelType: safeStr(obj.fuelType, 40),
         transmission: safeStr(obj.transmission, 40),
         purpose: safeStr(obj.purpose, 100),
         startDate,
         endDate,
-        limit: Math.round(safeNum(obj.limit, 1, 8) ?? 5),
+        limit: Math.round(safeNum(obj.limit, 1, 8) ?? 4),
       }
       return { ok: true, data }
     }
@@ -402,7 +466,12 @@ export function validateToolArguments(
       if (!slug && !query) {
         return { ok: false, error: 'Cần cung cấp tên hoặc slug dòng xe cần xem chi tiết.' }
       }
-      const data: ValidatedGetVehicleDetailsArgs = { slug, query }
+      const durationRaw = safeNum(obj.durationDays, 1, 30)
+      const data: ValidatedGetVehicleDetailsArgs = {
+        slug,
+        query,
+        durationDays: durationRaw ? Math.round(durationRaw) : undefined,
+      }
       return { ok: true, data }
     }
 
@@ -528,12 +597,15 @@ export function validateToolArguments(
         const dv = validateRentalDates(startDate, endDate)
         if (dv.error) return { ok: false, error: dv.error }
       }
+      const maxBudget = safeNum(obj.maxBudgetPerDay, 40_000, 100_000_000)
       const data: ValidatedRecommendVehiclesArgs = {
         userQuery,
         category: safeCategory(obj.category),
+        brand: safeStr(obj.brand, 60),
         seats: safeNum(obj.seats, 1, 60),
-        maxBudgetPerDay: safeNum(obj.maxBudgetPerDay, 50_000, 100_000_000),
-        strictBudget: Boolean(obj.strictBudget),
+        maxBudgetPerDay: maxBudget,
+        strictBudget:
+          obj.strictBudget !== undefined ? Boolean(obj.strictBudget) : Boolean(maxBudget),
         fuelType: safeStr(obj.fuelType, 40),
         transmission: safeStr(obj.transmission, 40),
         purpose: safeStr(obj.purpose, 100),
@@ -562,6 +634,22 @@ export function validateToolArguments(
         endDate: startDate && endDate ? endDate : undefined,
         addons: parseAddonKeys(rawAddons),
         pickupBranchId: safeStr(obj.pickupBranchId, 80),
+      }
+      return { ok: true, data }
+    }
+
+    case 'getCustomerBookingStatus': {
+      const data: ValidatedGetCustomerBookingStatusArgs = {
+        bookingKey: safeStr(obj.bookingKey, 40)?.toUpperCase(),
+        limit: Math.round(safeNum(obj.limit, 1, 5) ?? 3),
+      }
+      return { ok: true, data }
+    }
+
+    case 'getPurchaseConsultationInfo': {
+      const data: ValidatedGetPurchaseConsultationArgs = {
+        query: safeStr(obj.query, 120),
+        category: safeCategory(obj.category),
       }
       return { ok: true, data }
     }

@@ -1,5 +1,29 @@
 # NHẬT KÝ THAY ĐỔI VÀ NÂNG CẤP HỆ THỐNG NORI (CHANGELOG)
 
+## [Phiên bản 2.9.0] — 2026-11-28: Nâng cấp Toàn diện Trợ lý AI NORI (14-Intent NLU, Hard-Constraint Search, Gemini Interactions API & Safe Markdown UI)
+
+### 1. Khắc phục Triệt để Lỗi Gốc `"innova có xe này không"` & Nâng cấp NLU Tiếng Việt (`src/lib/ai/nlu.ts`, `src/lib/ai/tools.ts`, `src/lib/ai/recommendation.ts`)
+
+- **Xử lý triệt để nguyên nhân gốc rễ**: Trước đây khi khách hỏi `"innova có xe này không"`, hệ thống không tách thực thể dòng xe cụ thể nên trượt sang `recommendVehicles` toàn kho và đề xuất 4 xe máy (`Evo200`, `Wave Alpha`, `Vision`, `PCX`). Nay bộ phân tích NLU nhận diện ưu tiên `VEHICLE_LOOKUP` (`Toyota Innova`, `CAR`, `7 chỗ`), truy vấn trực tiếp `vehicle-models` & `vehicles`, trả `vehicleCards = []` (`0` xe máy), thông báo trung thực chưa có `Toyota Innova` và gợi ý các mẫu ô tô 7 chỗ thực tế đang có tại NORI.
+- **Phân loại 14 nhóm ý định nghiệp vụ (`NoriAIIntent`)**: `VEHICLE_LOOKUP`, `BRAND_LOOKUP`, `VEHICLE_RECOMMENDATION`, `AVAILABILITY_CHECK`, `PRICE_QUOTE`, `VEHICLE_COMPARISON`, `PROMOTION_QUERY`, `BOOKING_GUIDANCE`, `BOOKING_STATUS`, `RENTAL_POLICY`, `PURCHASE_CONSULTATION`, `GREETING`, `CLARIFICATION`, `OUT_OF_SCOPE`.
+- **Chuẩn hóa tiếng Việt tự nhiên & sửa lỗi chính tả**: Hỗ trợ tiếng Việt có dấu/không dấu, từ viết tắt (`ko`, `dc`, `bn`, `200k`, `1.5tr`, `50.000đ`, `stđ`), lỗi chính tả phổ biến (`inova`, `fotuner`, `expander` qua Damerau-Levenshtein) và đồng bộ tức thời khi Admin thêm/sửa/ẩn/bảo dưỡng phương tiện mà không cần build lại website.
+- **Quy trình 7 bước & Lọc cứng bắt buộc trước khi chấm điểm**: Tách biệt nghiêm ngặt `CAR` / `MOTORBIKE` / `PICKUP`, số chỗ ngồi tối thiểu, trần ngân sách nghiêm ngặt, hộp số ranh giới từ (`Số tự động` không bao giờ khớp nhầm `Số sàn`), phân biệt rõ dòng xe catalogue / xe đang mở thuê / `MAINTENANCE` / `DEMO`, và **không ép trả đủ 4 xe** khi không có đủ kết quả hợp lệ.
+
+### 2. Ngữ cảnh Hội thoại Nhiều Lượt, Đồng bộ Nghiệp vụ & Bảo mật Quyền Sở Hữu (`src/lib/ai/orchestrator.ts`, `src/lib/ai/fallback.ts`)
+
+- **Ghi nhớ ngữ cảnh theo phiên**: Giải tham chiếu chính xác đại từ và câu hỏi tiếp nối (`"Có Fortuner không?"` → `"Xe đó giá bao nhiêu?"` → `"Thuê 3 ngày thì sao?"` → `"Đổi sang Xpander đi"`). Cô lập tuyệt đối giữa các phiên khách hàng và tự động xoay `sessionId` mới khi nhấn nút **Bắt đầu hội thoại mới**.
+- **Mở rộng 11 Allowlisted Tools**: Bổ sung `getCustomerBookingStatus` (`overrideAccess: false` + kiểm tra nghiêm ngặt `customer === user.id`) và `getPurchaseConsultationInfo` (tính giá lăn bánh qua `calculateRollingPrice`), bên cạnh hệ thống tính giá thuê & kiểm tra lịch trống chuẩn `evaluateVehicleBookingAvailabilityAndPricing`.
+- **Phân biệt lỗi Database với không có xe**: `knowledge.ts`, `tools.ts` và `orchestrator.ts` bảo toàn mã lỗi `AI_DB_UNAVAILABLE` (HTTP `503`) cả trong chế độ Rule-based Fallback khi cơ sở dữ liệu gặp sự cố.
+
+### 3. Nâng cấp Tích hợp Google Gemini (`@google/genai` v3.6.1), Giao diện Markdown & Admin Diagnostics
+
+- **Gemini Interactions API (`src/lib/ai/gemini.ts`)**: Nâng cấp lên `client.interactions.create({ store: false })` hỗ trợ `gemini-3.5-flash-lite` (mặc định), `gemini-3.1-flash-lite`, `gemini-4-hydrogen`, bảo toàn chữ ký suy luận `thought` qua các vòng `function_call`, Structured Output (`response_format`) và nạp tự động `.env` trên `scripts/start-standalone.mjs`.
+- **Render Markdown AST an toàn (`src/lib/ai/markdown.ts`, `src/components/ai/ai-markdown.tsx`)**: Hiển thị chuẩn in đậm, nghiêng, danh sách, bảng mã và liên kết nội bộ/ngoài mà **không dùng `dangerouslySetInnerHTML`**, loại bỏ hoàn toàn ký tự `**` thô và chặn `100%` liên kết `javascript:` / `data:`.
+- **Tách bạch thông điệp khách hàng & Chẩn đoán Admin (`/dashboard/ai`)**: Loại bỏ thông báo kỹ thuật về `API Key` khỏi giao diện khách hàng; bổ sung chẩn đoán tường minh trên Admin (`Gemini Connected`, `Fallback Active`, `API Configuration Missing`, `Quota Exceeded`, `Connection Error`) và thống kê phân bổ 14 Intent.
+- **Cố định Header & Khắc phục khoảng trắng Sidebar trên Admin Layout (`src/components/admin/admin-shell.tsx`)**: Khung quản trị `h-dvh overflow-hidden` giữ thanh Header và Sidebar cố định toàn chiều cao khi cuộn nội dung.
+
+---
+
 ## [Phiên bản 2.8.0] — 2026-11-28: PG18 Logical Replication, AES-256-GCM Encrypted Backup & Smart Vehicle Import
 
 ### 1. PostgreSQL 18 Logical Replication + Encrypted Backup + Media Backup

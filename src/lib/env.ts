@@ -436,7 +436,7 @@ export function validateEnvironment(options?: {
   const aiApiKeyConfigured =
     aiProvider === 'openai'
       ? Boolean(process.env.OPENAI_API_KEY?.trim())
-      : Boolean(process.env.GEMINI_API_KEY?.trim())
+      : Boolean(process.env.GEMINI_API_KEY?.trim() || process.env.GOOGLE_API_KEY?.trim())
   if (aiEnabled && !aiApiKeyConfigured) {
     warnings.push(
       `NORI_AI_ENABLED đang bật nhưng ${aiProvider === 'openai' ? 'OPENAI_API_KEY' : 'GEMINI_API_KEY'} chưa được cấu hình. Trợ lý AI sẽ tự động chuyển sang chế độ tư vấn cơ bản (Rule-based Engine) khi fallback được bật.`,

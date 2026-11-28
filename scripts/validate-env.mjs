@@ -1,4 +1,23 @@
 #!/usr/bin/env node
+import fs from 'node:fs'
+import path from 'node:path'
+
+const dotEnvPath = path.resolve(process.cwd(), '.env')
+if (fs.existsSync(dotEnvPath)) {
+  for (const rawLine of fs.readFileSync(dotEnvPath, 'utf8').split(/\r?\n/)) {
+    const line = rawLine.trim()
+    if (!line || line.startsWith('#') || !line.includes('=')) continue
+    const eqIdx = line.indexOf('=')
+    const key = line.slice(0, eqIdx).trim()
+    if (!key || process.env[key] !== undefined) continue
+    let val = line.slice(eqIdx + 1).trim()
+    if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+      val = val.slice(1, -1)
+    }
+    process.env[key] = val
+  }
+}
+
 import { validateEnvironment } from '../src/lib/env.ts'
 
 const result = validateEnvironment({ checkStorageWritable: true })

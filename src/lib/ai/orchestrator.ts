@@ -8,6 +8,7 @@ import {
   sanitizeAssistantOutput,
   validateAndSanitizeChatInput,
 } from './guardrails.ts'
+import { analyzeConversationTurn } from './nlu.ts'
 import { resolveAIProvider } from './provider.ts'
 import {
   acquireAIConcurrencySlot,
@@ -29,8 +30,10 @@ import type {
   AIProviderInputItem,
   AIQuoteSummary,
   AIResolvedConfig,
+  AISessionContextSummary,
   AIUserRole,
   AIVehicleCard,
+  NoriAIIntent,
 } from './types.ts'
 import { estimateTokenCostUsd, hashSessionIdentifier, recordAIUsageLog } from './usage.ts'
 
@@ -78,32 +81,59 @@ async function getTodayRecordedSpendUsd(payload: Payload): Promise<number> {
   }
 }
 
-function deriveIntentFromTools(toolsCalled: string[]): string {
-  if (toolsCalled.includes('prepareBooking')) return 'PREPARE_BOOKING'
-  if (toolsCalled.includes('calculateRentalPrice')) return 'CALCULATE_PRICE'
-  if (toolsCalled.includes('checkAvailability')) return 'CHECK_AVAILABILITY'
-  if (toolsCalled.includes('compareVehicles')) return 'COMPARE_VEHICLES'
-  if (toolsCalled.includes('recommendVehicles')) return 'RECOMMEND_VEHICLES'
-  if (toolsCalled.includes('searchVehicles')) return 'SEARCH_VEHICLES'
-  if (toolsCalled.includes('getVehicleDetails')) return 'VEHICLE_DETAILS'
-  if (toolsCalled.includes('getActivePromotions')) return 'PROMOTIONS'
-  if (toolsCalled.includes('getRentalPolicy')) return 'POLICY_QA'
-  return 'GENERAL_INQUIRY'
+function deriveCanonicalIntent(toolsCalled: string[], nluIntent: NoriAIIntent): string {
+  if (toolsCalled.includes('prepareBooking')) return 'BOOKING_GUIDANCE'
+  if (toolsCalled.includes('getCustomerBookingStatus')) return 'BOOKING_STATUS'
+  if (toolsCalled.includes('getPurchaseConsultationInfo')) return 'PURCHASE_CONSULTATION'
+  if (toolsCalled.includes('calculateRentalPrice')) return 'PRICE_QUOTE'
+  if (toolsCalled.includes('checkAvailability')) return 'AVAILABILITY_CHECK'
+  if (toolsCalled.includes('compareVehicles')) return 'VEHICLE_COMPARISON'
+  if (toolsCalled.includes('getActivePromotions')) return 'PROMOTION_QUERY'
+  if (toolsCalled.includes('getRentalPolicy')) return 'RENTAL_POLICY'
+  if (toolsCalled.includes('recommendVehicles')) return 'VEHICLE_RECOMMENDATION'
+  if (toolsCalled.includes('searchVehicles')) {
+    return nluIntent === 'BRAND_LOOKUP' ? 'BRAND_LOOKUP' : 'VEHICLE_RECOMMENDATION'
+  }
+  if (toolsCalled.includes('getVehicleDetails')) {
+    return nluIntent === 'PRICE_QUOTE' ? 'PRICE_QUOTE' : 'VEHICLE_LOOKUP'
+  }
+  return nluIntent
 }
 
 function buildFollowUpSuggestions(params: {
   intent: string
   cards: AIVehicleCard[]
   hasQuote: boolean
+  sessionContext?: AISessionContextSummary
 }): string[] {
   const first = params.cards[0]
-  if (params.intent === 'RECOMMEND_VEHICLES' || params.intent === 'SEARCH_VEHICLES') {
+  if (params.intent === 'VEHICLE_LOOKUP' && !first) {
+    if (params.sessionContext?.category === 'CAR') {
+      return [
+        'Tư vấn xe ô tô 7 chỗ đang có tại NORI',
+        'Có xe Toyota Fortuner hoặc Mitsubishi Xpander không?',
+        'Xem các mã khuyến mãi đang hiệu lực',
+      ]
+    }
+    return [
+      'Tư vấn xe ô tô gia đình 7 chỗ dưới 1.5 triệu/ngày',
+      'Gợi ý xe máy tay ga đi phố dưới 200k',
+      'Chính sách đặt cọc & giấy tờ thuê xe',
+    ]
+  }
+  if (
+    params.intent === 'VEHICLE_LOOKUP' ||
+    params.intent === 'BRAND_LOOKUP' ||
+    params.intent === 'VEHICLE_RECOMMENDATION'
+  ) {
     const out: string[] = []
     if (first) {
       out.push(`Kiểm tra lịch trống và tính giá thuê ${first.name} 3 ngày từ ngày mai`)
     }
     if (params.cards.length >= 2) {
       out.push(`So sánh ${params.cards[0]!.name} và ${params.cards[1]!.name}`)
+    } else if (first) {
+      out.push('Thuê 3 ngày thì sao?')
     }
     out.push('Hiện có mã khuyến mãi nào áp dụng được không?')
     return out.slice(0, 3)
@@ -187,6 +217,12 @@ export async function runNoriAIChat(params: {
     }
   }
 
+  // Pre-analyze NLU & multi-turn session context (isolated strictly to this request's validated history)
+  const nluAnalysis = analyzeConversationTurn({
+    message: validated.message,
+    history: validated.history,
+  })
+
   const executeAndLogFallback = async (
     reasonCode: string,
     reasonMessage: string,
@@ -198,19 +234,39 @@ export async function runNoriAIChat(params: {
       errorDetail?: string
     },
   ): Promise<AIChatResponsePayload> => {
-    const fb = await runRuleBasedFallback({
-      payload: params.payload,
-      requestId,
-      message: validated.message,
-      config,
-      user: params.user,
-      reasonCode,
-      reasonMessage,
-      startedAt,
-      disclaimer: STANDARD_DISCLAIMER,
-      fallbackLinks: AI_FALLBACK_LINKS,
-      buildFollowUps: buildFollowUpSuggestions,
-    })
+    let fb: Awaited<ReturnType<typeof runRuleBasedFallback>>
+    try {
+      fb = await runRuleBasedFallback({
+        payload: params.payload,
+        requestId,
+        message: validated.message,
+        history: validated.history,
+        config,
+        user: params.user,
+        reasonCode,
+        reasonMessage,
+        startedAt,
+        disclaimer: STANDARD_DISCLAIMER,
+        fallbackLinks: AI_FALLBACK_LINKS,
+        buildFollowUps: buildFollowUpSuggestions,
+      })
+    } catch (fbErr) {
+      const mappedFbErr = mapToNoriAIError(fbErr)
+      await recordAIUsageLog(params.payload, {
+        requestId,
+        eventType: 'CHAT',
+        status: 'ERROR',
+        provider: 'rule-based-fallback',
+        model: config.model,
+        userType: params.userRole,
+        userId: params.user?.id ?? null,
+        sessionHash,
+        latencyMs: Math.round(performance.now() - startedAt),
+        errorCode: mappedFbErr.code,
+        errorCategory: mappedFbErr.code,
+      }).catch(() => undefined)
+      throw mappedFbErr
+    }
     const combinedTools = [...new Set([...(extraUsage?.priorTools ?? []), ...fb.toolsCalled])]
     await recordAIUsageLog(params.payload, {
       requestId,
@@ -292,7 +348,7 @@ export async function runNoriAIChat(params: {
     if (rateRes.scope === 'PROJECT' && config.fallbackEnabled && !params.providerOverride) {
       return executeAndLogFallback(
         'PROJECT_RATE_LIMIT',
-        'Hệ thống đang chạm ngưỡng giới hạn gọi Gemini Free Tier của dự án nên đã chuyển sang dữ liệu NORI trực tiếp.',
+        'Project Gemini RPM/RPD limit reached; served via Rule-based Engine.',
       )
     }
     await recordAIUsageLog(params.payload, {
@@ -324,7 +380,7 @@ export async function runNoriAIChat(params: {
     if (config.fallbackEnabled) {
       return executeAndLogFallback(
         'AI_UNCONFIGURED',
-        'Chưa cấu hình khóa API Gemini trên máy chủ; đang tư vấn trực tiếp từ dữ liệu và quy tắc của NORI.',
+        'GEMINI_API_KEY not configured on server; served via Rule-based Engine.',
       )
     }
     await recordAIUsageLog(params.payload, {
@@ -342,7 +398,7 @@ export async function runNoriAIChat(params: {
     return {
       requestId,
       reply:
-        'Trợ lý AI NORI hiện chưa được cấu hình API Key trên máy chủ nên chưa thể trả lời tự động. Bạn vẫn có thể sử dụng đầy đủ bộ lọc tìm xe, xem giá thuê và đặt xe trực tiếp trên NORI.',
+        'Trợ lý AI NORI hiện đang tạm ngưng tự động. Bạn vẫn có thể sử dụng đầy đủ bộ lọc tìm xe, xem giá thuê và đặt xe trực tiếp trên NORI.',
       status: 'UNCONFIGURED',
       mode: 'UNCONFIGURED',
       intent: 'AI_UNCONFIGURED',
@@ -365,14 +421,14 @@ export async function runNoriAIChat(params: {
     if (config.fallbackEnabled) {
       return executeAndLogFallback(
         'AI_CIRCUIT_OPEN',
-        `Kết nối Gemini đang tạm ngưng (${circuit.retryAfterSeconds}s) để bảo vệ hạn mức miễn phí; hệ thống đã chuyển sang tư vấn cơ bản.`,
+        `Gemini circuit open (${circuit.retryAfterSeconds}s); served via Rule-based Engine.`,
       )
     }
     throw new NoriAIError({
       code: 'AI_CIRCUIT_OPEN',
       status: 503,
       retryable: true,
-      userMessage: `Trợ lý AI NORI đang tạm ngưng tự động (${circuit.retryAfterSeconds} giây) do nhà cung cấp AI liên tục gián đoạn. Website và chức năng đặt xe vẫn hoạt động bình thường.`,
+      userMessage: `Trợ lý AI NORI đang tạm ngưng tự động (${circuit.retryAfterSeconds} giây) do nhà cung cấp AI tạm gián đoạn. Website và chức năng đặt xe vẫn hoạt động bình thường.`,
     })
   }
 
@@ -421,14 +477,16 @@ export async function runNoriAIChat(params: {
     ) {
       return executeAndLogFallback(
         mapped.code,
-        'Nhà cung cấp hoặc model AI đang bị khóa theo chính sách Free Tier; hệ thống đã chuyển sang tư vấn cơ bản.',
+        'Provider/model blocked under Free Tier policy; served via Rule-based Engine.',
       )
     }
     throw mapped
   }
+
   const systemInstructions = buildNoriSystemPrompt({
     knowledgeNote: config.knowledgeNote,
     userAuthenticated: params.userRole === 'CUSTOMER',
+    sessionContext: nluAnalysis.sessionContext,
   })
   const toolDefs = getAllowedToolDefinitions()
 
@@ -460,8 +518,6 @@ export async function runNoriAIChat(params: {
 
   try {
     for (let round = 0; round <= config.maxToolRounds; round += 1) {
-      // Count every Function Calling round against Project & IP total Free-Tier model-call quota
-      // (Session RPM/RPD tracks customer prompts once at step 4 so multi-round FC isn't double-charged per question)
       if (round > 0) {
         const roundRate = checkAndConsumeMultiScopeModelCall({
           sessionKey: sessionHash,
@@ -478,7 +534,7 @@ export async function runNoriAIChat(params: {
           if (config.fallbackEnabled && !params.providerOverride) {
             return await executeAndLogFallback(
               'ROUND_QUOTA_REACHED',
-              'Đã chạm giới hạn lượt gọi model cho chuỗi Function Calling; hệ thống đã tổng hợp trực tiếp từ dữ liệu NORI.',
+              'Multi-round Function Calling quota reached; completed via Rule-based Engine.',
               {
                 inputTokens: totalInputTokens,
                 outputTokens: totalOutputTokens,
@@ -517,10 +573,8 @@ export async function runNoriAIChat(params: {
         break
       }
 
-      // Append model output items (function_call entries) before appending function_call_output items
       conversationInput.push(...turn.rawOutputItems)
 
-      // Execute tool calls safely with bounded parallelism
       const toolResults = await Promise.all(
         turn.toolCalls.slice(0, 6).map(async (tc) => {
           toolsCalled.push(tc.name)
@@ -560,6 +614,7 @@ export async function runNoriAIChat(params: {
         conversationInput.push({
           type: 'function_call_output',
           call_id: tc.callId,
+          name: tc.name,
           output: JSON.stringify(res.toolOutputForLLM),
         })
       }
@@ -571,11 +626,37 @@ export async function runNoriAIChat(params: {
       }
     }
 
+    // Safety guard against LLM skipping tools on data-dependent intents (prevents any hallucinated price/vehicle)
+    const dataDependentIntents: NoriAIIntent[] = [
+      'VEHICLE_LOOKUP',
+      'BRAND_LOOKUP',
+      'VEHICLE_RECOMMENDATION',
+      'PROMOTION_QUERY',
+      'BOOKING_STATUS',
+      'RENTAL_POLICY',
+      'PURCHASE_CONSULTATION',
+    ]
+    if (
+      toolsCalled.length === 0 &&
+      dataDependentIntents.includes(nluAnalysis.intent) &&
+      config.fallbackEnabled
+    ) {
+      return await executeAndLogFallback(
+        'UNVERIFIED_DIRECT_REPLY_GUARD',
+        'Model attempted direct reply without calling NORI verification tool; routed through deterministic tool verification.',
+        {
+          inputTokens: totalInputTokens,
+          outputTokens: totalOutputTokens,
+          totalTokens,
+        },
+      )
+    }
+
     recordCircuitSuccess()
 
     const safeReply = sanitizeAssistantOutput(finalText)
     const vehicleCards = Array.from(vehicleCardMap.values()).slice(0, 6)
-    const intent = deriveIntentFromTools(toolsCalled)
+    const intent = deriveCanonicalIntent(toolsCalled, nluAnalysis.intent)
     const latencyMs = Math.round(performance.now() - startedAt)
     const estimatedCostUsd = estimateTokenCostUsd(
       resolvedModel,
@@ -618,10 +699,12 @@ export async function runNoriAIChat(params: {
       bookingHandoff,
       citations: citations.slice(0, 5),
       toolsCalled: [...new Set(toolsCalled)],
+      sessionContext: nluAnalysis.sessionContext,
       followUpSuggestions: buildFollowUpSuggestions({
         intent,
         cards: vehicleCards,
         hasQuote: Boolean(quote),
+        sessionContext: nluAnalysis.sessionContext,
       }),
       fallbackLinks: AI_FALLBACK_LINKS,
       usage: {
@@ -650,27 +733,10 @@ export async function runNoriAIChat(params: {
       !params.signal?.aborted
 
     if (canFallback) {
-      const reasonLabels: Partial<Record<string, string>> = {
-        AI_RATE_LIMITED:
-          'Gemini đang giới hạn tốc độ (429); hệ thống đã chuyển sang tư vấn trực tiếp từ dữ liệu NORI.',
-        AI_QUOTA_EXCEEDED:
-          'Gemini tạm hết hạn mức miễn phí; hệ thống đã chuyển sang tư vấn trực tiếp từ dữ liệu NORI.',
-        AI_TIMEOUT:
-          'Gemini phản hồi quá thời gian chờ; hệ thống đã chuyển sang tư vấn trực tiếp từ dữ liệu NORI.',
-        AI_INVALID_API_KEY:
-          'Khóa kết nối AI chưa hợp lệ trên máy chủ; hệ thống đang phục vụ bằng dữ liệu NORI trực tiếp.',
-        AI_MODEL_UNAVAILABLE:
-          'Model Gemini tạm không khả dụng; hệ thống đã chuyển sang tư vấn trực tiếp từ dữ liệu NORI.',
-        AI_MODEL_NOT_FREE_TIER:
-          'Model đang cấu hình không thuộc danh sách Free Tier; hệ thống đã chuyển sang tư vấn cơ bản.',
-        AI_PAID_PROVIDER_BLOCKED:
-          'Nhà cung cấp AI trả phí đang bị tắt; hệ thống đang tư vấn từ dữ liệu NORI.',
-      }
       try {
         return await executeAndLogFallback(
           mapped.code,
-          reasonLabels[mapped.code] ??
-            'Kết nối Gemini tạm gián đoạn; hệ thống đã chuyển sang chế độ tư vấn cơ bản từ dữ liệu NORI.',
+          sanitizeErrorMessage(mapped.message).slice(0, 120),
           {
             inputTokens: totalInputTokens,
             outputTokens: totalOutputTokens,
