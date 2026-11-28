@@ -15,21 +15,34 @@ export async function GET(request: Request) {
     const config = await loadResolvedAIConfig(payload)
     const runtime = getAIRuntimeConfig()
 
-    logger.logSuccess(200, { enabled: config.enabled, configured: config.configured })
+    const ready = config.enabled && (config.configured || config.fallbackEnabled)
+    const fallbackActive = config.enabled && !config.configured && config.fallbackEnabled
+
+    logger.logSuccess(200, {
+      enabled: config.enabled,
+      configured: config.configured,
+      fallbackActive,
+    })
     return json(
       {
         enabled: config.enabled,
         configured: config.configured,
-        ready: config.enabled && config.configured,
+        ready,
+        fallbackEnabled: config.fallbackEnabled,
+        fallbackActive,
+        freeTierOnly: config.freeTierOnly,
         provider: runtime.testMockEnabled ? 'mock' : config.provider,
+        model: config.model,
         greetingMessage: config.greetingMessage,
         quickSuggestions: config.quickSuggestions,
         fallbackLinks: AI_FALLBACK_LINKS,
         statusMessage: !config.enabled
           ? 'Trợ lý AI hiện đang tạm tắt bởi quản trị viên.'
-          : !config.configured
-            ? 'Trợ lý AI chưa được cấu hình API Key trên máy chủ. Bạn vẫn có thể tìm xe qua bộ lọc và đặt xe bình thường.'
-            : null,
+          : fallbackActive
+            ? 'Đang chạy ở chế độ tư vấn cơ bản (Rule-based Engine) do chưa cấu hình API Key AI trên máy chủ.'
+            : !config.configured
+              ? 'Trợ lý AI chưa được cấu hình API Key trên máy chủ. Bạn vẫn có thể tìm xe qua bộ lọc và đặt xe bình thường.'
+              : null,
       },
       200,
       logger.responseHeaders(),

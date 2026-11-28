@@ -411,12 +411,35 @@ export function validateEnvironment(options?: {
       .trim()
       .toLowerCase(),
   )
-  const aiProvider = (process.env.NORI_AI_PROVIDER?.trim() || 'openai').toLowerCase()
-  const aiModel = process.env.OPENAI_MODEL?.trim() || 'gpt-4.1-mini'
-  const aiApiKeyConfigured = Boolean(process.env.OPENAI_API_KEY?.trim())
+  const freeTierOnly = !['false', '0', 'no', 'off'].includes(
+    String(process.env.NORI_AI_FREE_TIER_ONLY ?? 'true')
+      .trim()
+      .toLowerCase(),
+  )
+  const paidProvidersAllowed =
+    !freeTierOnly &&
+    ['true', '1', 'yes', 'on'].includes(
+      String(process.env.NORI_AI_PAID_PROVIDERS_ALLOWED ?? 'false')
+        .trim()
+        .toLowerCase(),
+    )
+  const aiProvider = (process.env.NORI_AI_PROVIDER?.trim() || 'gemini').toLowerCase()
+  if (aiProvider === 'openai' && (freeTierOnly || !paidProvidersAllowed)) {
+    errors.push(
+      'NORI_AI_PROVIDER=openai bị chặn vì dự án đang khóa chế độ chỉ dùng Free Tier (NORI_AI_FREE_TIER_ONLY=true / NORI_AI_PAID_PROVIDERS_ALLOWED=false).',
+    )
+  }
+  const aiModel =
+    aiProvider === 'openai'
+      ? process.env.OPENAI_MODEL?.trim() || 'gpt-4.1-mini'
+      : process.env.GEMINI_MODEL?.trim() || 'gemini-3.5-flash-lite'
+  const aiApiKeyConfigured =
+    aiProvider === 'openai'
+      ? Boolean(process.env.OPENAI_API_KEY?.trim())
+      : Boolean(process.env.GEMINI_API_KEY?.trim())
   if (aiEnabled && !aiApiKeyConfigured) {
     warnings.push(
-      'NORI_AI_ENABLED đang bật nhưng OPENAI_API_KEY chưa được cấu hình. Trợ lý AI sẽ hiển thị trạng thái chưa sẵn sàng và website vẫn hoạt động bình thường.',
+      `NORI_AI_ENABLED đang bật nhưng ${aiProvider === 'openai' ? 'OPENAI_API_KEY' : 'GEMINI_API_KEY'} chưa được cấu hình. Trợ lý AI sẽ tự động chuyển sang chế độ tư vấn cơ bản (Rule-based Engine) khi fallback được bật.`,
     )
   }
 

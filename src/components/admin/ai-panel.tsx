@@ -26,6 +26,19 @@ type AdminAIDashboardPayload = {
     provider: string
     model: string
     apiKeyConfigured: boolean
+    freeTierOnly: boolean
+    paidProvidersAllowed: boolean
+    fallbackEnabled: boolean
+    documentedFreeTierModel: boolean
+    geminiCapabilities: {
+      label: string
+      supportsFunctionCalling: boolean
+      supportsStructuredOutputs: boolean
+      documentedFreeTier: boolean
+      docsUrl: string
+    } | null
+    billingStatus: string
+    billingVerificationNote: string
     testMockEnabled: boolean
     storeConversations: boolean
     timeoutMs: number
@@ -34,6 +47,10 @@ type AdminAIDashboardPayload = {
       maxToolRounds: number
       rateLimitPerMinute: number
       rateLimitPerDay: number
+      projectRateLimitPerMinute?: number
+      projectRateLimitPerDay?: number
+      ipRateLimitPerMinute?: number
+      ipRateLimitPerDay?: number
       dailyBudgetUsd: number
     }
     circuitBreaker: {
@@ -48,6 +65,8 @@ type AdminAIDashboardPayload = {
   effectiveConfig: {
     enabled: boolean
     configured: boolean
+    freeTierOnly: boolean
+    fallbackEnabled: boolean
     maxOutputTokens: number
     maxToolRounds: number
     rateLimitPerMinute: number
@@ -57,6 +76,7 @@ type AdminAIDashboardPayload = {
   }
   stats: {
     totalRequests: number
+    fallbackRequests: number
     successRequests: number
     failedRequests: number
     blockedRequests: number
@@ -281,6 +301,10 @@ export function AdminAIPanel() {
               <Badge tone={data.runtime.apiKeyConfigured ? 'brand' : 'danger'}>
                 API Key: {data.runtime.apiKeyConfigured ? 'Đã cấu hình (Server)' : 'Chưa cấu hình'}
               </Badge>
+              {data.runtime.freeTierOnly && (
+                <Badge tone="brand">Free Tier Only (Khóa trả phí)</Badge>
+              )}
+              {data.runtime.fallbackEnabled && <Badge tone="muted">Rule-based Fallback: Bật</Badge>}
               {data.runtime.circuitBreaker.open && (
                 <Badge tone="danger">
                   Circuit Breaker đang mở ({data.runtime.circuitBreaker.retryAfterSeconds}s)
@@ -289,7 +313,7 @@ export function AdminAIPanel() {
             </div>
             <Text className="text-small text-muted">
               Provider: <strong className="text-ink">{data.runtime.provider.toUpperCase()}</strong>{' '}
-              (Responses API) · Model: <strong className="text-ink">{data.runtime.model}</strong> ·
+              (@google/genai) · Model: <strong className="text-ink">{data.runtime.model}</strong> ·
               Lưu hội thoại:{' '}
               <strong className="text-ink">
                 {data.runtime.storeConversations ? 'Có (ẩn danh)' : 'Tắt (mặc định bảo mật)'}
@@ -305,7 +329,7 @@ export function AdminAIPanel() {
                 onClick={() => void handleTestConnection()}
               >
                 <Icon name="sparkles" className="size-4" />
-                Kiểm tra kết nối OpenAI
+                Kiểm tra kết nối {data.runtime.provider === 'openai' ? 'OpenAI' : 'Gemini'}
               </Button>
             )}
             <Button variant="ghost" size="sm" onClick={() => void loadData()}>
@@ -320,6 +344,13 @@ export function AdminAIPanel() {
             <Notice tone={testResult.ok ? 'success' : 'error'}>{testResult.message}</Notice>
           </div>
         )}
+
+        <div className="mt-4">
+          <Notice tone="info">
+            <strong>Xác minh Cloud Billing & Free Tier:</strong>{' '}
+            {data.runtime.billingVerificationNote}
+          </Notice>
+        </div>
 
         {data.stats.budgetWarning && (
           <div className="mt-4">
@@ -360,7 +391,8 @@ export function AdminAIPanel() {
                 {formatNum(data.stats.totalRequests)}
               </p>
               <Text className="mt-1 text-micro text-muted">
-                Thành công: {formatNum(data.stats.successRequests)} · Lỗi:{' '}
+                Thành công: {formatNum(data.stats.successRequests)} · Fallback:{' '}
+                {formatNum(data.stats.fallbackRequests)} · Lỗi:{' '}
                 {formatNum(data.stats.failedRequests)} · Guardrail chặn:{' '}
                 {formatNum(data.stats.blockedRequests)}
               </Text>
@@ -386,13 +418,15 @@ export function AdminAIPanel() {
               </Text>
             </div>
             <div className="rounded-card border border-line bg-canvas p-4">
-              <Text className="text-caption text-muted">Chi phí API ước tính (NORI)</Text>
-              <p className="mt-1 text-title font-semibold text-brand">
-                ${data.stats.totalEstimatedCostUsd.toFixed(5)}
+              <Text className="text-caption text-muted">Chuyển sang chế độ dự phòng</Text>
+              <p className="mt-1 text-title font-semibold text-ink">
+                {formatNum(data.stats.fallbackRequests)}
               </p>
               <Text className="mt-1 text-micro text-muted">
-                Hôm nay: ${data.stats.todayEstimatedCostUsd.toFixed(5)} / $
-                {data.stats.dailyBudgetUsd.toFixed(2)} ({data.stats.budgetUtilizationPct}%)
+                Chính sách chi phí:{' '}
+                {data.runtime.freeTierOnly
+                  ? 'Free Tier ($0.00)'
+                  : `$${data.stats.totalEstimatedCostUsd.toFixed(5)}`}
               </Text>
             </div>
           </div>
@@ -449,25 +483,38 @@ export function AdminAIPanel() {
               Trạng thái bảo mật & Nhà cung cấp AI (Chỉ đọc)
             </Heading>
             <Notice tone="info" className="mb-4">
-              Vì lý do bảo mật, <strong>khóa API OpenAI</strong> chỉ được cấu hình qua biến môi
-              trường server hoặc Secret Manager — tuyệt đối không nhập, lưu database hoặc hiển thị
-              trên Admin Dashboard.
+              Vì lý do bảo mật,{' '}
+              <strong>khóa API Gemini ({data.runtime.provider.toUpperCase()})</strong> chỉ được cấu
+              hình qua biến môi trường server hoặc Secret Manager — tuyệt đối không nhập, lưu
+              database hoặc hiển thị trên Admin Dashboard.
             </Notice>
             <div className="grid gap-3 text-small sm:grid-cols-3">
               <div className="rounded-control bg-subtle p-3">
                 <p className="text-micro text-muted">AI Provider</p>
-                <p className="font-semibold text-ink">OpenAI Official SDK (Responses API)</p>
+                <p className="font-semibold text-ink">
+                  {data.runtime.provider === 'gemini'
+                    ? 'Google Gemini SDK (@google/genai)'
+                    : 'OpenAI Responses API'}
+                </p>
               </div>
               <div className="rounded-control bg-subtle p-3">
-                <p className="text-micro text-muted">Model đang dùng (OPENAI_MODEL)</p>
-                <p className="font-semibold text-ink">{data.runtime.model}</p>
+                <p className="text-micro text-muted">
+                  Model đang dùng (
+                  {data.runtime.provider === 'gemini' ? 'GEMINI_MODEL' : 'OPENAI_MODEL'})
+                </p>
+                <p className="font-semibold text-ink">
+                  {data.runtime.model}
+                  {data.runtime.documentedFreeTierModel ? ' (Free Tier allowlist)' : ''}
+                </p>
               </div>
               <div className="rounded-control bg-subtle p-3">
                 <p className="text-micro text-muted">Trạng thái API Key</p>
                 <p className="font-semibold text-ink">
                   {data.runtime.apiKeyConfigured
                     ? 'Đã cấu hình trên server'
-                    : 'Chưa cấu hình (AI sẽ tạm ngưng)'}
+                    : data.runtime.fallbackEnabled
+                      ? 'Chưa cấu hình (đang dùng Tư vấn cơ bản)'
+                      : 'Chưa cấu hình (AI tạm ngưng)'}
                 </p>
               </div>
             </div>

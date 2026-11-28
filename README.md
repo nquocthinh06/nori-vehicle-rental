@@ -16,7 +16,7 @@ Dự án được định hướng phát triển theo tiêu chuẩn công nghệ
 - **Mobile-First & PWA**: Trải nghiệm mượt mà trên mọi thiết bị di động, tối ưu tương tác chạm vuốt, hỗ trợ cài đặt ứng dụng màn hình chính và hoạt động ngoại tuyến.
 - **Dữ liệu Thời Gian Thực (Real-Time Integrity)**: Tách bạch rõ ràng giữa catalogue hiển thị tĩnh (SSG/ISR tối ưu SEO) và các giao dịch đặt xe, thanh toán, khóa ngày theo thời gian thực (Request-time & SQLite Transactions).
 - **Phân Quyền Tập Trung & Đa Chi Nhánh (Branch-Scoped RBAC)**: Bảo vệ toàn diện **22 phân hệ quản trị** (bao gồm 8 phân hệ đa chi nhánh, kho xe, điểm giao nhận, nhân sự, điều chuyển, giao nhận tận nơi, định giá theo địa điểm, báo cáo chi nhánh và **Trung tâm Quản trị Trợ lý AI `/dashboard/ai`**) dành riêng cho nhân sự (`admins`), cách ly hoàn toàn với tài khoản khách hàng (`users`).
-- **NORI AI Assistant (OpenAI Responses API + Hybrid Recommendation)**: Trợ lý tư vấn phương tiện tiếng Việt tích hợp Function Calling (9 công cụ nghiệp vụ có kiểm soát), thuật toán đề xuất lai minh bạch (Hard Filtering + Weighted Scoring 35/25/20/10/10), RAG chính sách trực tiếp từ Payload CMS, bảo mật đa lớp và kiểm soát chi phí phía server.
+- **NORI AI Assistant (Google Gemini Free Tier + Rule-based Fallback Engine)**: Trợ lý tư vấn phương tiện tiếng Việt dùng SDK `@google/genai` (mặc định `gemini-3.5-flash-lite`, chính sách `NORI_AI_FREE_TIER_ONLY=true`), tích hợp Function Calling (9 công cụ nghiệp vụ có kiểm soát), thuật toán đề xuất lai minh bạch (Hard Filtering + Weighted Scoring 35/25/20/10/10), RAG chính sách từ Payload CMS, bảo mật đa lớp và tự động chuyển sang **Rule-based Recommendation Engine** khi thiếu key hoặc hết quota Free Tier.
 - **Khả Năng Tiếp Cận Cao**: Đạt chuẩn WCAG 2.2 AA (0 lỗi vi phạm khi kiểm thử tự động).
 
 ---
@@ -56,7 +56,7 @@ Dự án được định hướng phát triển theo tiêu chuẩn công nghệ
 
 ### 2.2. Phía Quản Trị Viên (Admin Center — 22 Phân hệ `/dashboard/*`)
 
-- **14 Phân hệ Vận hành, CMS & AI Cốt lõi**: Tổng quan (`/dashboard`), Đơn thuê (`/dashboard/bookings`), Phương tiện (`/dashboard/vehicles`), Dòng xe (`/dashboard/models`), Yêu cầu mua xe (`/dashboard/inquiries`), Khách hàng & Đánh giá (`/dashboard/customers`), Bảo dưỡng (`/dashboard/maintenance`), Thanh toán & Hoàn tiền (`/dashboard/payments`), Khuyến mãi (`/dashboard/promotions`), Nội dung CMS (`/dashboard/content`), Bài viết (`/dashboard/posts`), Báo cáo tổng hợp (`/dashboard/reports`), Quản trị viên & Đồng bộ hệ thống (`/dashboard/admins`, `/dashboard/system`) và **Trung tâm Quản trị Trợ lý AI (`/dashboard/ai`)** (bật/tắt AI, kiểm tra kết nối OpenAI có phân quyền, cấu hình giới hạn an toàn, lời chào, Quick Suggestions, trọng số đề xuất, thống kê token/chi phí/chuyển đổi thực tế và rà soát phản hồi khách hàng — tuyệt đối không lưu hay hiển thị API Key).
+- **14 Phân hệ Vận hành, CMS & AI Cốt lõi**: Tổng quan (`/dashboard`), Đơn thuê (`/dashboard/bookings`), Phương tiện (`/dashboard/vehicles`), Dòng xe (`/dashboard/models`), Yêu cầu mua xe (`/dashboard/inquiries`), Khách hàng & Đánh giá (`/dashboard/customers`), Bảo dưỡng (`/dashboard/maintenance`), Thanh toán & Hoàn tiền (`/dashboard/payments`), Khuyến mãi (`/dashboard/promotions`), Nội dung CMS (`/dashboard/content`), Bài viết (`/dashboard/posts`), Báo cáo tổng hợp (`/dashboard/reports`), Quản trị viên & Đồng bộ hệ thống (`/dashboard/admins`, `/dashboard/system`) và **Trung tâm Quản trị Trợ lý AI (`/dashboard/ai`)** (bật/tắt AI, kiểm tra kết nối Gemini Free Tier có phân quyền, cấu hình giới hạn đa phạm vi, lời chào, Quick Suggestions, trọng số đề xuất, thống kê token/lượt fallback/chuyển đổi thực tế và rà soát phản hồi khách hàng — tuyệt đối không lưu hay hiển thị API Key).
 - **8 Phân hệ Đa Chi Nhánh & Đa Địa Điểm (Module 3.7 — `v2.7.0`)**:
   1. **Quản lý Chi nhánh (`/dashboard/branches`)**: Trạng thái nghiệp vụ (`ACTIVE` / `INACTIVE` / `TEMPORARILY_CLOSED` / `ARCHIVED`), giờ hoạt động, ngày nghỉ, giao nhận tận nơi, chặn xóa cứng khi có dữ liệu phát sinh.
   2. **Quản lý Kho xe & Tồn kho (`/dashboard/warehouses`)**: Showroom/bãi đỗ/kho lưu trữ/trung tâm bảo dưỡng, sức chứa thực tế và phân bổ hàng loạt xe chưa gắn chi nhánh (`UNALLOCATED`) — tuyệt đối không nhân bản bản ghi phương tiện.
@@ -115,9 +115,9 @@ graph TD
 | **Database Adapter (PG)** | `@payloadcms/db-postgres` | 4.0.0-beta.8  | Kết nối Neon PostgreSQL & Drizzle ORM (production)               |
 | **PG Replication**      | Logical Replication     | PG 18 (Local)        | Neon → `nori_replica` one-way replica (BLOCKED — Neon hiện cấu hình `wal_level = replica`) |
 | **Backup**              | AES-256-GCM             | —                    | pg_dump + AES-256-GCM + SHA-256 manifest, 30d/12w/12m retention  |
-| **AI SDK**              | `openai`                | 7.65.0               | OpenAI Responses API chính thức (`store: false`, Function Calling)           |
+| **AI SDK**              | `@google/genai`         | 3.6.1                | Google Gemini API Free Tier (`gemini-3.5-flash-lite`, Function Calling, Zero Grounding) |
 | **Runtime & Toolchain** | Node.js / pnpm          | >=24.22.1 / pnpm 10+ | Môi trường thực thi và quản lý gói phụ thuộc                                 |
-| **Testing Engine**      | Node Test Runner        | Node.js built-in     | Thực thi 375 Unit/Integration/Smart Import tests (`374 pass, 1 skip`) + 20 DB Replica tests |
+| **Testing Engine**      | Node Test Runner        | Node.js built-in     | Thực thi 376 Unit/Integration/Smart Import tests (`375 pass, 1 skip`) + 20 DB Replica tests |
 | **E2E Testing**         | Playwright              | 1.65.1               | 122 kịch bản E2E cô lập DB + Media (Chromium & Mobile WebKit)      |
 | **A11y Testing**        | Axe Core                | 4.14.0               | Kiểm tra chuẩn tiếp cận WCAG 2.2 AA                                          |
 | **Linter & Formatter**  | oxfmt & Custom AST      | 0.73.0               | Chuẩn hóa định dạng và quét bảo mật tĩnh                                     |
@@ -253,8 +253,8 @@ pnpm test:e2e:isolated
 # 10. Xác thực Catalogue (21 models enrichment status)
 pnpm catalogue:validate
 
-# 11. Chạy đánh giá Live OpenAI API trên DB cô lập (yêu cầu OPENAI_API_KEY còn hạn mức billing)
-pnpm eval:ai:live
+# 11. Chạy đánh giá Live Gemini API Free Tier trên DB cô lập (chỉ chạy sau khi chủ dự án xác nhận đã tắt Cloud Billing trả phí)
+NORI_CONFIRM_GEMINI_FREE_TIER=1 pnpm eval:ai:live
 
 # 12. Chạy kiểm thử E2E qua địa chỉ LAN IPv4 thực tế trên DB & Media cô lập
 pnpm test:e2e:lan
@@ -365,7 +365,7 @@ sudo bash deploy/linux/update.sh
 1. **Dữ liệu Xe Minh Họa & Chi Nhánh Thực Tế**: Toàn bộ 21 cá thể xe trong kho hiện được gắn nhãn `DEMO` (`isDemo: true`, `allocationStatus: 'UNALLOCATED'`) để phục vụ kiểm thử và không bịa đặt địa chỉ chi nhánh thật. Doanh nghiệp cần tạo chi nhánh/kho thực tế tại `/dashboard/branches` & `/dashboard/warehouses` và phân bổ phương tiện trước khi khai thác thương mại.
 2. **Cổng Thanh Toán Trực Tuyến (`SePay + VietQR`)**: Đã tích hợp hoàn chỉnh Payment Adapter Pattern, Webhook idempotency, đối soát và hoàn tiền trên môi trường `MOCK` (mặc định khóa `PRODUCTION`). Trước khi mở thanh toán tiền thật cần cấu hình credentials SePay Merchant thật, domain HTTPS công khai và bật `PAYMENT_PRODUCTION_APPROVED=true`.
 3. **Dịch Vụ SMS / Email**: Các thông báo thay đổi trạng thái đơn thuê hiện được hiển thị trực tiếp trên giao diện thông báo của tài khoản khách hàng (`/account`, `/my-bookings`), chưa kết nối nhà cung cấp dịch vụ SMS OTP / SendGrid thực tế.
-4. **NORI AI Assistant & Hạn Mức OpenAI Billing**: Toàn bộ kiến trúc, 9 Function Calling tools, thuật toán đề xuất lai, bảo mật đa lớp, giao diện khách hàng & `/dashboard/ai` đã hoàn thiện và vượt qua toàn bộ kiểm thử tự động. Để vận hành trực tiếp với OpenAI API trên môi trường thật và chạy `pnpm eval:ai:live`, chủ dự án cần bổ sung `OPENAI_API_KEY` có số dư billing credit hợp lệ vào `.env` máy chủ / Secret Manager. Khi chưa cấu hình key hoặc hết hạn mức, website vẫn hoạt động bình thường 100% và Trợ lý AI tự động hiển thị trạng thái cùng lối tắt bộ lọc tìm xe.
+4. **NORI AI Assistant & Xác nhận Billing Google Cloud**: Toàn bộ kiến trúc, Gemini Free Tier Provider (`@google/genai`), 9 Function Calling tools, thuật toán đề xuất lai, Rule-based Recommendation Fallback Engine, bảo mật đa lớp, giao diện khách hàng & `/dashboard/ai` đã hoàn thiện và vượt qua kiểm thử tự động. Hệ thống mặc định khóa provider trả phí (`NORI_AI_FREE_TIER_ONLY=true`, `NORI_AI_PAID_PROVIDERS_ALLOWED=false`) và tự động chuyển sang **`Chế độ tư vấn cơ bản (Rule-based Engine)`** khi thiếu `GEMINI_API_KEY`, gặp `429` hoặc hết quota. **Lưu ý**: Không thể suy luận trạng thái Cloud Billing chỉ từ API Key — chủ dự án cần kiểm tra thủ công trong Google AI Studio / Google Cloud Console bảo đảm Project chưa gắn thanh toán trả phí trước khi chạy `NORI_CONFIRM_GEMINI_FREE_TIER=1 pnpm eval:ai:live`.
 5. **Figma Make CLI**: Lệnh `figma make verify-deploy` phụ thuộc vào môi trường runtime do Figma Make cung cấp trên nền tảng đám mây; trên máy tính phát triển cục bộ lệnh kiểm định chính thức là `pnpm build` và bộ kiểm thử `pnpm test:e2e:isolated`.
 6. **Neon PG Logical Replication (BLOCKED)**: Neon hiện đang cấu hình `wal_level = replica` (`PostgreSQL 17.12`, `109` bảng, `2` pending migrations) — chưa thể thiết lập `PUBLICATION`/`SUBSCRIPTION`. Local PG 18 Logical Replication đã PASS hoàn toàn trên dual disposable PG 18.6 clusters (`pnpm test:db:replica` — `20/20 PASS`). Cần **chủ dự án phê duyệt bật `wal_level = logical` trong Neon Console (khởi động lại compute), áp dụng `2` pending migrations và tạo `PUBLICATION nori_pub`** trước khi bật Live Subscription trên production.
 7. **Smart Import — OEM Reachability**: Một số trang OEM có WAF (`UPSTREAM_WAF_BLOCKED`), TLS legacy hoặc timeout từ môi trường dev/CI. Adapters phát hiện tự động và fallback sang PDF/JSON. Xem reachability matrix đầy đủ tại [docs/MANUFACTURER_ADAPTERS.md](docs/MANUFACTURER_ADAPTERS.md).
@@ -376,14 +376,14 @@ sudo bash deploy/linux/update.sh
 
 Hệ thống tài liệu đầy đủ của dự án được lưu trữ trong thư mục `docs/`:
 
-### NORI AI Assistant (OpenAI Responses API, Hybrid Recommendation & Security)
+### NORI AI Assistant (Google Gemini Free Tier, Hybrid Recommendation & Fallback Engine)
 
-- [docs/AI_ARCHITECTURE.md](docs/AI_ARCHITECTURE.md) — Kiến trúc AI, Sequence Diagram, Data Flow Diagram, ERD mở rộng và thuật toán Hybrid Recommendation.
-- [docs/AI_INTEGRATION.md](docs/AI_INTEGRATION.md) — Hướng dẫn tạo OpenAI API Key, cấu hình biến môi trường, đặc tả 6 API endpoints và 9 Function Calling tools.
-- [docs/AI_SECURITY.md](docs/AI_SECURITY.md) — Thiết kế bảo mật đa lớp (Least Privilege, Defense in Depth), ma trận chống tấn công AI và RBAC.
-- [docs/AI_COST_MANAGEMENT.md](docs/AI_COST_MANAGEMENT.md) — 7 lớp kiểm soát chi phí phía NORI, Retry/Exponential Backoff, Circuit Breaker và Graceful Degradation.
+- [docs/AI_ARCHITECTURE.md](docs/AI_ARCHITECTURE.md) — Kiến trúc AI, Sequence Diagram, Data Flow Diagram, ERD mở rộng, Rule-based Fallback và thuật toán Hybrid Recommendation.
+- [docs/AI_INTEGRATION.md](docs/AI_INTEGRATION.md) — Hướng dẫn tạo Gemini API Key (Google AI Studio), danh sách model Free Tier, cấu hình biến môi trường, đặc tả 6 API endpoints và 9 Function Calling tools.
+- [docs/AI_SECURITY.md](docs/AI_SECURITY.md) — Thiết kế bảo mật đa lớp (Least Privilege, Defense in Depth), tối thiểu hóa PII, ma trận chống tấn công AI và RBAC.
+- [docs/AI_COST_MANAGEMENT.md](docs/AI_COST_MANAGEMENT.md) — Chính sách chi phí $0 (Free Tier Only), giới hạn đa phạm vi Project/IP/Session, không retry 429/quota và Rule-based Fallback.
 - [docs/AI_TEST_CASES.md](docs/AI_TEST_CASES.md) — Ma trận kịch bản kiểm thử Unit, Security, Playwright E2E và 12 kịch bản Live Evaluation tiếng Việt.
-- [docs/AI_TEST_REPORT.md](docs/AI_TEST_REPORT.md) — Báo cáo nghiệm thu kết quả kiểm thử AI, hồi quy toàn hệ thống và trạng thái Live OpenAI API.
+- [docs/AI_TEST_REPORT.md](docs/AI_TEST_REPORT.md) — Báo cáo nghiệm thu kết quả kiểm thử AI, hồi quy toàn hệ thống và trạng thái xác nhận Gemini Free Tier.
 
 ### Cẩm Nang Triển Khai Home Server & Production
 

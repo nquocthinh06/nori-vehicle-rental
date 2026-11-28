@@ -36,8 +36,8 @@ function normalizeForDetection(input: string): string {
 }
 
 const SECRET_EXFIL_PATTERNS: RegExp[] = [
-  /\b(api[_\s-]?key|openai[_\s-]?api[_\s-]?key|payload[_\s-]?secret|session[_\s-]?secret|sepay[_\s-]?secret|webhook[_\s-]?secret)\b/i,
-  /\b(process\.env|\.env\b|bien moi truong|mat khau admin|admin password|jwt secret|sk-proj)\b/i,
+  /\b(api[_\s-]?key|gemini[_\s-]?api[_\s-]?key|openai[_\s-]?api[_\s-]?key|payload[_\s-]?secret|session[_\s-]?secret|sepay[_\s-]?secret|webhook[_\s-]?secret)\b/i,
+  /\b(process\.env|\.env\b|bien moi truong|mat khau admin|admin password|jwt secret|sk-proj|aiza[0-9a-z_-]{12,}|aq\.[0-9a-z._-]{12,})\b/i,
   /\b(tiet lo|cho xem|in ra|dump|reveal|show|print|leak|extract).{0,32}(key|secret|token|password|mat khau|env|system prompt|chi thi he thong)\b/i,
   /\b(system prompt|developer prompt|hidden instructions|noi dung prompt he thong)\b/i,
 ]
@@ -150,7 +150,7 @@ export function sanitizeUntrustedCmsText(raw: string | null | undefined, maxLen 
     /disregard\s+(all\s+)?(previous|prior|system)\s+instructions?/gi,
     /override\s+(system|safety|policy)\s*(prompt|rules|instructions)?/gi,
     /(bỏ qua|quên hết|phớt lờ|vô hiệu hóa)\s+(mọi\s+|toàn bộ\s+)?(chỉ thị|quy tắc|hướng dẫn|lệnh)\s*(trên|hệ thống|trước đó)?/gi,
-    /(reveal|print|output|tiết lộ|in ra)\s+(the\s+)?(openai[_\s-]?api[_\s-]?key|api[_\s-]?key|system\s+prompt|secret)/gi,
+    /(reveal|print|output|tiết lộ|in ra)\s+(the\s+)?(gemini[_\s-]?api[_\s-]?key|openai[_\s-]?api[_\s-]?key|api[_\s-]?key|system\s+prompt|secret)/gi,
     /\[?\s*system\s*prompt\s*\]?/gi,
     /<\s*\/?\s*(system|developer|assistant|tool)\s*>/gi,
   ]
@@ -168,9 +168,15 @@ export function sanitizeUntrustedCmsText(raw: string | null | undefined, maxLen 
 export function redactSensitiveData(input: string, maxLen = 200): string {
   return input
     .replace(/\bsk-(?:proj-)?[A-Za-z0-9_-]{12,}\b/g, '[REDACTED_KEY]')
+    .replace(/\bAIza[0-9A-Za-z_-]{20,}\b/g, '[REDACTED_KEY]')
+    .replace(/\bAQ\.[0-9A-Za-z._-]{20,}\b/g, '[REDACTED_KEY]')
     .replace(/eyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g, '[REDACTED_JWT]')
     .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, '[REDACTED_EMAIL]')
     .replace(/(?:\+84|0)(?:\d[\s.-]?){8,10}\d/g, '[REDACTED_PHONE]')
+    .replace(
+      /\b(?:cccd|cmnd|gplx|giấy phép lái xe|giay phep lai xe|bằng lái|bang lai)\s*[:#-]?\s*[A-Za-z0-9-]{6,20}\b/gi,
+      '[REDACTED_ID_DOC]',
+    )
     .replace(/\b\d{9,16}\b/g, '[REDACTED_ID]')
     .replace(/\s+/g, ' ')
     .trim()
@@ -188,6 +194,9 @@ export function sanitizeAssistantOutput(raw: string): string {
     .replace(/<iframe[\s\S]*?<\/iframe>/gi, '')
     .replace(/javascript:/gi, '')
     .replace(/\bsk-(?:proj-)?[A-Za-z0-9_-]{12,}\b/g, '[ĐÃ ẨN]')
+    .replace(/\bAIza[0-9A-Za-z_-]{20,}\b/g, '[ĐÃ ẨN]')
+    .replace(/\bAQ\.[0-9A-Za-z._-]{20,}\b/g, '[ĐÃ ẨN]')
+    .replace(/GEMINI_API_KEY\s*[:=]\s*\S+/gi, 'GEMINI_API_KEY=[ĐÃ ẨN]')
     .replace(/OPENAI_API_KEY\s*[:=]\s*\S+/gi, 'OPENAI_API_KEY=[ĐÃ ẨN]')
     .replace(/PAYLOAD_SECRET\s*[:=]\s*\S+/gi, 'PAYLOAD_SECRET=[ĐÃ ẨN]')
     .replace(/NORI_SESSION_SECRET\s*[:=]\s*\S+/gi, 'NORI_SESSION_SECRET=[ĐÃ ẨN]')

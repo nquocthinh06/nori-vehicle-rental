@@ -2,6 +2,7 @@ import crypto from 'node:crypto'
 import type { Payload } from 'payload'
 import { mapGlobalDocToAISettings, resolveEffectiveAIConfig } from './config.ts'
 import { AI_FALLBACK_LINKS, mapToNoriAIError, NoriAIError, sanitizeErrorMessage } from './errors.ts'
+import { runRuleBasedFallback } from './fallback.ts'
 import {
   evaluateInputGuardrails,
   sanitizeAssistantOutput,
@@ -10,7 +11,7 @@ import {
 import { resolveAIProvider } from './provider.ts'
 import {
   acquireAIConcurrencySlot,
-  checkAndConsumeAIRateLimit,
+  checkAndConsumeMultiScopeModelCall,
   checkCircuitBreaker,
   checkDailyBudget,
   recordCircuitFailure,
@@ -125,6 +126,7 @@ export async function runNoriAIChat(params: {
   message: unknown
   history?: unknown
   sessionKey: string
+  ipKey?: string | null
   user: { id: string; collection: string } | null
   userRole: AIUserRole
   providerOverride?: AIProvider
@@ -133,6 +135,7 @@ export async function runNoriAIChat(params: {
   const startedAt = performance.now()
   const requestId = `ai-${crypto.randomUUID().slice(0, 12)}`
   const sessionHash = hashSessionIdentifier(params.sessionKey)
+  const ipHash = params.ipKey ? hashSessionIdentifier(`ip:${params.ipKey}`) : null
 
   const config = await loadResolvedAIConfig(params.payload)
 
@@ -169,6 +172,7 @@ export async function runNoriAIChat(params: {
       reply:
         'Trợ lý AI NORI hiện đang tạm tắt bởi quản trị viên. Bạn vẫn có thể tìm xe bằng bộ lọc, kiểm tra lịch trực tiếp và đặt thuê bình thường trên NORI.',
       status: 'DISABLED',
+      mode: 'DISABLED',
       intent: 'AI_DISABLED',
       vehicleCards: [],
       comparison: null,
@@ -183,40 +187,57 @@ export async function runNoriAIChat(params: {
     }
   }
 
-  // 3. Check API key configured (never fakes AI on real website when unconfigured)
-  if (!config.configured && !params.providerOverride) {
+  const executeAndLogFallback = async (
+    reasonCode: string,
+    reasonMessage: string,
+    extraUsage?: {
+      inputTokens?: number
+      outputTokens?: number
+      totalTokens?: number
+      priorTools?: string[]
+      errorDetail?: string
+    },
+  ): Promise<AIChatResponsePayload> => {
+    const fb = await runRuleBasedFallback({
+      payload: params.payload,
+      requestId,
+      message: validated.message,
+      config,
+      user: params.user,
+      reasonCode,
+      reasonMessage,
+      startedAt,
+      disclaimer: STANDARD_DISCLAIMER,
+      fallbackLinks: AI_FALLBACK_LINKS,
+      buildFollowUps: buildFollowUpSuggestions,
+    })
+    const combinedTools = [...new Set([...(extraUsage?.priorTools ?? []), ...fb.toolsCalled])]
     await recordAIUsageLog(params.payload, {
       requestId,
       eventType: 'CHAT',
-      status: 'UNCONFIGURED',
-      provider: config.provider,
+      status: 'SUCCESS',
+      provider: 'rule-based-fallback',
       model: config.model,
       userType: params.userRole,
       userId: params.user?.id ?? null,
       sessionHash,
-      intent: 'AI_UNCONFIGURED',
-      latencyMs: Math.round(performance.now() - startedAt),
+      intent: fb.intent,
+      toolsCalled: combinedTools,
+      recommendedModelSlugs: fb.response.vehicleCards.map((c) => c.slug),
+      noResultFound: fb.noResultFound,
+      inputTokens: extraUsage?.inputTokens ?? 0,
+      outputTokens: extraUsage?.outputTokens ?? 0,
+      totalTokens: extraUsage?.totalTokens ?? 0,
+      estimatedCostUsd: 0,
+      latencyMs: fb.response.usage.latencyMs,
+      errorCode: `FALLBACK_${reasonCode}`,
+      errorCategory: extraUsage?.errorDetail ?? reasonMessage.slice(0, 80),
+      querySummary: fb.noResultFound || config.storeConversations ? validated.message : null,
     })
-    return {
-      requestId,
-      reply:
-        'Trợ lý AI NORI hiện chưa được cấu hình API Key trên máy chủ nên chưa thể trả lời tự động. Bạn vẫn có thể sử dụng đầy đủ bộ lọc tìm xe, xem giá thuê và đặt xe trực tiếp trên NORI.',
-      status: 'UNCONFIGURED',
-      intent: 'AI_UNCONFIGURED',
-      vehicleCards: [],
-      comparison: null,
-      quote: null,
-      bookingHandoff: null,
-      citations: [],
-      toolsCalled: [],
-      followUpSuggestions: [],
-      fallbackLinks: AI_FALLBACK_LINKS,
-      usage: { totalTokens: 0, latencyMs: Math.round(performance.now() - startedAt) },
-      disclaimer: STANDARD_DISCLAIMER,
-    }
+    return fb.response
   }
 
-  // 4. Input Security Guardrails BEFORE spending OpenAI tokens
+  // 3. Input Security Guardrails BEFORE spending tokens or running fallback
   const guardrail = evaluateInputGuardrails(validated.message)
   if (!guardrail.allowed && guardrail.safeReply) {
     const latencyMs = Math.round(performance.now() - startedAt)
@@ -238,6 +259,7 @@ export async function runNoriAIChat(params: {
       requestId,
       reply: guardrail.safeReply,
       status: 'BLOCKED',
+      mode: 'GUARDRAIL',
       intent: guardrail.intent ?? 'BLOCKED',
       vehicleCards: [],
       comparison: null,
@@ -255,24 +277,24 @@ export async function runNoriAIChat(params: {
     }
   }
 
-  // 5. Circuit Breaker check
-  const circuit = checkCircuitBreaker()
-  if (circuit.open && !params.providerOverride) {
-    throw new NoriAIError({
-      code: 'AI_CIRCUIT_OPEN',
-      status: 503,
-      retryable: true,
-      userMessage: `Trợ lý AI NORI đang tạm ngưng tự động (${circuit.retryAfterSeconds} giây) do nhà cung cấp AI liên tục gián đoạn. Website và chức năng đặt xe vẫn hoạt động bình thường.`,
-    })
-  }
-
-  // 6. Multi-tier Rate Limiting (per-minute & per-day)
-  const rateRes = checkAndConsumeAIRateLimit({
-    key: sessionHash,
-    limitPerMinute: config.rateLimitPerMinute,
-    limitPerDay: config.rateLimitPerDay,
+  // 4. Multi-tier Rate Limiting (Session, IP, Project) BEFORE provider call
+  const rateRes = checkAndConsumeMultiScopeModelCall({
+    sessionKey: sessionHash,
+    sessionRpm: config.rateLimitPerMinute,
+    sessionRpd: config.rateLimitPerDay,
+    ipKey: ipHash,
+    ipRpm: config.ipRateLimitPerMinute,
+    ipRpd: config.ipRateLimitPerDay,
+    projectRpm: config.projectRateLimitPerMinute,
+    projectRpd: config.projectRateLimitPerDay,
   })
   if (!rateRes.allowed) {
+    if (rateRes.scope === 'PROJECT' && config.fallbackEnabled && !params.providerOverride) {
+      return executeAndLogFallback(
+        'PROJECT_RATE_LIMIT',
+        'Hệ thống đang chạm ngưỡng giới hạn gọi Gemini Free Tier của dự án nên đã chuyển sang dữ liệu NORI trực tiếp.',
+      )
+    }
     await recordAIUsageLog(params.payload, {
       requestId,
       eventType: 'CHAT',
@@ -283,7 +305,7 @@ export async function runNoriAIChat(params: {
       userId: params.user?.id ?? null,
       sessionHash,
       errorCode: rateRes.code ?? 'AI_RATE_LIMITED',
-      errorCategory: 'RATE_LIMIT',
+      errorCategory: `RATE_LIMIT_${rateRes.scope ?? 'SESSION'}`,
       latencyMs: Math.round(performance.now() - startedAt),
     })
     throw new NoriAIError({
@@ -297,36 +319,113 @@ export async function runNoriAIChat(params: {
     })
   }
 
-  // 7. Daily App-level Budget Cap
-  const dbTodaySpent = await getTodayRecordedSpendUsd(params.payload)
-  const budgetCheck = checkDailyBudget(config.dailyBudgetUsd, dbTodaySpent)
-  if (!budgetCheck.allowed) {
+  // 5. API Key check -> Rule-based Fallback when fallbackEnabled=true, else UNCONFIGURED
+  if (!config.configured && !params.providerOverride) {
+    if (config.fallbackEnabled) {
+      return executeAndLogFallback(
+        'AI_UNCONFIGURED',
+        'Chưa cấu hình khóa API Gemini trên máy chủ; đang tư vấn trực tiếp từ dữ liệu và quy tắc của NORI.',
+      )
+    }
     await recordAIUsageLog(params.payload, {
       requestId,
       eventType: 'CHAT',
-      status: 'ERROR',
+      status: 'UNCONFIGURED',
       provider: config.provider,
       model: config.model,
       userType: params.userRole,
       userId: params.user?.id ?? null,
       sessionHash,
-      errorCode: 'AI_BUDGET_EXCEEDED',
-      errorCategory: 'COST_CONTROL',
+      intent: 'AI_UNCONFIGURED',
       latencyMs: Math.round(performance.now() - startedAt),
     })
+    return {
+      requestId,
+      reply:
+        'Trợ lý AI NORI hiện chưa được cấu hình API Key trên máy chủ nên chưa thể trả lời tự động. Bạn vẫn có thể sử dụng đầy đủ bộ lọc tìm xe, xem giá thuê và đặt xe trực tiếp trên NORI.',
+      status: 'UNCONFIGURED',
+      mode: 'UNCONFIGURED',
+      intent: 'AI_UNCONFIGURED',
+      vehicleCards: [],
+      comparison: null,
+      quote: null,
+      bookingHandoff: null,
+      citations: [],
+      toolsCalled: [],
+      followUpSuggestions: [],
+      fallbackLinks: AI_FALLBACK_LINKS,
+      usage: { totalTokens: 0, latencyMs: Math.round(performance.now() - startedAt) },
+      disclaimer: STANDARD_DISCLAIMER,
+    }
+  }
+
+  // 6. Circuit Breaker check (prevents hammering Gemini when quota/key failed)
+  const circuit = checkCircuitBreaker()
+  if (circuit.open && !params.providerOverride) {
+    if (config.fallbackEnabled) {
+      return executeAndLogFallback(
+        'AI_CIRCUIT_OPEN',
+        `Kết nối Gemini đang tạm ngưng (${circuit.retryAfterSeconds}s) để bảo vệ hạn mức miễn phí; hệ thống đã chuyển sang tư vấn cơ bản.`,
+      )
+    }
     throw new NoriAIError({
-      code: 'AI_BUDGET_EXCEEDED',
+      code: 'AI_CIRCUIT_OPEN',
       status: 503,
-      retryable: false,
-      userMessage:
-        'Trợ lý AI NORI tạm dừng do đã đạt hạn mức vận hành trong ngày. Bạn vẫn có thể tìm xe qua bộ lọc, xem báo giá và đặt thuê trực tiếp trên NORI.',
+      retryable: true,
+      userMessage: `Trợ lý AI NORI đang tạm ngưng tự động (${circuit.retryAfterSeconds} giây) do nhà cung cấp AI liên tục gián đoạn. Website và chức năng đặt xe vẫn hoạt động bình thường.`,
     })
+  }
+
+  // 7. Daily App-level Budget Cap (ignored when freeTierOnly=true with dailyBudgetUsd=0)
+  if (!config.freeTierOnly && config.dailyBudgetUsd > 0) {
+    const dbTodaySpent = await getTodayRecordedSpendUsd(params.payload)
+    const budgetCheck = checkDailyBudget(config.dailyBudgetUsd, dbTodaySpent)
+    if (!budgetCheck.allowed) {
+      await recordAIUsageLog(params.payload, {
+        requestId,
+        eventType: 'CHAT',
+        status: 'ERROR',
+        provider: config.provider,
+        model: config.model,
+        userType: params.userRole,
+        userId: params.user?.id ?? null,
+        sessionHash,
+        errorCode: 'AI_BUDGET_EXCEEDED',
+        errorCategory: 'COST_CONTROL',
+        latencyMs: Math.round(performance.now() - startedAt),
+      })
+      throw new NoriAIError({
+        code: 'AI_BUDGET_EXCEEDED',
+        status: 503,
+        retryable: false,
+        userMessage:
+          'Trợ lý AI NORI tạm dừng do đã đạt hạn mức vận hành trong ngày. Bạn vẫn có thể tìm xe qua bộ lọc, xem báo giá và đặt thuê trực tiếp trên NORI.',
+      })
+    }
   }
 
   // 8. Concurrency guard
   const releaseSlot = acquireAIConcurrencySlot(sessionHash)
 
-  const provider = params.providerOverride ?? resolveAIProvider()
+  let provider: AIProvider
+  try {
+    provider = params.providerOverride ?? resolveAIProvider()
+  } catch (err) {
+    releaseSlot()
+    const mapped = mapToNoriAIError(err)
+    if (
+      config.fallbackEnabled &&
+      (mapped.code === 'AI_PAID_PROVIDER_BLOCKED' ||
+        mapped.code === 'AI_MODEL_NOT_FREE_TIER' ||
+        mapped.code === 'AI_UNCONFIGURED')
+    ) {
+      return executeAndLogFallback(
+        mapped.code,
+        'Nhà cung cấp hoặc model AI đang bị khóa theo chính sách Free Tier; hệ thống đã chuyển sang tư vấn cơ bản.',
+      )
+    }
+    throw mapped
+  }
   const systemInstructions = buildNoriSystemPrompt({
     knowledgeNote: config.knowledgeNote,
     userAuthenticated: params.userRole === 'CUSTOMER',
@@ -361,6 +460,43 @@ export async function runNoriAIChat(params: {
 
   try {
     for (let round = 0; round <= config.maxToolRounds; round += 1) {
+      // Count every Function Calling round against Project & IP total Free-Tier model-call quota
+      // (Session RPM/RPD tracks customer prompts once at step 4 so multi-round FC isn't double-charged per question)
+      if (round > 0) {
+        const roundRate = checkAndConsumeMultiScopeModelCall({
+          sessionKey: sessionHash,
+          sessionRpm: config.rateLimitPerMinute,
+          sessionRpd: config.rateLimitPerDay,
+          includeSession: false,
+          ipKey: ipHash,
+          ipRpm: config.ipRateLimitPerMinute,
+          ipRpd: config.ipRateLimitPerDay,
+          projectRpm: config.projectRateLimitPerMinute,
+          projectRpd: config.projectRateLimitPerDay,
+        })
+        if (!roundRate.allowed) {
+          if (config.fallbackEnabled && !params.providerOverride) {
+            return await executeAndLogFallback(
+              'ROUND_QUOTA_REACHED',
+              'Đã chạm giới hạn lượt gọi model cho chuỗi Function Calling; hệ thống đã tổng hợp trực tiếp từ dữ liệu NORI.',
+              {
+                inputTokens: totalInputTokens,
+                outputTokens: totalOutputTokens,
+                totalTokens,
+                priorTools: toolsCalled,
+              },
+            )
+          }
+          throw new NoriAIError({
+            code: roundRate.code ?? 'AI_RATE_LIMITED',
+            status: 429,
+            retryable: true,
+            userMessage:
+              'Bạn đã chạm giới hạn lượt xử lý AI trong chu kỳ này. Vui lòng thử lại sau ít giây.',
+          })
+        }
+      }
+
       const turn = await provider.generateTurn({
         model: config.model,
         instructions: systemInstructions,
@@ -445,6 +581,7 @@ export async function runNoriAIChat(params: {
       resolvedModel,
       totalInputTokens,
       totalOutputTokens,
+      { freeTierOnly: config.freeTierOnly },
     )
     recordDailyBudgetSpend(estimatedCostUsd)
 
@@ -473,6 +610,7 @@ export async function runNoriAIChat(params: {
       requestId,
       reply: safeReply,
       status: 'SUCCESS',
+      mode: 'LIVE_AI',
       intent,
       vehicleCards,
       comparison,
@@ -498,9 +636,53 @@ export async function runNoriAIChat(params: {
       mapped.code === 'AI_PROVIDER_ERROR' ||
       mapped.code === 'AI_TIMEOUT' ||
       mapped.code === 'AI_QUOTA_EXCEEDED' ||
-      mapped.code === 'AI_INVALID_API_KEY'
+      mapped.code === 'AI_INVALID_API_KEY' ||
+      mapped.code === 'AI_MODEL_UNAVAILABLE' ||
+      mapped.code === 'AI_MODEL_NOT_FREE_TIER'
     ) {
       recordCircuitFailure(mapped.code)
+    }
+
+    const canFallback =
+      config.fallbackEnabled &&
+      mapped.code !== 'AI_ABORTED' &&
+      mapped.code !== 'AI_DB_UNAVAILABLE' &&
+      !params.signal?.aborted
+
+    if (canFallback) {
+      const reasonLabels: Partial<Record<string, string>> = {
+        AI_RATE_LIMITED:
+          'Gemini đang giới hạn tốc độ (429); hệ thống đã chuyển sang tư vấn trực tiếp từ dữ liệu NORI.',
+        AI_QUOTA_EXCEEDED:
+          'Gemini tạm hết hạn mức miễn phí; hệ thống đã chuyển sang tư vấn trực tiếp từ dữ liệu NORI.',
+        AI_TIMEOUT:
+          'Gemini phản hồi quá thời gian chờ; hệ thống đã chuyển sang tư vấn trực tiếp từ dữ liệu NORI.',
+        AI_INVALID_API_KEY:
+          'Khóa kết nối AI chưa hợp lệ trên máy chủ; hệ thống đang phục vụ bằng dữ liệu NORI trực tiếp.',
+        AI_MODEL_UNAVAILABLE:
+          'Model Gemini tạm không khả dụng; hệ thống đã chuyển sang tư vấn trực tiếp từ dữ liệu NORI.',
+        AI_MODEL_NOT_FREE_TIER:
+          'Model đang cấu hình không thuộc danh sách Free Tier; hệ thống đã chuyển sang tư vấn cơ bản.',
+        AI_PAID_PROVIDER_BLOCKED:
+          'Nhà cung cấp AI trả phí đang bị tắt; hệ thống đang tư vấn từ dữ liệu NORI.',
+      }
+      try {
+        return await executeAndLogFallback(
+          mapped.code,
+          reasonLabels[mapped.code] ??
+            'Kết nối Gemini tạm gián đoạn; hệ thống đã chuyển sang chế độ tư vấn cơ bản từ dữ liệu NORI.',
+          {
+            inputTokens: totalInputTokens,
+            outputTokens: totalOutputTokens,
+            totalTokens,
+            priorTools: toolsCalled,
+            errorDetail: sanitizeErrorMessage(mapped.message).slice(0, 80),
+          },
+        )
+      } catch (fallbackErr) {
+        const fbMapped = mapToNoriAIError(fallbackErr)
+        if (fbMapped.code === 'AI_DB_UNAVAILABLE') throw fbMapped
+      }
     }
 
     const latencyMs = Math.round(performance.now() - startedAt)
@@ -508,6 +690,7 @@ export async function runNoriAIChat(params: {
       resolvedModel,
       totalInputTokens,
       totalOutputTokens,
+      { freeTierOnly: config.freeTierOnly },
     )
     recordDailyBudgetSpend(estimatedCostUsd)
 

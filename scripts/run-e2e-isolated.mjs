@@ -159,6 +159,10 @@ async function main() {
     NORI_AI_TEST_MOCK: process.env.NORI_AI_TEST_MOCK || '1',
     NORI_AI_RATE_LIMIT_PER_MINUTE: process.env.NORI_AI_RATE_LIMIT_PER_MINUTE || '40',
     NORI_AI_RATE_LIMIT_PER_DAY: process.env.NORI_AI_RATE_LIMIT_PER_DAY || '400',
+    NORI_AI_IP_RPM_CAP: process.env.NORI_AI_IP_RPM_CAP || '120',
+    NORI_AI_IP_RPD_CAP: process.env.NORI_AI_IP_RPD_CAP || '1000',
+    NORI_AI_PROJECT_RPM_CAP: process.env.NORI_AI_PROJECT_RPM_CAP || '200',
+    NORI_AI_PROJECT_RPD_CAP: process.env.NORI_AI_PROJECT_RPD_CAP || '2000',
   }
 
   const standaloneStarter = path.resolve(process.cwd(), 'scripts', 'start-standalone.mjs')

@@ -94,6 +94,8 @@ const FORBIDDEN_FIELD_NAMES = new Set([
   'api_key',
   'openaiApiKey',
   'openai_api_key',
+  'geminiApiKey',
+  'gemini_api_key',
   'payloadSecret',
   'sessionSecret',
   'sessions',
@@ -106,7 +108,10 @@ const SENSITIVE_VALUE_PATTERNS = [
   /PAYLOAD_SECRET\s*=/,
   /NORI_ADMIN_PASSWORD\s*=/,
   /OPENAI_API_KEY\s*=/,
+  /GEMINI_API_KEY\s*=/,
   /\bsk-(?:proj-)?[A-Za-z0-9_-]{20,}\b/,
+  /\bAIza[0-9A-Za-z_-]{20,}\b/,
+  /\bAQ\.[0-9A-Za-z_-]{20,}\b/,
 ]
 
 export type ConflictStrategy = 'abort' | 'keep-local' | 'prefer-snapshot'

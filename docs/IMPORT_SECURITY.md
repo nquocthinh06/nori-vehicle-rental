@@ -81,6 +81,6 @@ Kế thừa chuẩn bảo mật từ `src/app/(frontend)/nori-api/dashboard/medi
 - **Giới hạn Timeout & Retry có chặn trên**:
   - Timeout `10 giây` cho tải HTML/ảnh, `20 giây` cho PDF lớn.
   - Số lần retry tối đa bị giới hạn (`attemptCount`), không tự động lặp vô tận khi gặp `403` WAF hoặc `429 Too Many Requests`.
-- **Cô lập chi phí OpenAI (`AI_SEARCH`)**:
-  - Sử dụng cùng ngân sách và giới hạn token server-side (`OPENAI_API_KEY` chỉ đọc ở server, `NORI_AI_DAILY_BUDGET_USD`, `NORI_AI_MAX_OUTPUT_TOKENS`, `store: false`).
+- **Cô lập chi phí AI (`AI_SEARCH` — Gemini Free Tier)**:
+  - Sử dụng cùng ngân sách $0 và giới hạn token server-side (`NORI_AI_FREE_TIER_ONLY=true`, `NORI_AI_PAID_PROVIDERS_ALLOWED=false`, `GEMINI_API_KEY` chỉ đọc ở server, `NORI_AI_MAX_OUTPUT_TOKENS=1024`, không bật Google Search/Maps Grounding).
   - Trong bộ kiểm thử tự động (`tests/`), tuyệt đối dùng fixture cục bộ hoặc mock provider (`NORI_AI_TEST_MOCK=1`), không phát sinh chi phí gọi mạng/AI thật.

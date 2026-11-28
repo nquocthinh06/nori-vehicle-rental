@@ -140,7 +140,7 @@ Tất cả 9 endpoints dưới đây yêu cầu cookie `payload-token` hợp l�
 
 - **`GET /nori-api/dashboard/catalogue-import/jobs`** (`models: read`): Danh sách import jobs (phân trang, query `?page=1&status=&method=`).
   - Response: `{ items, totalDocs, page, totalPages, activeCount, maxConcurrency, aiAvailable, aiReason }`
-  - `maxConcurrency` = `3`; `aiAvailable=false` khi `OPENAI_API_KEY` chưa cấu hình.
+  - `maxConcurrency` = `3`; `aiAvailable=false` khi `GEMINI_API_KEY` (hoặc `NORI_WEB_SEARCH_ENDPOINT`) chưa cấu hình hoặc AI bị tắt (`NORI_AI_ENABLED=false`).
 
 - **`GET /nori-api/dashboard/catalogue-import/jobs/[id]`** (`models: read`): Chi tiết 1 import job, `diffPreview`, `normalizedDraft` và `rollbackSnapshot`. Trả `{ job }`.
 

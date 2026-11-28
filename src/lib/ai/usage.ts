@@ -4,11 +4,19 @@ import { redactSensitiveData } from './guardrails.ts'
 import type { AIUserRole } from './types.ts'
 
 /**
- * Reference USD pricing per 1,000,000 tokens for OpenAI models.
- * NOTE: These are NORI reference estimates for internal budgeting and monitoring only.
- * Actual billing is determined strictly by the OpenAI Platform invoice.
+ * Reference USD pricing per 1,000,000 tokens.
+ * NOTE: Gemini API Free Tier requests incur $0.00 under documented Free Tier limits
+ * (subject to Cloud Billing being disabled on the Google project). Paid rates below are
+ * reference figures only when Free-Tier-Only mode is disabled.
  */
 export const MODEL_PRICING_PER_1M_USD: Record<string, { input: number; output: number }> = {
+  // Google Gemini models (ai.google.dev/gemini-api/docs/pricing)
+  'gemini-3.5-flash-lite': { input: 0.3, output: 2.5 },
+  'gemini-2.5-flash-lite': { input: 0.1, output: 0.4 },
+  'gemini-2.5-flash': { input: 0.3, output: 2.5 },
+  'gemini-2.0-flash': { input: 0.1, output: 0.4 },
+  'gemini-2.0-flash-lite': { input: 0.075, output: 0.3 },
+  // Legacy OpenAI reference rates
   'gpt-4.1-mini': { input: 0.4, output: 1.6 },
   'gpt-4.1-nano': { input: 0.1, output: 0.4 },
   'gpt-4.1': { input: 2.0, output: 8.0 },
@@ -20,22 +28,26 @@ export const MODEL_PRICING_PER_1M_USD: Record<string, { input: number; output: n
 }
 
 export function resolveModelPricing(model: string): { input: number; output: number } {
-  const norm = model.trim().toLowerCase()
+  const norm = model
+    .trim()
+    .replace(/^models\//i, '')
+    .toLowerCase()
   if (norm in MODEL_PRICING_PER_1M_USD) {
     return MODEL_PRICING_PER_1M_USD[norm]!
   }
   for (const [key, rates] of Object.entries(MODEL_PRICING_PER_1M_USD)) {
     if (norm.startsWith(key)) return rates
   }
-  // Conservative default aligned with gpt-4.1-mini
-  return MODEL_PRICING_PER_1M_USD['gpt-4.1-mini']!
+  return MODEL_PRICING_PER_1M_USD['gemini-3.5-flash-lite']!
 }
 
 export function estimateTokenCostUsd(
   model: string,
   inputTokens: number,
   outputTokens: number,
+  options?: { freeTierOnly?: boolean },
 ): number {
+  if (options?.freeTierOnly) return 0
   const rates = resolveModelPricing(model)
   const inCost = (Math.max(0, inputTokens) / 1_000_000) * rates.input
   const outCost = (Math.max(0, outputTokens) / 1_000_000) * rates.output

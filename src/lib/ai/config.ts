@@ -7,7 +7,75 @@ import type {
   RecommendationWeights,
 } from './types.ts'
 
+export const DEFAULT_GEMINI_MODEL = 'gemini-3.5-flash-lite'
 export const DEFAULT_OPENAI_MODEL = 'gpt-4.1-mini'
+
+export type GeminiModelCapability = {
+  label: string
+  supportsFunctionCalling: boolean
+  supportsStructuredOutputs: boolean
+  documentedFreeTier: true
+  docsUrl: string
+}
+
+/**
+ * Models officially documented by Google Gemini API (ai.google.dev/gemini-api/docs/models & pricing)
+ * as having a Free Tier quota. NORI never auto-upgrades or falls back to paid-only models.
+ */
+export const GEMINI_FREE_TIER_MODELS: Readonly<Record<string, GeminiModelCapability>> = {
+  'gemini-3.5-flash-lite': {
+    label: 'Gemini 3.5 Flash-Lite',
+    supportsFunctionCalling: true,
+    supportsStructuredOutputs: true,
+    documentedFreeTier: true,
+    docsUrl: 'https://ai.google.dev/gemini-api/docs/models',
+  },
+  'gemini-2.5-flash-lite': {
+    label: 'Gemini 2.5 Flash-Lite',
+    supportsFunctionCalling: true,
+    supportsStructuredOutputs: true,
+    documentedFreeTier: true,
+    docsUrl: 'https://ai.google.dev/gemini-api/docs/models',
+  },
+  'gemini-2.5-flash': {
+    label: 'Gemini 2.5 Flash',
+    supportsFunctionCalling: true,
+    supportsStructuredOutputs: true,
+    documentedFreeTier: true,
+    docsUrl: 'https://ai.google.dev/gemini-api/docs/models',
+  },
+  'gemini-2.0-flash': {
+    label: 'Gemini 2.0 Flash',
+    supportsFunctionCalling: true,
+    supportsStructuredOutputs: true,
+    documentedFreeTier: true,
+    docsUrl: 'https://ai.google.dev/gemini-api/docs/models',
+  },
+  'gemini-2.0-flash-lite': {
+    label: 'Gemini 2.0 Flash-Lite',
+    supportsFunctionCalling: true,
+    supportsStructuredOutputs: true,
+    documentedFreeTier: true,
+    docsUrl: 'https://ai.google.dev/gemini-api/docs/models',
+  },
+}
+
+export function normalizeGeminiModelId(model: string): string {
+  return model
+    .trim()
+    .replace(/^models\//i, '')
+    .toLowerCase()
+}
+
+export function isGeminiModelInFreeTierAllowlist(model: string): boolean {
+  const norm = normalizeGeminiModelId(model)
+  return norm in GEMINI_FREE_TIER_MODELS
+}
+
+export function getGeminiModelCapabilities(model: string): GeminiModelCapability | null {
+  const norm = normalizeGeminiModelId(model)
+  return GEMINI_FREE_TIER_MODELS[norm] ?? null
+}
 
 export const DEFAULT_GREETING_MESSAGE =
   'Xin chào! Tôi là Trợ lý AI của NORI. Tôi có thể giúp bạn tìm xe phù hợp nhu cầu & ngân sách, kiểm tra lịch trống, tính báo giá thuê xe và giải đáp chính sách của NORI.'
@@ -75,7 +143,7 @@ function parseFloatClamped(
 
 /**
  * Reads runtime environment config for NORI AI.
- * NEVER returns or exposes OPENAI_API_KEY value — only boolean `apiKeyConfigured`.
+ * NEVER returns or exposes GEMINI_API_KEY / OPENAI_API_KEY value — only boolean `apiKeyConfigured`.
  */
 export function getAIRuntimeConfig(): AIRuntimeConfig {
   const envEnabled = parseBoolEnv(process.env.NORI_AI_ENABLED, true)
@@ -83,36 +151,69 @@ export function getAIRuntimeConfig(): AIRuntimeConfig {
     process.env.NORI_AI_TEST_MOCK === '1' && process.env.NORI_ALLOW_PROD_MOCK !== '1'
       ? process.env.NORI_AI_TEST_MOCK === '1'
       : false
-  const rawProvider = (process.env.NORI_AI_PROVIDER?.trim() || 'openai').toLowerCase()
+  const freeTierOnly = parseBoolEnv(process.env.NORI_AI_FREE_TIER_ONLY, true)
+  const paidProvidersAllowed =
+    !freeTierOnly && parseBoolEnv(process.env.NORI_AI_PAID_PROVIDERS_ALLOWED, false)
+  const fallbackEnabled = parseBoolEnv(process.env.NORI_AI_FALLBACK_ENABLED, true)
+
+  const rawProvider = (process.env.NORI_AI_PROVIDER?.trim() || 'gemini').toLowerCase()
   const provider: AIProviderName = testMockEnabled
     ? 'mock'
     : rawProvider === 'openai'
       ? 'openai'
-      : 'openai'
-  const model = process.env.OPENAI_MODEL?.trim() || DEFAULT_OPENAI_MODEL
-  const apiKeyConfigured = Boolean(process.env.OPENAI_API_KEY?.trim())
+      : 'gemini'
+
+  const model =
+    provider === 'openai'
+      ? process.env.OPENAI_MODEL?.trim() || DEFAULT_OPENAI_MODEL
+      : process.env.GEMINI_MODEL?.trim() || DEFAULT_GEMINI_MODEL
+
+  const apiKeyConfigured =
+    provider === 'openai'
+      ? Boolean(process.env.OPENAI_API_KEY?.trim())
+      : Boolean(process.env.GEMINI_API_KEY?.trim())
 
   return {
     envEnabled,
     provider,
     model,
     apiKeyConfigured,
-    maxOutputTokensCap: parseIntClamped(process.env.NORI_AI_MAX_OUTPUT_TOKENS, 1000, 150, 2000),
-    maxToolRoundsCap: parseIntClamped(process.env.NORI_AI_MAX_TOOL_ROUNDS, 5, 1, 6),
-    rateLimitPerMinuteCap: parseIntClamped(process.env.NORI_AI_RATE_LIMIT_PER_MINUTE, 5, 1, 60),
-    rateLimitPerDayCap: parseIntClamped(process.env.NORI_AI_RATE_LIMIT_PER_DAY, 30, 1, 1000),
+    freeTierOnly,
+    paidProvidersAllowed,
+    fallbackEnabled,
+    maxOutputTokensCap: parseIntClamped(process.env.NORI_AI_MAX_OUTPUT_TOKENS, 1024, 150, 2048),
+    maxToolRoundsCap: parseIntClamped(process.env.NORI_AI_MAX_TOOL_ROUNDS, 3, 1, 6),
+    rateLimitPerMinuteCap: parseIntClamped(process.env.NORI_AI_RATE_LIMIT_PER_MINUTE, 3, 1, 60),
+    rateLimitPerDayCap: parseIntClamped(process.env.NORI_AI_RATE_LIMIT_PER_DAY, 20, 1, 1000),
+    projectRateLimitPerMinuteCap: parseIntClamped(process.env.NORI_AI_PROJECT_RPM_CAP, 10, 1, 60),
+    projectRateLimitPerDayCap: parseIntClamped(process.env.NORI_AI_PROJECT_RPD_CAP, 200, 1, 1500),
+    ipRateLimitPerMinuteCap: parseIntClamped(process.env.NORI_AI_IP_RPM_CAP, 6, 1, 60),
+    ipRateLimitPerDayCap: parseIntClamped(process.env.NORI_AI_IP_RPD_CAP, 40, 1, 500),
     timeoutMs: parseIntClamped(process.env.NORI_AI_TIMEOUT_MS, 30_000, 3_000, 60_000),
-    dailyBudgetUsdCap: parseFloatClamped(process.env.NORI_AI_DAILY_BUDGET_USD, 5, 0.5, 500),
+    dailyBudgetUsdCap: freeTierOnly
+      ? 0
+      : parseFloatClamped(process.env.NORI_AI_DAILY_BUDGET_USD, 5, 0, 500),
     storeConversations: parseBoolEnv(process.env.NORI_AI_STORE_CONVERSATIONS, false),
     testMockEnabled,
   }
 }
 
 /**
- * Server-internal helper to fetch the OpenAI API key at provider invocation time.
+ * Server-internal helper to fetch the Gemini API key at provider invocation time.
  * Never log, serialize, or return this value to clients.
  */
+export function getGeminiApiKeyServerOnly(): string | null {
+  const key = process.env.GEMINI_API_KEY?.trim()
+  return key && key.length > 0 ? key : null
+}
+
+/**
+ * Server-internal helper to fetch the OpenAI API key at provider invocation time.
+ * Blocked when `freeTierOnly` is true or `paidProvidersAllowed` is false.
+ */
 export function getOpenAIApiKeyServerOnly(): string | null {
+  const runtime = getAIRuntimeConfig()
+  if (runtime.freeTierOnly || !runtime.paidProvidersAllowed) return null
   const key = process.env.OPENAI_API_KEY?.trim()
   return key && key.length > 0 ? key : null
 }
@@ -184,9 +285,10 @@ export function resolveEffectiveAIConfig(
     return Math.max(min, Math.min(cap, Math.round(n)))
   }
 
-  const dailyBudget =
-    typeof dbSettings?.dailyBudgetUsd === 'number' && Number.isFinite(dbSettings.dailyBudgetUsd)
-      ? Math.max(0.5, Math.min(runtime.dailyBudgetUsdCap, dbSettings.dailyBudgetUsd))
+  const dailyBudget = runtime.freeTierOnly
+    ? 0
+    : typeof dbSettings?.dailyBudgetUsd === 'number' && Number.isFinite(dbSettings.dailyBudgetUsd)
+      ? Math.max(0, Math.min(runtime.dailyBudgetUsdCap, dbSettings.dailyBudgetUsd))
       : runtime.dailyBudgetUsdCap
 
   return {
@@ -194,6 +296,9 @@ export function resolveEffectiveAIConfig(
     configured,
     provider: runtime.provider,
     model: runtime.model,
+    freeTierOnly: runtime.freeTierOnly,
+    paidProvidersAllowed: runtime.paidProvidersAllowed,
+    fallbackEnabled: runtime.fallbackEnabled,
     maxOutputTokens: clampAgainstCap(dbSettings?.maxOutputTokens, runtime.maxOutputTokensCap, 200),
     maxToolRounds: clampAgainstCap(dbSettings?.maxToolRounds, runtime.maxToolRoundsCap, 1),
     rateLimitPerMinute: clampAgainstCap(
@@ -202,6 +307,10 @@ export function resolveEffectiveAIConfig(
       1,
     ),
     rateLimitPerDay: clampAgainstCap(dbSettings?.rateLimitPerDay, runtime.rateLimitPerDayCap, 1),
+    projectRateLimitPerMinute: runtime.projectRateLimitPerMinuteCap,
+    projectRateLimitPerDay: runtime.projectRateLimitPerDayCap,
+    ipRateLimitPerMinute: runtime.ipRateLimitPerMinuteCap,
+    ipRateLimitPerDay: runtime.ipRateLimitPerDayCap,
     timeoutMs: runtime.timeoutMs,
     dailyBudgetUsd: dailyBudget,
     storeConversations: runtime.storeConversations,

@@ -1,8 +1,8 @@
 import { getAIRuntimeConfig } from './config.ts'
 import { NoriAIError } from './errors.ts'
-import { stripVietnameseAccents } from './guardrails.ts'
+import { planDeterministicToolTurn, synthesizeDeterministicReply } from './fallback.ts'
+import { GeminiProvider } from './gemini.ts'
 import { OpenAIResponsesProvider } from './openai.ts'
-import { extractStructuredIntent } from './recommendation.ts'
 import type {
   AIProvider,
   AIProviderInputItem,
@@ -77,7 +77,6 @@ export class MockTestAIProvider implements AIProvider {
           i.type === 'message' && i.role === 'user',
       )
     const userText = lastUserMessage?.content ?? ''
-    const norm = stripVietnameseAccents(userText).toLowerCase()
 
     // Round 2: Synthesize concise Vietnamese summary strictly from actual backend tool output
     if (toolOutputs.length > 0) {
@@ -89,7 +88,7 @@ export class MockTestAIProvider implements AIProvider {
         parsed = {}
       }
 
-      const summary = synthesizeFromToolOutput(parsed)
+      const summary = synthesizeDeterministicReply(parsed)
       return {
         responseId: `mock-resp-final-${Date.now()}`,
         model: params.model,
@@ -102,131 +101,22 @@ export class MockTestAIProvider implements AIProvider {
       }
     }
 
-    // Round 1: Deterministic function calling based on user intent
-    const intent = extractStructuredIntent(userText)
-    const toolCalls: AIProviderToolCall[] = []
-
-    if (/\b(so sanh|compare)\b/.test(norm)) {
-      const slugs = extractCandidateNames(userText)
-      toolCalls.push({
-        callId: `mock-call-cmp-${Date.now()}`,
-        name: 'compareVehicles',
-        argumentsJson: JSON.stringify({
-          queries: slugs.length >= 2 ? slugs : ['fortuner', 'xpander'],
-          startDate: intent.startDate ?? undefined,
-          endDate: intent.endDate ?? undefined,
-        }),
-      })
-    } else if (
-      /\b(khuyen mai|ma giam gia|voucher|promo|uu dai|giam gia)\b/.test(norm) &&
-      !/\b(tinh gia|bao gia)\b/.test(norm)
-    ) {
-      const codeMatch = userText.match(/\b([A-Z0-9]{4,20})\b/)
-      toolCalls.push({
-        callId: `mock-call-promo-${Date.now()}`,
-        name: 'getActivePromotions',
-        argumentsJson: JSON.stringify({
-          code: codeMatch ? codeMatch[1] : undefined,
-        }),
-      })
-    } else if (
-      /\b(chinh sach|dat coc|huy don|hoan tien|bao hiem|giay to|faq|dieu kien thue|lien he|hotline|giao nhan)\b/.test(
-        norm,
-      )
-    ) {
-      toolCalls.push({
-        callId: `mock-call-policy-${Date.now()}`,
-        name: 'getRentalPolicy',
-        argumentsJson: JSON.stringify({ query: userText }),
-      })
-    } else if (
-      /\b(dat xe|thue xe nay|chuan bi dat|checkout|dat thue)\b/.test(norm) &&
-      intent.query
-    ) {
-      toolCalls.push({
-        callId: `mock-call-book-${Date.now()}`,
-        name: 'prepareBooking',
-        argumentsJson: JSON.stringify({
-          vehicleQuery: intent.query,
-          startDate: intent.startDate ?? undefined,
-          endDate: intent.endDate ?? undefined,
-        }),
-      })
-    } else if (/\b(tinh gia|bao gia|het bao nhieu|tong chi phi|tong tien)\b/.test(norm)) {
-      if (!intent.startDate || !intent.endDate) {
-        const askText =
-          'Để tính báo giá chính xác theo Business Rule Engine của NORI, vui lòng cung cấp giúp tôi **ngày nhận xe** và **ngày trả xe** cụ thể (ví dụ: nhận 2026-12-01, trả 2026-12-04).'
-        return {
-          responseId: `mock-resp-ask-dates-${Date.now()}`,
-          model: params.model,
-          outputText: askText,
-          toolCalls: [],
-          inputTokens: 110,
-          outputTokens: 48,
-          totalTokens: 158,
-          rawOutputItems: [{ type: 'message', role: 'assistant', content: askText }],
-        }
+    // Round 1: Deterministic function calling based on shared planner
+    const plan = planDeterministicToolTurn(userText)
+    if (plan.kind === 'ASK') {
+      return {
+        responseId: `mock-resp-ask-${Date.now()}`,
+        model: params.model,
+        outputText: plan.text,
+        toolCalls: [],
+        inputTokens: 112,
+        outputTokens: 50,
+        totalTokens: 162,
+        rawOutputItems: [{ type: 'message', role: 'assistant', content: plan.text }],
       }
-      const promoMatch = userText.match(/\b(?:ma|code)\s+([A-Za-z0-9_-]{3,24})/i)
-      toolCalls.push({
-        callId: `mock-call-price-${Date.now()}`,
-        name: 'calculateRentalPrice',
-        argumentsJson: JSON.stringify({
-          vehicleQuery: intent.query || userText,
-          startDate: intent.startDate,
-          endDate: intent.endDate,
-          promoCode: promoMatch ? promoMatch[1].toUpperCase() : undefined,
-        }),
-      })
-    } else if (/\b(con trong|kiem tra lich|kha dung|co san|het lich)\b/.test(norm)) {
-      if (!intent.startDate || !intent.endDate) {
-        const askText =
-          'Tôi cần biết chính xác **ngày nhận xe** và **ngày trả xe** (định dạng YYYY-MM-DD) để kiểm tra lịch trống thực tế của xe trong hệ thống NORI. Bạn dự kiến thuê từ ngày nào đến ngày nào?'
-        return {
-          responseId: `mock-resp-ask-avail-${Date.now()}`,
-          model: params.model,
-          outputText: askText,
-          toolCalls: [],
-          inputTokens: 115,
-          outputTokens: 52,
-          totalTokens: 167,
-          rawOutputItems: [{ type: 'message', role: 'assistant', content: askText }],
-        }
-      }
-      toolCalls.push({
-        callId: `mock-call-avail-${Date.now()}`,
-        name: 'checkAvailability',
-        argumentsJson: JSON.stringify({
-          vehicleQuery: intent.query || userText,
-          startDate: intent.startDate,
-          endDate: intent.endDate,
-        }),
-      })
-    } else if (/\b(chi tiet|thong so)\b/.test(norm) && intent.query) {
-      toolCalls.push({
-        callId: `mock-call-detail-${Date.now()}`,
-        name: 'getVehicleDetails',
-        argumentsJson: JSON.stringify({ query: intent.query }),
-      })
-    } else {
-      toolCalls.push({
-        callId: `mock-call-rec-${Date.now()}`,
-        name: 'recommendVehicles',
-        argumentsJson: JSON.stringify({
-          userQuery: userText,
-          category: intent.category ?? undefined,
-          seats: intent.minSeats ?? undefined,
-          maxBudgetPerDay: intent.maxBudgetPerDay ?? undefined,
-          strictBudget: intent.strictBudget,
-          fuelType: intent.fuelType ?? undefined,
-          transmission: intent.transmission ?? undefined,
-          purpose: intent.purpose ?? undefined,
-          startDate: intent.startDate ?? undefined,
-          endDate: intent.endDate ?? undefined,
-          limit: 4,
-        }),
-      })
     }
+
+    const toolCalls: AIProviderToolCall[] = [plan.toolCall]
 
     return {
       responseId: `mock-resp-tool-${Date.now()}`,
@@ -258,49 +148,22 @@ export class MockTestAIProvider implements AIProvider {
   }
 }
 
-function extractCandidateNames(text: string): string[] {
-  const known = [
-    'fortuner',
-    'xpander',
-    'vios',
-    'accent',
-    'ranger',
-    'raptor',
-    'cx-5',
-    'cr-v',
-    'innova',
-    'veloz',
-    'vf 8',
-    'vf 5',
-    'vf 3',
-    'pcx',
-    'sh',
-    'vision',
-    'air blade',
-    'exciter',
-    'winner',
-    'triton',
-    'hilux',
-    'navara',
-  ]
-  const norm = stripVietnameseAccents(text).toLowerCase()
-  return known.filter((k) => norm.includes(k)).slice(0, 4)
-}
-
-function synthesizeFromToolOutput(data: Record<string, unknown>): string {
-  if (typeof data.summary === 'string' && data.summary.trim()) {
-    return data.summary.trim()
-  }
-  if (typeof data.error === 'string' && data.error.trim()) {
-    return data.error.trim()
-  }
-  return 'Tôi đã tra cứu dữ liệu thực tế từ hệ thống NORI. Bạn có thể xem chi tiết thông tin trong thẻ kết quả bên dưới.'
-}
-
 export function resolveAIProvider(): AIProvider {
   const runtime = getAIRuntimeConfig()
   if (runtime.testMockEnabled) {
     return new MockTestAIProvider()
   }
-  return new OpenAIResponsesProvider()
+  if (runtime.provider === 'openai') {
+    if (runtime.freeTierOnly || !runtime.paidProvidersAllowed) {
+      throw new NoriAIError({
+        code: 'AI_PAID_PROVIDER_BLOCKED',
+        status: 503,
+        retryable: false,
+        userMessage:
+          'Nhà cung cấp AI trả phí (OpenAI) đang bị khóa theo chính sách Gemini Free Tier Only của NORI.',
+      })
+    }
+    return new OpenAIResponsesProvider()
+  }
+  return new GeminiProvider()
 }

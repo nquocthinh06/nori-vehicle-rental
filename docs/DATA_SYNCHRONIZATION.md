@@ -74,7 +74,7 @@ Dữ liệu nhạy cảm **tuyệt đối không bao giờ được commit** lê
 
 | Nhóm bị chặn tuyệt đối | Ví dụ cụ thể | Cơ chế bảo vệ tại NORI |
 | :--- | :--- | :--- |
-| **Biến môi trường & Bí mật** | `.env`, `.env.local`, `PAYLOAD_SECRET`, `OPENAI_API_KEY`, `BLOB_READ_WRITE_TOKEN`, `NORI_BACKUP_ENCRYPTION_KEY`, `DATABASE_URL`, `NEON_DIRECT_URL` | `.gitignore` chặn `.env*` (trừ `.env.example`); `SENSITIVE_VALUE_PATTERNS` quét chặn khi export/validate |
+| **Biến môi trường & Bí mật** | `.env`, `.env.local`, `PAYLOAD_SECRET`, `GEMINI_API_KEY`, `OPENAI_API_KEY`, `BLOB_READ_WRITE_TOKEN`, `NORI_BACKUP_ENCRYPTION_KEY`, `DATABASE_URL`, `NEON_DIRECT_URL` | `.gitignore` chặn `.env*` (trừ `.env.example`); `SENSITIVE_VALUE_PATTERNS` quét chặn khi export/validate (`AIza*`, `AQ.*`, `sk-*`) |
 | **Chứng chỉ & Khóa mạng** | `tunnel-credentials.json`, `*.pem`, `cert.pem`, `.cloudflared/` | `.gitignore` chặn tuyệt đối |
 | **Tài khoản & Dữ liệu cá nhân (PII)** | `admins`, `users`, `password`/`hash`/`salt`, `sessions`, `driverLicenseNumber`, `idCardNumber`, `customerPhone`, `deliveryAddress`, `pickupAddress` | `EXCLUDED_SENSITIVE_COLLECTIONS` & `FORBIDDEN_FIELD_NAMES` trong `src/lib/data-sync.ts` |
 | **Giao dịch & Vận hành thực tế** | `bookings`, `rental-days`, `payments`, `payment-events`, `refunds`, `audit-logs`, `branch-staff`, `vehicle-transfers`, `delivery-jobs`, `ai-usage-logs`, `ai-feedback` | Bị chặn hoàn toàn khỏi cơ chế Snapshot |

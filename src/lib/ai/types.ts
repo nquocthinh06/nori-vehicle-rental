@@ -1,4 +1,4 @@
-export type AIProviderName = 'openai' | 'mock'
+export type AIProviderName = 'gemini' | 'openai' | 'mock' | 'rule-based-fallback'
 
 export type AIUserRole = 'GUEST' | 'CUSTOMER' | 'ADMIN'
 
@@ -39,10 +39,17 @@ export type AIRuntimeConfig = {
   provider: AIProviderName
   model: string
   apiKeyConfigured: boolean
+  freeTierOnly: boolean
+  paidProvidersAllowed: boolean
+  fallbackEnabled: boolean
   maxOutputTokensCap: number
   maxToolRoundsCap: number
   rateLimitPerMinuteCap: number
   rateLimitPerDayCap: number
+  projectRateLimitPerMinuteCap: number
+  projectRateLimitPerDayCap: number
+  ipRateLimitPerMinuteCap: number
+  ipRateLimitPerDayCap: number
   timeoutMs: number
   dailyBudgetUsdCap: number
   storeConversations: boolean
@@ -54,10 +61,17 @@ export type AIResolvedConfig = {
   configured: boolean
   provider: AIProviderName
   model: string
+  freeTierOnly: boolean
+  paidProvidersAllowed: boolean
+  fallbackEnabled: boolean
   maxOutputTokens: number
   maxToolRounds: number
   rateLimitPerMinute: number
   rateLimitPerDay: number
+  projectRateLimitPerMinute: number
+  projectRateLimitPerDay: number
+  ipRateLimitPerMinute: number
+  ipRateLimitPerDay: number
   timeoutMs: number
   dailyBudgetUsd: number
   storeConversations: boolean
@@ -179,6 +193,10 @@ export type AIChatResponsePayload = {
   requestId: string
   reply: string
   status: 'SUCCESS' | 'BLOCKED' | 'UNCONFIGURED' | 'DISABLED' | 'DEGRADED'
+  mode?: 'LIVE_AI' | 'RULE_BASED_FALLBACK' | 'GUARDRAIL' | 'DISABLED' | 'UNCONFIGURED'
+  modeLabel?: string
+  fallbackMode?: boolean
+  fallbackReason?: string | null
   intent: string
   vehicleCards: AIVehicleCard[]
   comparison: AIComparisonTable | null
@@ -232,6 +250,7 @@ export type AIProviderInputItem =
       call_id: string
       name: string
       arguments: string
+      thoughtSignature?: string
     }
   | {
       type: 'function_call_output'

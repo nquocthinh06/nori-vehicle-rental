@@ -32,6 +32,7 @@ export async function POST(request: Request) {
       message: data.message,
       history: data.history,
       sessionKey,
+      ipKey: ip,
       user: currentUser ? { id: String(currentUser.id), collection: 'users' } : null,
       userRole: currentUser ? 'CUSTOMER' : 'GUEST',
       signal: request.signal,

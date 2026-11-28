@@ -1,5 +1,9 @@
-import { getAIRuntimeConfig, getOpenAIApiKeyServerOnly } from '../ai/config.ts'
-import { OpenAIResponsesProvider } from '../ai/openai.ts'
+import {
+  getAIRuntimeConfig,
+  getGeminiApiKeyServerOnly,
+  getOpenAIApiKeyServerOnly,
+} from '../ai/config.ts'
+import { resolveAIProvider } from '../ai/provider.ts'
 import { resolveAdapterByBrand, resolveAdapterForUrl } from './adapters/registry.ts'
 import { extractBaseFromHtmlSignals, extractHtmlSignals } from './extractor.ts'
 import { safeFetchUrl } from './fetcher.ts'
@@ -42,11 +46,22 @@ export function getImportAISearchAvailability(): AISearchAvailability {
       reason: 'Tính năng AI phía máy chủ đang tắt (NORI_AI_ENABLED=false).',
     }
   }
-  if (!getOpenAIApiKeyServerOnly() && !process.env.NORI_WEB_SEARCH_ENDPOINT?.trim()) {
+  if (runtime.provider === 'openai' && (runtime.freeTierOnly || !runtime.paidProvidersAllowed)) {
     return {
       available: false,
       reason:
-        'Chưa cấu hình OPENAI_API_KEY hoặc NORI_WEB_SEARCH_ENDPOINT trên máy chủ. Không thể thực hiện AI Smart Search mà không có nguồn xác thực.',
+        'OpenAI đang bị khóa bởi chính sách Gemini Free Tier Only (NORI_AI_FREE_TIER_ONLY=true). Hãy chuyển NORI_AI_PROVIDER=gemini hoặc dùng URL/PDF Brochure.',
+    }
+  }
+  const hasProviderKey =
+    runtime.provider === 'openai'
+      ? Boolean(getOpenAIApiKeyServerOnly())
+      : Boolean(getGeminiApiKeyServerOnly())
+  if (!hasProviderKey && !process.env.NORI_WEB_SEARCH_ENDPOINT?.trim()) {
+    return {
+      available: false,
+      reason:
+        'Chưa cấu hình GEMINI_API_KEY hoặc NORI_WEB_SEARCH_ENDPOINT trên máy chủ. Không thể thực hiện AI Smart Search mà không có nguồn xác thực.',
     }
   }
   return { available: true, reason: null }
@@ -183,9 +198,9 @@ export async function runSmartVehicleSearch(params: {
     }
   }
 
-  // 2. Ask OpenAI Responses API ONLY to structure & summarize the verified fetched text
+  // 2. Ask configured Free Tier AI Provider ONLY to structure & summarize the verified fetched text
   try {
-    const provider = new OpenAIResponsesProvider()
+    const provider = resolveAIProvider()
     const turn = await provider.generateTurn({
       model: runtime.model,
       instructions:

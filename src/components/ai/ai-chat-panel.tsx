@@ -25,7 +25,11 @@ type PublicAIConfig = {
   enabled: boolean
   configured: boolean
   ready: boolean
+  fallbackEnabled?: boolean
+  fallbackActive?: boolean
+  freeTierOnly?: boolean
   provider: string
+  model?: string
   greetingMessage: string
   quickSuggestions: AIQuickSuggestion[]
   fallbackLinks: { label: string; href: string }[]
@@ -38,6 +42,8 @@ type ChatEntry = {
   content: string
   requestId?: string
   status?: AIChatResponsePayload['status']
+  modeLabel?: string
+  fallbackMode?: boolean
   vehicleCards?: AIVehicleCard[]
   comparison?: AIComparisonTable | null
   quote?: AIQuoteSummary | null
@@ -271,6 +277,8 @@ export function AIChatPanel({ onClose }: { onClose: () => void }) {
             content: data.reply,
             requestId: data.requestId,
             status: data.status,
+            modeLabel: data.modeLabel,
+            fallbackMode: data.fallbackMode,
             vehicleCards: data.vehicleCards,
             comparison: data.comparison,
             quote: data.quote,
@@ -393,11 +401,13 @@ export function AIChatPanel({ onClose }: { onClose: () => void }) {
               <span className="rounded-pill bg-brand-bright/20 px-2 py-0.5 text-[10px] font-semibold text-brand-bright">
                 {!isOnline
                   ? 'Ngoại tuyến'
-                  : config?.ready
-                    ? 'Sẵn sàng'
-                    : config
-                      ? 'Tạm ngưng'
-                      : 'Đang kết nối'}
+                  : config?.fallbackActive
+                    ? 'Tư vấn cơ bản'
+                    : config?.ready
+                      ? 'Sẵn sàng'
+                      : config
+                        ? 'Tạm ngưng'
+                        : 'Đang kết nối'}
               </span>
             </div>
             <p className="truncate text-micro text-on-night-muted">
@@ -545,6 +555,16 @@ export function AIChatPanel({ onClose }: { onClose: () => void }) {
                 </div>
               ) : (
                 <div className="rounded-card border border-line bg-canvas p-3.5 shadow-card">
+                  {(msg.fallbackMode || msg.status === 'DEGRADED') && (
+                    <div className="mb-2 flex flex-wrap items-center gap-2">
+                      <Badge tone="warning">
+                        {msg.modeLabel || 'Chế độ tư vấn cơ bản (Rule-based Engine)'}
+                      </Badge>
+                      <span className="text-micro text-muted">
+                        Dữ liệu xe & giá thuê trực tiếp từ NORI
+                      </span>
+                    </div>
+                  )}
                   <div className="whitespace-pre-line text-small leading-relaxed text-ink">
                     {msg.content}
                   </div>

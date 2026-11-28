@@ -8,6 +8,9 @@ export type NoriAIErrorCode =
   | 'AI_BUDGET_EXCEEDED'
   | 'AI_CONCURRENCY_LIMIT'
   | 'AI_TIMEOUT'
+  | 'AI_MODEL_UNAVAILABLE'
+  | 'AI_MODEL_NOT_FREE_TIER'
+  | 'AI_PAID_PROVIDER_BLOCKED'
   | 'AI_PROVIDER_ERROR'
   | 'AI_CIRCUIT_OPEN'
   | 'AI_INPUT_TOO_LONG'
@@ -51,8 +54,11 @@ export function sanitizeErrorMessage(raw: unknown): string {
   const msg = raw instanceof Error ? raw.message : String(raw ?? 'Unknown error')
   return msg
     .replace(/\bsk-(?:proj-)?[A-Za-z0-9_-]{12,}\b/g, '[REDACTED_API_KEY]')
+    .replace(/\bAIza[0-9A-Za-z_-]{20,}\b/g, '[REDACTED_API_KEY]')
+    .replace(/\bAQ\.[0-9A-Za-z._-]{20,}\b/g, '[REDACTED_API_KEY]')
     .replace(/Bearer\s+[A-Za-z0-9._-]+/gi, 'Bearer [REDACTED]')
-    .replace(/OPENAI_API_KEY\s*=\s*\S+/gi, 'OPENAI_API_KEY=[REDACTED]')
+    .replace(/x-goog-api-key\s*[:=]\s*\S+/gi, 'x-goog-api-key=[REDACTED]')
+    .replace(/(?:GEMINI|OPENAI)_API_KEY\s*=\s*\S+/gi, 'API_KEY=[REDACTED]')
     .slice(0, 260)
 }
 
@@ -110,6 +116,9 @@ export function mapToNoriAIError(error: unknown): NoriAIError {
     errCode === 'invalid_api_key' ||
     lower.includes('incorrect api key') ||
     lower.includes('invalid api key') ||
+    lower.includes('api_key_invalid') ||
+    lower.includes('api key not valid') ||
+    lower.includes('permission_denied') ||
     lower.includes('authentication')
   ) {
     return new NoriAIError({
@@ -123,10 +132,29 @@ export function mapToNoriAIError(error: unknown): NoriAIError {
   }
 
   if (
+    status === 404 ||
+    errCode === 'model_not_found' ||
+    lower.includes('is not found for api version') ||
+    lower.includes('not supported for generatecontent') ||
+    lower.includes('model not found')
+  ) {
+    return new NoriAIError({
+      code: 'AI_MODEL_UNAVAILABLE',
+      status: 503,
+      retryable: false,
+      userMessage:
+        'Model AI đang cấu hình hiện tạm không khả dụng. Hệ thống đã chuyển sang chế độ dự phòng để tiếp tục hỗ trợ bạn.',
+      message: rawMsg,
+    })
+  }
+
+  if (
     errCode === 'insufficient_quota' ||
     errType === 'insufficient_quota' ||
     lower.includes('exceeded your current quota') ||
     lower.includes('insufficient_quota') ||
+    lower.includes('quota exceeded') ||
+    lower.includes('free_tier_requests') ||
     lower.includes('billing')
   ) {
     return new NoriAIError({
@@ -139,7 +167,13 @@ export function mapToNoriAIError(error: unknown): NoriAIError {
     })
   }
 
-  if (status === 429 || errCode === 'rate_limit_exceeded' || lower.includes('rate limit')) {
+  if (
+    status === 429 ||
+    errCode === 'rate_limit_exceeded' ||
+    lower.includes('resource_exhausted') ||
+    lower.includes('too many requests') ||
+    lower.includes('rate limit')
+  ) {
     return new NoriAIError({
       code: 'AI_RATE_LIMITED',
       status: 429,

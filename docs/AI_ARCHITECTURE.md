@@ -1,14 +1,15 @@
 # NORI AI Assistant — Kiến Trúc Hệ Thống (AI Architecture)
 
 > **Tên tính năng chính thức**: NORI AI Assistant – Intelligent Vehicle Recommendation & Rental Assistant  
-> **Nhà cung cấp AI chính thức**: OpenAI API (Responses API qua `openai` Node/TypeScript SDK chính thức)  
-> **Model mặc định**: Cấu hình qua biến môi trường `OPENAI_MODEL` (khuyến nghị `gpt-4.1-mini`)
+> **Nhà cung cấp AI chính thức**: Google Gemini API Free Tier (qua `@google/genai` SDK `3.6.1`, chính sách bắt buộc `NORI_AI_FREE_TIER_ONLY=true`, `NORI_AI_PAID_PROVIDERS_ALLOWED=false`)  
+> **Model mặc định**: Cấu hình qua biến môi trường `GEMINI_MODEL` (ưu tiên `gemini-3.5-flash-lite`, kiểm tra nghiêm ngặt theo danh sách model Free Tier được tài liệu hóa)  
+> **Chế độ dự phòng (Fallback Engine)**: `Rule-based Recommendation Engine` (`src/lib/ai/fallback.ts`) — hoạt động 100% không cần API Key với dữ liệu thật và Business Rule Engine khi Gemini hết quota (`429`), timeout, thiếu key hoặc lỗi kết nối.
 
 ---
 
 ## 1. Kiến trúc tổng thể (High-Level Architecture)
 
-NORI AI Assistant được thiết kế theo kiến trúc phân tầng rõ ràng, cô lập hoàn toàn lời gọi OpenAI ở phía máy chủ và buộc mọi thông tin phương tiện, lịch trống, báo giá, khuyến mãi và chính sách phải đi qua các dịch vụ nghiệp vụ chuẩn của NORI.
+NORI AI Assistant được thiết kế theo kiến trúc phân tầng rõ ràng, cô lập hoàn toàn lời gọi Google Gemini API ở phía máy chủ và buộc mọi thông tin phương tiện, lịch trống, báo giá, khuyến mãi và chính sách phải đi qua các dịch vụ nghiệp vụ chuẩn của NORI. Tuyệt đối **không kích hoạt Google Search Grounding, Google Maps Grounding** hay bất kỳ provider trả phí nào.
 
 ```mermaid
 flowchart LR
@@ -17,8 +18,9 @@ flowchart LR
   AIChatAPI["NORI AI API\n(/nori-api/ai/*)"]
   AdminAIAPI["Admin AI API\n(/nori-api/dashboard/ai/*)"]
   Orchestrator["AI Orchestrator\n(src/lib/ai/orchestrator.ts)"]
-  Guardrails["Security Guardrails & Rate Limit\n(guardrails.ts, rate-limit.ts)"]
-  OpenAIProvider["OpenAI Responses API Provider\n(openai.ts, store: false)"]
+  Guardrails["Security Guardrails & Multi-Scope Rate Limit\n(guardrails.ts, rate-limit.ts)"]
+  GeminiProvider["Gemini Free Tier Provider\n(gemini.ts, @google/genai, Zero Grounding)"]
+  FallbackEngine["Rule-based Recommendation Engine\n(fallback.ts, Chế độ tư vấn cơ bản)"]
   ToolRegistry["Allowlisted Tool Registry\n(9 Tools + Schema Validation)"]
   RecEngine["Hybrid Recommendation Engine\n(recommendation.ts)"]
   KnowledgeRAG["Knowledge Base & Live RAG\n(knowledge.ts)"]
@@ -29,8 +31,10 @@ flowchart LR
   AdminUI -->|"RBAC Admin Session"| AdminAIAPI
   AIChatAPI --> Orchestrator
   Orchestrator --> Guardrails
-  Orchestrator -->|"Controlled Function Calling Loop"| OpenAIProvider
-  OpenAIProvider -->|"function_call"| ToolRegistry
+  Orchestrator -->|"Controlled Function Calling Loop"| GeminiProvider
+  Orchestrator -->|"429 / Quota / Timeout / Unconfigured"| FallbackEngine
+  GeminiProvider -->|"function_call"| ToolRegistry
+  FallbackEngine -->|"Deterministic Tool Execution"| ToolRegistry
   ToolRegistry --> RecEngine
   ToolRegistry --> KnowledgeRAG
   ToolRegistry --> BusinessServices
@@ -50,26 +54,34 @@ sequenceDiagram
   participant UI as AI Chat UI
   participant API as POST /nori-api/ai/chat
   participant Orch as AI Orchestrator
-  participant Guard as Guardrails & Rate Limit
-  participant OAI as OpenAI Responses API
+  participant Guard as Guardrails & Rate Limit (Project/IP/Session)
+  participant Gemini as Google Gemini API (Free Tier)
+  participant Fallback as Rule-based Engine (fallback.ts)
   participant Tools as Allowlisted Tool Registry
   participant BRE as NORI Services & Payload DB
 
   Customer->>UI: Gửi câu hỏi (VD: "Xe 7 chỗ dưới 1.5tr từ 01/12 đến 04/12")
   UI->>API: POST { message, history, sessionId }
-  API->>Orch: runNoriAIChat(sessionKey, user, signal)
-  Orch->>Guard: Kiểm tra độ dài, Prompt Injection, Rate Limit, Budget, Circuit Breaker
-  alt Vi phạm Guardrail / Hết hạn mức
+  API->>Orch: runNoriAIChat(sessionKey, ipKey, user, signal)
+  Orch->>Guard: Kiểm tra độ dài, Prompt Injection, Session/IP Rate Limit
+  alt Vi phạm Guardrail / Session-IP Rate Limit
     Guard-->>UI: Trả về phản hồi từ chối an toàn + Fallback Links
-  else Hợp lệ
-    Orch->>OAI: responses.create({ model, instructions, input, tools, store: false })
-    OAI-->>Orch: function_call (VD: recommendVehicles / calculateRentalPrice)
+  else Thiếu Key / Circuit Open / Lỗi 429 / Quota / Timeout / Model không khả dụng
+    Orch->>Fallback: runRuleBasedFallback()
+    Fallback->>Tools: Chạy tool xác thực theo Structured Intent
+    Tools->>BRE: Truy vấn Payload & BRE thực tế
+    BRE-->>Fallback: Vehicle Cards / Giá thuê / Lịch trống
+    Fallback-->>UI: { status: "DEGRADED", modeLabel: "Chế độ tư vấn cơ bản (Rule-based Engine)", vehicleCards, ... }
+  else Gemini Free Tier Sẵn Sàng
+    Orch->>Gemini: models.generateContent({ model, contents, config: { systemInstruction, tools, maxOutputTokens } })
+    Gemini-->>Orch: functionCall (VD: recommendVehicles / calculateRentalPrice)
+    Orch->>Guard: Tính vào hạn mức Project/IP/Session cho từng vòng gọi model
     Orch->>Tools: Validate JSON Schema + Allowlist
     Tools->>BRE: Truy vấn Payload (overrideAccess: false) & Business Rule Engine
     BRE-->>Tools: Dữ liệu thật + Structured UI Cards / Quote
     Tools-->>Orch: toolOutputForLLM + Verified UI Artifacts
-    Orch->>OAI: responses.create(input + function_call_output, store: false)
-    OAI-->>Orch: Final Vietnamese Response + Token Usage
+    Orch->>Gemini: models.generateContent(contents + functionResponse)
+    Gemini-->>Orch: Final Vietnamese Response + usageMetadata
     Orch->>BRE: Ghi telemetry vào ai_usage_logs (không lưu PII/API Key)
     Orch-->>UI: { reply, vehicleCards, quote, comparison, bookingHandoff, citations }
     UI-->>Customer: Hiển thị câu trả lời + Vehicle Recommendation Cards tương tác
@@ -83,15 +95,18 @@ sequenceDiagram
 ```mermaid
 flowchart TD
   UserMsg["User Natural Language Input"] --> SanitizeIn["validateAndSanitizeChatInput\n+ evaluateInputGuardrails"]
-  SanitizeIn --> ContextBuild["Build Context Window\n(System Prompt + Safe History)"]
-  ContextBuild --> OpenAICall["OpenAI Responses API\n(store: false, max_output_tokens)"]
-  OpenAICall -->|"Tool Call JSON"| ArgValidate["validateToolArguments\n(Allowlist + Strict Types)"]
+  SanitizeIn --> RedactOut["redactSensitiveData\n(Ẩn SĐT, Email, CCCD, GPLX, API Keys)"]
+  RedactOut --> ContextBuild["Build Context Window\n(System Prompt + Safe History)"]
+  ContextBuild --> GeminiCall["Google Gemini API (@google/genai)\n(Allowlisted Model, maxOutputTokens <= 1024)"]
+  GeminiCall -->|"429 / Quota / Timeout"| RuleFallback["Rule-based Recommendation Engine\n(fallback.ts — Zero API Key)"]
+  GeminiCall -->|"Function Call JSON"| ArgValidate["validateToolArguments\n(Allowlist + Strict Types)"]
+  RuleFallback --> ArgValidate
   ArgValidate --> LiveDB["Live Payload CMS Queries\n(vehicle-models, vehicles, reviews, promotions, nori-site, posts)"]
   LiveDB -->|"Structured Verified Artifacts"| UIRender["Frontend Cards / Quote / Comparison\n(Render trực tiếp từ Backend JSON)"]
-  LiveDB -->|"Sanitized CMS Data\n(<untrusted_cms_data>)"| OpenAICall
-  OpenAICall -->|"Text Reply"| SanitizeOut["sanitizeAssistantOutput\n(Strip XSS & Secret Patterns)"]
+  LiveDB -->|"Sanitized CMS Data\n(<untrusted_cms_data>)"| GeminiCall
+  GeminiCall -->|"Text Reply"| SanitizeOut["sanitizeAssistantOutput\n(Strip XSS & Secret Patterns)"]
   SanitizeOut --> UIRender
-  OpenAICall -->|"Token Usage"| UsageLog[("ai_usage_logs\n(No Raw PII / No Transcript by default)")]
+  GeminiCall -->|"usageMetadata"| UsageLog[("ai_usage_logs\n(No Raw PII / No Transcript by default)")]
 ```
 
 ---
@@ -100,21 +115,23 @@ flowchart TD
 
 | Module | Trách nhiệm chính |
 | :--- | :--- |
-| `src/lib/ai/types.ts` | Khai báo kiểu dữ liệu cho Provider, 9 Allowlisted Tools, Structured UI Cards, Quote, Comparison, Handoff, Telemetry. |
-| `src/lib/ai/config.ts` | Đọc biến môi trường server, chuẩn hóa cấu hình và kẹp giới hạn Admin trong trần an toàn server. |
-| `src/lib/ai/errors.ts` | Phân loại lỗi chuẩn hóa (`NoriAIError`), ánh xạ mã lỗi OpenAI (401/403/429/quota/timeout/5xx) & DB sang thông điệp tiếng Việt an toàn, ẩn secret. |
-| `src/lib/ai/guardrails.ts` | Bảo vệ Input (Prompt Injection, Secret Exfiltration, Admin Escalation, Cross-User, SQL/FS), Indirect Prompt Injection sanitizer cho CMS, Redaction PII và Output XSS sanitizer. |
-| `src/lib/ai/rate-limit.ts` | Rate limiting theo phút & ngày, giới hạn đồng thời, ngân sách USD/ngày và Circuit Breaker cho OpenAI provider. |
-| `src/lib/ai/usage.ts` | Bảng giá tham khảo ước tính chi phí theo model và ghi nhận telemetry vào `ai-usage-logs`. |
+| `src/lib/ai/types.ts` | Khai báo kiểu dữ liệu cho Provider (`gemini` / `rule-based-fallback` / `mock`), 9 Allowlisted Tools, Structured UI Cards, Quote, Comparison, Handoff, Telemetry và trạng thái `fallbackMode`. |
+| `src/lib/ai/config.ts` | Đọc biến môi trường server, danh sách model `GEMINI_FREE_TIER_MODELS`, khóa provider trả phí (`getOpenAIApiKeyServerOnly` trả `null` khi `freeTierOnly=true`), chuẩn hóa cấu hình và kẹp giới hạn trong trần an toàn server. |
+| `src/lib/ai/errors.ts` | Phân loại lỗi chuẩn hóa (`NoriAIError`), ánh xạ mã lỗi Gemini HTTP (`401/403/404/429/RESOURCE_EXHAUSTED/timeout/5xx`) & DB sang thông điệp tiếng Việt an toàn, xóa sạch chuỗi dạng `AIza*`, `AQ.*`, `x-goog-api-key`. |
+| `src/lib/ai/guardrails.ts` | Bảo vệ Input (Prompt Injection, Secret Exfiltration, Admin Escalation, Cross-User, SQL/FS), Indirect Prompt Injection sanitizer cho CMS, Redaction PII (`CCCD`/`CMND`/`GPLX`, SĐT, email, `AIza*`, `AQ.*`) trước khi gửi sang Gemini và Output XSS sanitizer. |
+| `src/lib/ai/rate-limit.ts` | Rate limiting đa phạm vi (`PROJECT`, `IP`, `SESSION`) theo phút & ngày (tính cả các vòng Function Calling), giới hạn đồng thời và Circuit Breaker cho Gemini provider. |
+| `src/lib/ai/usage.ts` | Bảng tham chiếu model Free Tier (`$0` khi `NORI_AI_FREE_TIER_ONLY=true`) và ghi nhận telemetry (`provider`, `inputTokens`, `outputTokens`, `errorCode: 'FALLBACK_...'`) vào `ai-usage-logs`. |
 | `src/lib/ai/system-prompt.ts` | System Prompt chuyên biệt tiếng Việt cho NORI, ranh giới bảo mật `<untrusted_cms_data>` và chuẩn phân biệt giá tham khảo / báo giá / đơn xác nhận. |
-| `src/lib/ai/schemas.ts` | JSON Schema cho OpenAI Function Calling và bộ validate tham số runtime cho cả 9 hàm. |
+| `src/lib/ai/schemas.ts` | JSON Schema cho Gemini Function Calling và bộ validate tham số runtime cho cả 9 hàm. |
 | `src/lib/ai/recommendation.ts` | **NORI Hybrid Recommendation Engine**: NLP tiếng Việt không dấu, lọc cứng điều kiện bắt buộc, chấm điểm có trọng số minh bạch (35/25/20/10/10) và sinh lý do đề xuất. |
 | `src/lib/ai/knowledge.ts` | **Lightweight RAG** truy vấn live `nori-site`, bài viết `published` (`posts`) và chi nhánh `ACTIVE`, kèm nguồn trích dẫn URL. |
 | `src/lib/ai/tools.ts` | Triển khai nghiệp vụ cho 9 Business Tools tái sử dụng trực tiếp `rental-rules.ts`, `multi-branch-service.ts`, `promo-service.ts`. |
 | `src/lib/ai/tool-registry.ts` | Allowlist dispatcher chặn tuyệt đối hàm ngoài danh sách. |
-| `src/lib/ai/openai.ts` | Tích hợp chính thức `OpenAIResponsesProvider` (`client.responses.create`, `store: false`, exponential backoff retry, timeout & abort). |
+| `src/lib/ai/gemini.ts` | Tích hợp chính thức `GeminiProvider` (`@google/genai` `GoogleGenAI`), ép kiểm tra allowlist model Free Tier, redact PII đầu ra, bảo toàn `thoughtSignature`, vô hiệu hóa Search/Maps grounding, không retry 429/quota, hỗ trợ `ping()` qua `models.get` không tốn quota sinh văn bản. |
+| `src/lib/ai/fallback.ts` | **Rule-based Recommendation Engine**: Lập kế hoạch & thực thi tool xác định từ `extractStructuredIntent`, tổng hợp câu trả lời tiếng Việt và gắn nhãn `"Chế độ tư vấn cơ bản (Rule-based Engine)"` khi Gemini không khả dụng hoặc hết hạn mức. |
+| `src/lib/ai/openai.ts` | Legacy OpenAI Responses adapter (chỉ lưu giữ phục vụ tương thích nội bộ và bị **khóa mặc định** khi `NORI_AI_FREE_TIER_ONLY=true` hoặc `NORI_AI_PAID_PROVIDERS_ALLOWED=false`). |
 | `src/lib/ai/provider.ts` | AI Provider Interface factory + `MockTestAIProvider` cô lập hoàn toàn chỉ bật khi `NORI_AI_TEST_MOCK=1`. |
-| `src/lib/ai/orchestrator.ts` | Điều phối vòng lặp Function Calling, kiểm soát giới hạn vòng gọi và hợp nhất dữ liệu xác thực cho UI. |
+| `src/lib/ai/orchestrator.ts` | Điều phối vòng lặp Function Calling, trừ hạn mức Project/IP/Session ở từng vòng gọi model, kích hoạt tự động `runRuleBasedFallback()` khi gặp sự cố và hợp nhất dữ liệu xác thực cho UI. |
 
 ---
 

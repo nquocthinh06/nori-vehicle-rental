@@ -26,12 +26,13 @@ export async function POST(request: Request) {
 
     const runtime = getAIRuntimeConfig()
     if (!runtime.apiKeyConfigured && !runtime.testMockEnabled) {
+      const expectedVar = runtime.provider === 'openai' ? 'OPENAI_API_KEY' : 'GEMINI_API_KEY'
       return json({
         ok: false,
         provider: runtime.provider,
         model: runtime.model,
         latencyMs: 0,
-        message: 'Biến môi trường OPENAI_API_KEY chưa được cấu hình trên máy chủ.',
+        message: `Biến môi trường ${expectedVar} chưa được cấu hình trên máy chủ.${runtime.fallbackEnabled ? ' Website đang dùng Chế độ tư vấn cơ bản (Rule-based Engine).' : ''}`,
       })
     }
 

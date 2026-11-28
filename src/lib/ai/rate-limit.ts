@@ -51,6 +51,7 @@ export function checkAndConsumeAIRateLimit(params: {
 }): {
   allowed: boolean
   code?: 'AI_RATE_LIMITED' | 'AI_DAILY_LIMIT_EXCEEDED'
+  scope?: 'SESSION' | 'IP' | 'PROJECT'
   retryAfterSeconds?: number
   remainingMinute: number
   remainingDay: number
@@ -108,6 +109,95 @@ export function checkAndConsumeAIRateLimit(params: {
     remainingMinute: Math.max(0, params.limitPerMinute - minBucket.timestamps.length),
     remainingDay: Math.max(0, params.limitPerDay - dayBucket.timestamps.length),
   }
+}
+
+/**
+ * Multi-tier Free-Tier quota guard across Session/User, IP, and Project scopes.
+ * Called before EVERY LLM round (including Function Calling follow-up rounds)
+ * so multi-turn tool loops never silently exceed project/session/IP Free Tier limits.
+ */
+export function checkAndConsumeMultiScopeModelCall(params: {
+  sessionKey: string
+  sessionRpm: number
+  sessionRpd: number
+  includeSession?: boolean
+  ipKey?: string | null
+  ipRpm: number
+  ipRpd: number
+  projectRpm: number
+  projectRpd: number
+  now?: number
+}): {
+  allowed: boolean
+  code?: 'AI_RATE_LIMITED' | 'AI_DAILY_LIMIT_EXCEEDED'
+  scope?: 'SESSION' | 'IP' | 'PROJECT'
+  retryAfterSeconds?: number
+} {
+  const now = params.now ?? Date.now()
+  const includeSession = params.includeSession !== false
+  const scopes: Array<{
+    scope: 'SESSION' | 'IP' | 'PROJECT'
+    key: string
+    rpm: number
+    rpd: number
+  }> = [
+    {
+      scope: 'PROJECT',
+      key: 'project:nori-gemini',
+      rpm: params.projectRpm,
+      rpd: params.projectRpd,
+    },
+    ...(params.ipKey
+      ? [{ scope: 'IP' as const, key: `ip:${params.ipKey}`, rpm: params.ipRpm, rpd: params.ipRpd }]
+      : []),
+    ...(includeSession
+      ? [
+          {
+            scope: 'SESSION' as const,
+            key: `sess:${params.sessionKey}`,
+            rpm: params.sessionRpm,
+            rpd: params.sessionRpd,
+          },
+        ]
+      : []),
+  ]
+
+  // First dry-check all scopes before mutating any bucket so a blocked session doesn't burn project quota
+  const minuteCutoff = now - MINUTE_MS
+  const dayCutoff = now - DAY_MS
+  for (const s of scopes) {
+    const minTs = (minuteBuckets.get(s.key)?.timestamps ?? []).filter((t) => t > minuteCutoff)
+    if (minTs.length >= s.rpm) {
+      const oldest = minTs[0] ?? now
+      return {
+        allowed: false,
+        code: 'AI_RATE_LIMITED',
+        scope: s.scope,
+        retryAfterSeconds: Math.max(1, Math.ceil((oldest + MINUTE_MS - now) / 1000)),
+      }
+    }
+    const dayTs = (dayBuckets.get(s.key)?.timestamps ?? []).filter((t) => t > dayCutoff)
+    if (dayTs.length >= s.rpd) {
+      const oldest = dayTs[0] ?? now
+      return {
+        allowed: false,
+        code: 'AI_DAILY_LIMIT_EXCEEDED',
+        scope: s.scope,
+        retryAfterSeconds: Math.max(60, Math.ceil((oldest + DAY_MS - now) / 1000)),
+      }
+    }
+  }
+
+  // Consume 1 unit in all active scopes
+  for (const s of scopes) {
+    checkAndConsumeAIRateLimit({
+      key: s.key,
+      limitPerMinute: s.rpm,
+      limitPerDay: s.rpd,
+      now,
+    })
+  }
+  return { allowed: true }
 }
 
 export function acquireAIConcurrencySlot(key: string): () => void {

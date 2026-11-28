@@ -2,12 +2,14 @@ import { adminHasAnyPermission } from '@/access/nori'
 import { requireAdmin } from '@/lib/admin-api'
 import {
   getAIRuntimeConfig,
+  getGeminiModelCapabilities,
+  isGeminiModelInFreeTierAllowlist,
   mapGlobalDocToAISettings,
   normalizeRecommendationWeights,
   resolveEffectiveAIConfig,
 } from '@/lib/ai/config'
 import { checkCircuitBreaker } from '@/lib/ai/rate-limit'
-import { MODEL_PRICING_PER_1M_USD } from '@/lib/ai/usage'
+import { MODEL_PRICING_PER_1M_USD, resolveModelPricing } from '@/lib/ai/usage'
 import { apiError, assertOrigin, body, fail, json, text } from '@/lib/api-utils'
 
 export async function GET() {
@@ -68,6 +70,11 @@ export async function GET() {
     const checkoutLogs = logs.filter((l) => l.eventType === 'CHECKOUT_HANDOFF')
 
     const totalRequests = chatLogs.length
+    const fallbackRequests = chatLogs.filter(
+      (l) =>
+        l.provider === 'rule-based-fallback' ||
+        (typeof l.errorCode === 'string' && l.errorCode.startsWith('FALLBACK_')),
+    ).length
     const successRequests = chatLogs.filter((l) => l.status === 'SUCCESS').length
     const failedRequests = chatLogs.filter((l) => l.status === 'ERROR').length
     const blockedRequests = chatLogs.filter((l) => l.status === 'BLOCKED').length
@@ -130,7 +137,13 @@ export async function GET() {
         : 0
 
     const recentErrors = logs
-      .filter((l) => l.status === 'ERROR' || l.status === 'BLOCKED' || l.status === 'RATE_LIMITED')
+      .filter(
+        (l) =>
+          l.status === 'ERROR' ||
+          l.status === 'BLOCKED' ||
+          l.status === 'RATE_LIMITED' ||
+          (typeof l.errorCode === 'string' && l.errorCode.startsWith('FALLBACK_')),
+      )
       .slice(0, 20)
       .map((l) => ({
         id: String(l.id),
@@ -167,12 +180,24 @@ export async function GET() {
       createdAt: String(f.createdAt ?? ''),
     }))
 
+    const geminiCap = getGeminiModelCapabilities(runtime.model)
+    const documentedFreeTierModel =
+      runtime.provider === 'gemini' && isGeminiModelInFreeTierAllowlist(runtime.model)
+
     return json({
       runtime: {
         envEnabled: runtime.envEnabled,
         provider: runtime.provider,
         model: runtime.model,
         apiKeyConfigured: runtime.apiKeyConfigured,
+        freeTierOnly: runtime.freeTierOnly,
+        paidProvidersAllowed: runtime.paidProvidersAllowed,
+        fallbackEnabled: runtime.fallbackEnabled,
+        documentedFreeTierModel,
+        geminiCapabilities: geminiCap,
+        billingStatus: 'UNVERIFIED_MANUAL_CHECK_REQUIRED',
+        billingVerificationNote:
+          'Không thể tự xác minh trạng thái Cloud Billing của Google Project chỉ từ API Key. Chủ dự án cần kiểm tra thủ công tại Google AI Studio / Google Cloud Console rằng Billing không bật trước khi chạy live API test.',
         testMockEnabled: runtime.testMockEnabled,
         storeConversations: runtime.storeConversations,
         timeoutMs: runtime.timeoutMs,
@@ -181,16 +206,23 @@ export async function GET() {
           maxToolRounds: runtime.maxToolRoundsCap,
           rateLimitPerMinute: runtime.rateLimitPerMinuteCap,
           rateLimitPerDay: runtime.rateLimitPerDayCap,
+          projectRateLimitPerMinute: runtime.projectRateLimitPerMinuteCap,
+          projectRateLimitPerDay: runtime.projectRateLimitPerDayCap,
+          ipRateLimitPerMinute: runtime.ipRateLimitPerMinuteCap,
+          ipRateLimitPerDay: runtime.ipRateLimitPerDayCap,
           dailyBudgetUsd: runtime.dailyBudgetUsdCap,
         },
         circuitBreaker: circuit,
-        pricingReferenceUsdPer1M:
-          MODEL_PRICING_PER_1M_USD[runtime.model] ?? MODEL_PRICING_PER_1M_USD['gpt-4.1-mini'],
+        pricingReferenceUsdPer1M: runtime.freeTierOnly
+          ? { input: 0, output: 0 }
+          : (MODEL_PRICING_PER_1M_USD[runtime.model] ?? resolveModelPricing(runtime.model)),
       },
       settings,
       effectiveConfig: {
         enabled: effective.enabled,
         configured: effective.configured,
+        freeTierOnly: effective.freeTierOnly,
+        fallbackEnabled: effective.fallbackEnabled,
         maxOutputTokens: effective.maxOutputTokens,
         maxToolRounds: effective.maxToolRounds,
         rateLimitPerMinute: effective.rateLimitPerMinute,
@@ -200,6 +232,7 @@ export async function GET() {
       },
       stats: {
         totalRequests,
+        fallbackRequests,
         successRequests,
         failedRequests,
         blockedRequests,
@@ -217,12 +250,13 @@ export async function GET() {
         todayEstimatedCostUsd: Number(todayEstimatedCostUsd.toFixed(6)),
         dailyBudgetUsd: effective.dailyBudgetUsd,
         budgetUtilizationPct,
-        budgetWarning: budgetUtilizationPct >= 80,
+        budgetWarning: !effective.freeTierOnly && budgetUtilizationPct >= 80,
         helpfulCount,
         notHelpfulCount,
         noResultCount: noResultQueries.length,
-        costDisclaimer:
-          'Chi phí hiển thị là số liệu ước tính phía NORI dựa trên token usage và bảng giá tham khảo của model. Chi phí thanh toán thực tế được ghi nhận chính thức tại OpenAI Platform.',
+        costDisclaimer: runtime.freeTierOnly
+          ? 'NORI đang khóa chế độ Gemini Free Tier Only (không bật API trả phí hoặc Grounding có phí). Chi phí ước tính trong app là $0.00 theo chính sách; chủ dự án vẫn cần kiểm tra thủ công trong Google AI Studio rằng Cloud Billing chưa được liên kết.'
+          : 'Chi phí hiển thị là số liệu ước tính phía NORI dựa trên token usage và bảng giá tham khảo của model.',
       },
       recentErrors,
       noResultQueries,

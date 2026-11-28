@@ -2,19 +2,20 @@
 
 ---
 
-## 1. Hướng dẫn tạo OpenAI API Key & Cấu hình môi trường
+## 1. Hướng dẫn tạo Gemini API Key (Google AI Studio) & Cấu hình môi trường
 
-### 1.1. Tạo API Key chính thức
-1. Truy cập [https://platform.openai.com/api-keys](https://platform.openai.com/api-keys) bằng tài khoản OpenAI Platform hợp lệ.
-2. Chọn **Create new secret key**, đặt tên dự án (ví dụ: `nori-vehicle-rental-prod`), cấp quyền tối thiểu (Responses API / Models).
-3. Thiết lập hạn mức chi tiêu tháng (Monthly Usage Limit) trên OpenAI Billing bên cạnh giới hạn ngân sách ứng dụng của NORI.
-4. Lưu API Key vào file `.env` trên máy chủ hoặc Secret Manager (Vercel Environment Variables / GitHub Secrets).
+### 1.1. Tạo API Key & Kiểm tra Free Tier thủ công
+1. Truy cập [https://aistudio.google.com/apikey](https://aistudio.google.com/apikey) và tạo hoặc chọn Google Cloud Project dùng cho NORI.
+2. **Xác nhận thủ công trạng thái Billing (BẮT BUỘC)**: Kiểm tra trong Google AI Studio / Google Cloud Console rằng Project hiện ở gói **Free Tier** và **chưa gắn Cloud Billing trả phí**. *(Không thể suy luận Billing Tier chỉ từ việc API Key hoạt động.)*
+3. Lưu API Key vào file `.env` trên máy chủ hoặc Secret Manager (Vercel Environment Variables / GitHub Secrets).
+4. Tuyệt đối **không kích hoạt** Google Search Grounding, Google Maps Grounding hoặc bất kỳ công cụ trả phí nào nếu chưa được chủ dự án cho phép.
 
-> **QUY TẮC BẢO MẬT TUYỆT ĐỐI**:
+> **QUY TẮC BẢO MẬT & CHI PHÍ TUYỆT ĐỐI**:
 > - Không commit `.env` lên GitHub.
-> - Không đặt `OPENAI_API_KEY` dưới tiền tố `NEXT_PUBLIC_*`.
+> - Không đặt `GEMINI_API_KEY` dưới tiền tố `NEXT_PUBLIC_*`.
 > - Không dán API Key vào mã nguồn, tài liệu, log hoặc Admin Dashboard.
-> - Không sử dụng cookie hoặc phiên đăng nhập ChatGPT Web thay cho OpenAI API chính thức.
+> - Không luân chuyển nhiều API Key hoặc nhiều Google Cloud Project để cố tình vượt hạn mức miễn phí.
+> - Giữ nguyên `NORI_AI_FREE_TIER_ONLY=true` và `NORI_AI_PAID_PROVIDERS_ALLOWED=false` để chặn mọi provider trả phí (bao gồm OpenAI).
 
 ### 1.2. Các biến môi trường bắt buộc & tùy chọn
 
@@ -22,29 +23,40 @@ Xem cấu hình mẫu tại [.env.example](../.env.example):
 
 ```env
 NORI_AI_ENABLED=true
-NORI_AI_PROVIDER=openai
-OPENAI_API_KEY=
-OPENAI_MODEL=gpt-4.1-mini
-NORI_AI_MAX_OUTPUT_TOKENS=1000
-NORI_AI_MAX_TOOL_ROUNDS=5
-NORI_AI_RATE_LIMIT_PER_MINUTE=5
-NORI_AI_RATE_LIMIT_PER_DAY=30
+NORI_AI_PROVIDER=gemini
+
+GEMINI_API_KEY=
+GEMINI_MODEL=gemini-3.5-flash-lite
+
+NORI_AI_FREE_TIER_ONLY=true
+NORI_AI_PAID_PROVIDERS_ALLOWED=false
+NORI_AI_FALLBACK_ENABLED=true
+
+NORI_AI_MAX_OUTPUT_TOKENS=1024
+NORI_AI_MAX_TOOL_ROUNDS=3
+NORI_AI_RATE_LIMIT_PER_MINUTE=3
+NORI_AI_RATE_LIMIT_PER_DAY=20
+NORI_AI_PROJECT_RPM_CAP=10
+NORI_AI_PROJECT_RPD_CAP=200
+NORI_AI_IP_RPM_CAP=6
+NORI_AI_IP_RPD_CAP=40
 NORI_AI_TIMEOUT_MS=30000
-NORI_AI_DAILY_BUDGET_USD=5
 NORI_AI_STORE_CONVERSATIONS=false
 ```
 
 ---
 
-## 2. Lựa chọn Model OpenAI (`OPENAI_MODEL`)
+## 2. Danh sách Model Gemini Free Tier (`GEMINI_MODEL`)
 
-Model được cấu hình hoàn toàn qua biến môi trường `OPENAI_MODEL` (mặc định fallback `gpt-4.1-mini`, không hardcode cố định trong nghiệp vụ):
+NORI chỉ cho phép các model Flash / Flash-Lite thuộc tài liệu chính thức Free Tier của Google Gemini API (`GEMINI_FREE_TIER_MODELS` trong `src/lib/ai/config.ts`). Mọi model không nằm trong allowlist bị từ chối với mã `AI_MODEL_NOT_FREE_TIER` và không bao giờ tự nâng cấp sang model trả phí:
 
-| Model | Chi phí tham khảo (USD / 1M tokens) | Đánh giá cho NORI |
-| :--- | :--- | :--- |
-| **`gpt-4.1-mini`** *(Khuyến nghị mặc định)* | Input: `$0.40` · Output: `$1.60` | Hỗ trợ tiếng Việt tự nhiên, tuân thủ nghiêm ngặt Function Calling + JSON Schema, chống prompt injection tốt, tốc độ nhanh và chi phí rất thấp (~`$0.0005`–`$0.002` / lượt tư vấn). |
-| `gpt-4o-mini` | Input: `$0.15` · Output: `$0.60` | Chi phí thấp nhất cho nhu cầu ngân sách cực tối ưu. |
-| `gpt-5-mini` | Input: `$0.25` · Output: `$2.00` | Phương án thay thế thế hệ mới cho truy vấn suy luận nhiều bước. |
+| Model (`GEMINI_MODEL`) | Function Calling | Structured Outputs | Tài liệu Free Tier | Ghi chú cho NORI |
+| :--- | :---: | :---: | :---: | :--- |
+| **`gemini-3.5-flash-lite`** *(Mặc định)* | Có | Có | Chính thức (`ai.google.dev`) | Ưu tiên mặc định cho tác vụ tư vấn tiếng Việt & Function Calling tốc độ cao trên Free Tier. |
+| `gemini-2.5-flash-lite` | Có | Có | Chính thức (`ai.google.dev`) | Phương án dự phòng nhẹ thuộc nhóm Flash-Lite Free Tier. |
+| `gemini-2.5-flash` | Có | Có | Chính thức (`ai.google.dev`) | Hỗ trợ tốt suy luận nhiều bước & JSON Schema trong hạn mức Free Tier. |
+| `gemini-2.0-flash` | Có | Có | Chính thức (`ai.google.dev`) | Ổn định cho hội thoại tiếng Việt và Function Calling. |
+| `gemini-2.0-flash-lite` | Có | Có | Chính thức (`ai.google.dev`) | Phiên bản tiết kiệm token thuộc dòng 2.0 Free Tier. |
 
 ---
 
@@ -53,7 +65,7 @@ Model được cấu hình hoàn toàn qua biến môi trường `OPENAI_MODEL` 
 Tất cả endpoint AI trả về header `Cache-Control: private, no-store` và mọi mutation endpoint đều bắt buộc kiểm tra CSRF `assertOrigin(request)`.
 
 ### 3.1. `GET /nori-api/ai/config` (Public — An toàn)
-Trả về trạng thái sẵn sàng công khai của AI Assistant (không chứa API Key hoặc tham số bảo mật nội bộ):
+Trả về trạng thái sẵn sàng công khai của AI Assistant (tuyệt đối không chứa `GEMINI_API_KEY` hay tham số bảo mật nội bộ):
 ```json
 {
   "success": true,
@@ -61,7 +73,10 @@ Trả về trạng thái sẵn sàng công khai của AI Assistant (không chứ
     "enabled": true,
     "configured": true,
     "ready": true,
-    "provider": "openai",
+    "fallbackReady": true,
+    "freeTierOnly": true,
+    "provider": "gemini",
+    "model": "gemini-3.5-flash-lite",
     "greetingMessage": "Xin chào! Tôi là Trợ lý AI của NORI...",
     "quickSuggestions": [{ "label": "...", "prompt": "..." }],
     "fallbackLinks": [
@@ -75,8 +90,8 @@ Trả về trạng thái sẵn sàng công khai của AI Assistant (không chứ
 
 ### 3.2. `POST /nori-api/ai/chat` (Khách vãng lai & Khách đã đăng nhập)
 - **Allowlist Body**: `{ message: string, history?: Array<{ role: "user"|"assistant", content: string }>, sessionId?: string }` (tối đa 18 KB, message tối đa 1.000 ký tự).
-- **Response**: `{ requestId, reply, status, intent, vehicleCards, comparison, quote, bookingHandoff, citations, toolsCalled, followUpSuggestions, fallbackLinks, usage, disclaimer }`.
-- **Degraded behavior**: Khi chưa có API Key, hết quota, lỗi 429/timeout hoặc Admin tắt AI, trả thông báo tiếng Việt thân thiện kèm `fallbackLinks` — website NORI vẫn hoạt động bình thường.
+- **Response**: `{ requestId, reply, status, mode, modeLabel, fallbackMode, fallbackReason, intent, vehicleCards, comparison, quote, bookingHandoff, citations, toolsCalled, followUpSuggestions, fallbackLinks, usage, disclaimer }`.
+- **Fallback Engine behavior (`NORI_AI_FALLBACK_ENABLED=true`)**: Khi `GEMINI_API_KEY` chưa cấu hình, hết quota, lỗi 429, timeout hoặc model không khả dụng, Orchestrator tự động chuyển sang **Rule-based Recommendation Engine** (`status: "DEGRADED"`, `mode: "rule-based-fallback"`, `modeLabel: "Chế độ tư vấn cơ bản (Rule-based Engine)"`), truy vấn trực tiếp dữ liệu thật + tính giá bằng BRE — website NORI vẫn tư vấn và đặt xe bình thường.
 
 ### 3.3. `POST /nori-api/ai/feedback`
 Gửi đánh giá chất lượng `HELPFUL` / `NOT_HELPFUL` cho một `requestId` cụ thể. Lưu vào collection `ai-feedback` (Admin-only read).
@@ -86,11 +101,11 @@ Ghi nhận sự kiện attribution (`VEHICLE_CLICK`, `CHECKOUT_HANDOFF`) phục 
 
 ### 3.5. `GET /nori-api/dashboard/ai` & `PATCH /nori-api/dashboard/ai` (Admin RBAC)
 - Yêu cầu phiên `admins` có quyền `ai` hoặc `settings`/`reports`.
-- `GET`: trả trạng thái runtime an toàn (`apiKeyConfigured: boolean`), cấu hình `ai-settings`, thống kê token/chi phí/chuyển đổi thực tế, danh sách lỗi, câu hỏi không có kết quả và phản hồi khách hàng.
+- `GET`: trả trạng thái runtime an toàn (`apiKeyConfigured: boolean`, `freeTierOnly`, `paidProvidersAllowed`, `fallbackEnabled`, `model`, `modelCapabilities`, `billingVerificationRequired: true`), cấu hình `ai-settings`, thống kê token/request/fallback thực tế (`fallbackRequests`), danh sách lỗi, câu hỏi không có kết quả và phản hồi khách hàng.
 - `PATCH`: bật/tắt AI, cập nhật lời chào, quick suggestions, giới hạn trong ngưỡng an toàn server, trọng số Recommendation Engine, ghi chú kiến thức công khai hoặc đánh dấu rà soát feedback (tự động ghi `audit-logs`).
 
 ### 3.6. `POST /nori-api/dashboard/ai/test` (Admin RBAC)
-Thực hiện kiểm tra kết nối trực tiếp tới OpenAI Responses API với yêu cầu tối thiểu (`max_output_tokens: 16`, `store: false`), trả độ trễ và model phản hồi.
+Thực hiện kiểm tra metadata kết nối tới Gemini API qua `client.models.get({ model })` (không tiêu tốn quota sinh token văn bản, không tự suy luận Billing Tier), trả độ trễ, model khả dụng và thông báo nhắc chủ dự án xác nhận thủ công trạng thái Free Tier / Cloud Billing.
 
 ---
 
@@ -114,4 +129,4 @@ Thực hiện kiểm tra kết nối trực tiếp tới OpenAI Responses API v�
 
 - **Tính đồng bộ thời gian thực**: Mọi tool AI truy vấn trực tiếp từ Payload CMS / SQLite theo từng yêu cầu. Khi Admin thay đổi giá xe, trạng thái vận hành (`MAINTENANCE`/`INACTIVE`), khuyến mãi hoặc chính sách CMS tại `/dashboard/*`, Trợ lý AI phản ánh dữ liệu mới ngay ở lượt hỏi tiếp theo mà không cần restart hay đồng bộ thủ công.
 - **Hướng dẫn phía Khách hàng**: Nhấn nút **Trợ lý AI** ở góc dưới phải (tự động tránh thanh điều hướng Mobile Bottom Navigation và Sticky Booking Bar), chọn gợi ý nhanh hoặc nhập nhu cầu bằng tiếng Việt tự nhiên, xem thẻ xe đề xuất và nhấn **Xem chi tiết** / **Chọn thuê** / **So sánh xe**.
-- **Hướng dẫn phía Admin**: Truy cập `/dashboard/ai` để bật/tắt AI, kiểm tra kết nối OpenAI, tinh chỉnh giới hạn an toàn, điều chỉnh trọng số đề xuất, theo dõi token/chi phí ước tính và rà soát phản hồi khách hàng.
+- **Hướng dẫn phía Admin**: Truy cập `/dashboard/ai` để bật/tắt AI, kiểm tra kết nối metadata Gemini Free Tier, theo dõi số lượt chuyển sang **Chế độ tư vấn cơ bản**, tinh chỉnh giới hạn an toàn, điều chỉnh trọng số đề xuất, theo dõi token thực tế và rà soát phản hồi khách hàng.
